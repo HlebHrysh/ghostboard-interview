@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.agents
+.claude
+.cursor
+.devin
+data
+tests
+*.log
+.env*.local
+Dockerfile*
+.dockerignore
+README.md

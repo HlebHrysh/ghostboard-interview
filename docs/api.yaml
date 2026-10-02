@@ -1,0 +1,131 @@
+openapi: 3.1.0
+info:
+  title: Ghostboard Interview Copilot API
+  description: Enterprise real-time AI copilot backend proxying Gemini AI, Deepgram STT, Stripe billing, and multi-device SSE streaming.
+  version: 2.0.0
+servers:
+  - url: http://localhost:3001
+    description: Local development server
+  - url: https://ghostboard.ai
+    description: Production environment
+
+paths:
+  /api/health:
+    get:
+      summary: Health & Uptime Status
+      description: Returns real-time operational status for Gemini AI, Deepgram STT, and uptime.
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  uptimeSeconds:
+                    type: integer
+                  services:
+                    type: object
+
+  /api/ai/interview-copilot:
+    post:
+      summary: Generate AI Answer
+      description: Takes transcribed interview question, applies candidate profile context, and invokes Gemini fallback cascade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - question
+              properties:
+                question:
+                  type: string
+                  maxLength: 3000
+                outputLanguage:
+                  type: string
+                  enum: [uk, en, auto]
+                  default: uk
+                isConcise:
+                  type: boolean
+                  default: false
+                candidateProfile:
+                  type: object
+      responses:
+        '200':
+          description: Structured answer
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  startHook:
+                    type: string
+                  quickAnswer:
+                    type: string
+                  hints:
+                    type: array
+                    items:
+                      type: string
+                  deliveryTip:
+                    type: string
+        '400':
+          description: Invalid request payload
+
+  /api/ai/deepgram:
+    get:
+      summary: Get Deepgram STT Session Token
+      description: Returns server-managed Deepgram credentials for live browser WebSocket streaming.
+      responses:
+        '200':
+          description: Valid STT configuration
+
+  /api/ai/screenshot:
+    post:
+      summary: Screen Code OCR & Analysis
+      description: Invokes Gemini Vision to analyze code snippets or algorithmic problems captured from the candidate screen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - imageBase64
+              properties:
+                imageBase64:
+                  type: string
+
+  /api/stripe/checkout:
+    post:
+      summary: Create Stripe Checkout Session
+      description: Initiates monthly or lifetime subscription checkout sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planId:
+                  type: string
+                  enum: [pro_monthly, pro_annual, lifetime]
+      responses:
+        '200':
+          description: Stripe checkout URL
+
+  /api/companion/stream:
+    get:
+      summary: Real-Time SSE Stream
+      description: Streams live Q&A updates to secondary screen / tablet teleprompter via Server-Sent Events.
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string

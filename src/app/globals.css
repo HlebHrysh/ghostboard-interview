@@ -1,0 +1,508 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: var(--font-mono), 'JetBrains Mono', monospace;
+  --font-display: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* =========================================================================
+   GHOSTBOARD v2 — Awwwards Design System
+   Editorial Typography · Lime Acid · Neo-Glassmorphism · Motion Language
+   ========================================================================= */
+
+/* ── CSS Custom Properties ─────────────────────────────────────────── */
+:root {
+  /* Core palette */
+  --canvas:        #0A0A0B;
+  --surface:       #111113;
+  --elevated:      #18181C;
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-hover:  rgba(255, 255, 255, 0.16);
+
+  /* Accent */
+  --lime:          #C8F135;
+  --lime-dim:      rgba(200, 241, 53, 0.12);
+  --lime-glow:     0 0 80px rgba(200, 241, 53, 0.15);
+  --violet:        #8B5CF6;
+  --violet-dim:    rgba(139, 92, 246, 0.12);
+
+  /* Text */
+  --text-primary:   #FAFAFA;
+  --text-secondary: #A0A0AB;
+  --text-tertiary:  #52525B;
+
+  /* Legacy (Copilot app keeps emerald) */
+  --emerald:       #10B981;
+  --background:    #040508;
+  --foreground:    #fafafa;
+
+  /* Fonts */
+  --font-display: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-body:    var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono:    var(--font-mono), 'JetBrains Mono', monospace;
+
+  /* Spacing scale */
+  --section-py: clamp(4rem, 8vw, 7.5rem);
+  --container:  min(82rem, 100% - 2.5rem);
+}
+
+/* ── Base Reset ────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  min-height: 100%;
+  min-height: 100dvh;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Mobile Touch & Safe Area Inset Utilities ──────────────────────── */
+html, body, button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+.pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Prevent auto-zoom on input focus in iOS Safari (< 16px triggers zoom) */
+@media screen and (max-width: 768px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Typography ────────────────────────────────────────────────────── */
+.font-sans    { font-family: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.font-display { font-family: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+.font-body    { font-family: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+.font-mono    { font-family: var(--font-mono), 'JetBrains Mono', monospace; }
+
+/* Brutalist display headline — massive, bold, punchy like modern editorial tech */
+.font-hero-headline {
+  font-family: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.display-hero {
+  font-family: var(--font-sans), 'Inter', sans-serif;
+  font-size: clamp(2.75rem, 7.5vw, 6.5rem);
+  font-weight: 900;
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+.display-xl {
+  font-family: var(--font-sans), 'Inter', sans-serif;
+  font-size: clamp(2.25rem, 5vw, 4.5rem);
+  font-weight: 900;
+  line-height: 0.96;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+
+.display-lg {
+  font-family: var(--font-sans), 'Inter', sans-serif;
+  font-size: clamp(1.75rem, 3vw, 2.75rem);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+
+.body-lg  { font-size: clamp(1rem, 1.5vw, 1.125rem); line-height: 1.7; }
+.body-md  { font-size: 0.9375rem; line-height: 1.65; }
+.body-sm  { font-size: 0.8125rem; line-height: 1.55; }
+.label    { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+
+/* ── Color utilities ───────────────────────────────────────────────── */
+.text-lime        { color: var(--lime); }
+.text-violet      { color: var(--violet); }
+.text-secondary   { color: var(--text-secondary); }
+.text-tertiary    { color: var(--text-tertiary); }
+.bg-canvas        { background: var(--canvas); }
+.bg-surface       { background: var(--surface); }
+.bg-elevated      { background: var(--elevated); }
+.bg-lime          { background: var(--lime); }
+.bg-lime-dim      { background: var(--lime-dim); }
+
+/* ── Glassmorphism panels ─────────────────────────────────────────── */
+.stealth-bg {
+  background-color: #040508;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(16, 185, 129, 0.08), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 90%, rgba(139, 92, 246, 0.06), transparent 60%),
+    radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 32px 32px;
+}
+
+.stealth-glass-panel {
+  background: rgba(8, 10, 16, 0.72);
+  backdrop-filter: blur(48px) saturate(210%);
+  -webkit-backdrop-filter: blur(48px) saturate(210%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 24px 60px -12px rgba(0, 0, 0, 0.85),
+    0 8px 24px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 0 rgba(0, 0, 0, 0.6);
+}
+
+.stealth-glass-dock {
+  background: rgba(10, 12, 18, 0.82);
+  backdrop-filter: blur(40px) saturate(240%);
+  -webkit-backdrop-filter: blur(40px) saturate(240%);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    0 32px 80px -16px rgba(0, 0, 0, 0.95),
+    0 12px 32px -4px rgba(0, 0, 0, 0.7),
+    0 0 40px -10px rgba(16, 185, 129, 0.12),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.20),
+    inset 0 -1px 1px 0 rgba(0, 0, 0, 0.8);
+}
+
+.stealth-card {
+  background: linear-gradient(180deg, rgba(14, 17, 24, 0.85) 0%, rgba(8, 10, 15, 0.92) 100%);
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 32px 64px -16px rgba(0, 0, 0, 0.9),
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.stealth-card-active {
+  border-color: rgba(16, 185, 129, 0.38);
+  box-shadow:
+    0 32px 70px -16px rgba(0, 0, 0, 0.95),
+    0 0 50px -12px rgba(16, 185, 129, 0.20),
+    inset 0 1px 1px rgba(52, 211, 153, 0.25);
+}
+
+.stealth-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* ── Landing / v2 UI Cards ────────────────────────────────────────── */
+.gb-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+@media (hover: hover) {
+  .gb-card:hover {
+    border-color: var(--border-hover);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 24px 48px -12px rgba(0,0,0,0.6);
+  }
+}
+
+/* Lime accent card */
+.gb-card-lime {
+  background: var(--lime-dim);
+  border-color: rgba(200, 241, 53, 0.25);
+}
+
+/* Elevated card (modals, popups) */
+.gb-elevated {
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04),
+    0 40px 80px -20px rgba(0,0,0,0.8);
+}
+
+/* ── CTA Buttons ──────────────────────────────────────────────────── */
+.btn-lime {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem;
+  background: var(--lime);
+  color: #0A0A0B;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  border-radius: 100vw;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 35px rgba(200, 241, 53, 0.25);
+  white-space: nowrap;
+}
+
+.btn-lime:hover  { background: #D4F545; transform: translateY(-1px); box-shadow: 0 0 50px rgba(200, 241, 53, 0.35); }
+.btn-lime:active { transform: translateY(0); }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.75rem;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border-radius: 100vw;
+  border: 1px solid var(--border-hover);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-ghost:hover  { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.25); }
+.btn-ghost:active { background: rgba(255,255,255,0.04); }
+
+/* ── Bento Grid ───────────────────────────────────────────────────── */
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1.25rem;
+}
+
+/* ── Marquee ──────────────────────────────────────────────────────── */
+.marquee-track {
+  display: flex;
+  overflow: hidden;
+  user-select: none;
+}
+
+.marquee-content {
+  display: flex;
+  gap: 2.5rem;
+  animation: marqueeScroll 25s linear infinite;
+  flex-shrink: 0;
+  min-width: 100%;
+}
+
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Ambient / Glow Effects ───────────────────────────────────────── */
+.glow-lime {
+  box-shadow: var(--lime-glow);
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+
+/* ── Ghost Mascot Animations ──────────────────────────────────────── */
+@keyframes ghostFloat {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-8px) rotate(1deg); }
+  66%       { transform: translateY(-4px) rotate(-1deg); }
+}
+
+@keyframes ghostGlowPulse {
+  0%, 100% { filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.35)) drop-shadow(0 0 35px rgba(16, 185, 129, 0.15)); }
+  50%       { filter: drop-shadow(0 0 28px rgba(16, 185, 129, 0.6)) drop-shadow(0 0 60px rgba(16, 185, 129, 0.3)); }
+}
+
+@keyframes ghostThinkingPulse {
+  0%, 100% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.45)) drop-shadow(0 0 45px rgba(139, 92, 246, 0.25)); }
+  50%       { filter: drop-shadow(0 0 32px rgba(139, 92, 246, 0.8)) drop-shadow(0 0 70px rgba(6, 182, 212, 0.4)); }
+}
+
+.animate-ghost-float    { animation: ghostFloat 4s ease-in-out infinite; }
+.animate-ghost-glow     { animation: ghostGlowPulse 3s ease-in-out infinite; }
+.animate-ghost-thinking { animation: ghostThinkingPulse 2s ease-in-out infinite; }
+
+/* ── Custom scrollbar ─────────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar        { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track  { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.08); border-radius: 100vw; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.16); }
+
+.container-gb { width: var(--container); margin-inline: auto; }
+
+/* ── Pricing card featured (brutalist override) ──────────────────── */
+.pricing-card-featured {
+  border-color: rgba(200, 241, 53, 0.3);
+  box-shadow: 0 0 80px rgba(200, 241, 53, 0.06);
+}
+
+/* ── Brutalist hairline grid ─────────────────────────────────────── */
+.brutalist-grid {
+  display: grid;
+  gap: 1px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.brutalist-cell {
+  background: #0A0A0B;
+}
+
+/* ── Typography — Hero title ───────────────────────────────────────── */
+.hero-title {
+  font-family: var(--font-sans), 'Inter', sans-serif;
+  font-size: clamp(3.2rem, 9vw, 8.5rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Scroll-safe for mobile ─────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* =========================================================================
+   AWWWARDS CYBER-STEALTH SUITE
+   Spotlight Card · 3D Depth-of-Field · Soft Paywall · Holographic Tilt
+   ========================================================================= */
+
+@view-transition {
+  navigation: auto;
+}
+
+/* 3D Perspective Utilities */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+/* Spotlight Card border & surface glow */
+.spotlight-card-wrapper {
+  position: relative;
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.spotlight-card-wrapper::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: radial-gradient(
+    400px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
+    rgba(200, 241, 53, 0.45),
+    transparent 65%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+}
+
+.spotlight-card-wrapper:hover::before {
+  opacity: 1;
+}
+
+/* Soft Paywall Glassmorphic Blur */
+.soft-paywall-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.soft-paywall-blur {
+  filter: blur(8px);
+  user-select: none;
+  pointer-events: none;
+  opacity: 0.4;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+}
+
+.soft-paywall-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to top, rgba(0,0,0,0.95) 10%, rgba(0,0,0,0.3) 100%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 1rem;
+  z-index: 20;
+}
+
+/* Holographic 3D Tilt Card */
+.holo-tilt-card {
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.holo-tilt-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(200, 241, 53, 0.08) 35%,
+    rgba(6, 182, 212, 0.08) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  opacity: 0.6;
+}
+

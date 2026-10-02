@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghostboard Teleprompter | Stealth HUD</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              400: '#34d399',
+              500: '#10b981',
+              900: '#064e3b',
+              950: '#022c22',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #06070a;
+      color: #f3f4f6;
+      user-select: text;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.4);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(52, 211, 153, 0.4);
+    }
+    .glow-box {
+      box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.25);
+    }
+    .glow-text {
+      text-shadow: 0 0 20px rgba(52, 211, 153, 0.4);
+    }
+    @keyframes pulse-gentle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.75; transform: scale(0.98); }
+    }
+    .animate-pulse-gentle {
+      animation: pulse-gentle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased selection:bg-emerald-500 selection:text-black">
+
+  <!-- ── 1. Top Header Bar ────────────────────────────────────────── -->
+  <header class="sticky top-0 z-50 bg-[#090b10]/95 backdrop-blur-md border-b border-white/10 px-4 py-2.5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <span class="relative flex h-2.5 w-2.5">
+          <span id="status-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span id="status-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <h1 class="text-xs font-black font-mono tracking-wider text-emerald-400 uppercase flex items-center gap-1.5">
+          <span>GHOSTBOARD</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">HUD</span>
+        </h1>
+      </div>
+      <span id="status-badge" class="text-[11px] font-mono text-zinc-400 px-2 py-0.5 rounded-full bg-white/5 border border-white/10 flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span>Підключено</span>
+      </span>
+    </div>
+
+    <div class="flex items-center gap-1.5">
+      <!-- Stop-Question / Freeze Button -->
+      <button id="btn-freeze-hud" onclick="toggleHudFreeze()" class="px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-cyan-500/20 text-zinc-400 hover:text-cyan-300 border border-white/10 text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer" title="Зафіксувати питання на екрані [Пробіл]">
+        <span id="hud-freeze-icon">🧊</span>
+        <span id="hud-freeze-label">Стоп [Space]</span>
+      </button>
+
+      <!-- Font Scale Buttons -->
+      <div class="flex items-center bg-white/5 rounded-lg p-0.5 border border-white/10 text-xs font-mono">
+        <button id="btn-font-sm" onclick="setFontScale(0)" class="px-2 py-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors" title="Стандартний">1x</button>
+        <button id="btn-font-md" onclick="setFontScale(1)" class="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30" title="Великий (для монітора)">2x</button>
+        <button id="btn-font-lg" onclick="setFontScale(2)" class="px-2 py-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors" title="Дуже великий">3x</button>
+      </div>
+
+      <!-- Fullscreen Button -->
+      <button onclick="toggleFullscreen()" class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 transition-colors" title="На весь екран (F)">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+      </button>
+
+      <!-- Clear Button -->
+      <button onclick="clearCards()" class="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/10 transition-colors" title="Очистити історію">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── 2. Live Processing Bar ──────────────────────────────────── -->
+  <div id="processing-banner" class="hidden bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-950 border-b border-emerald-500/30 px-4 py-2 text-xs text-emerald-200 flex items-center justify-between animate-pulse">
+    <div class="flex items-center gap-2">
+      <span class="animate-spin text-sm">⚡</span>
+      <span class="font-bold font-mono">ШІ формує відповідь (1.2-1.5с)...</span>
+    </div>
+    <span class="text-[10px] font-mono text-emerald-400/80">Claude 3.5 / Gemini Flash</span>
+  </div>
+
+  <!-- ── 3. Main Display Container ────────────────────────────────── -->
+  <main class="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
+
+    <!-- Empty State -->
+    <div id="empty-state" class="flex-1 flex flex-col items-center justify-center py-20 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-3xl mb-4 text-emerald-400">
+        👻
+      </div>
+      <h2 class="text-xl font-bold text-white mb-2">Очікування питань співбесіди...</h2>
+      <p class="text-sm text-zinc-400 max-w-md leading-relaxed mb-6">
+        Коли співрозмовник задасть питання в Google Meet, Zoom чи Teams, тут з'явиться миттєва відповідь, стартова фраза та ключові тези.
+      </p>
+      <div class="flex items-center gap-3">
+        <button onclick="injectTestQuestion()" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs transition-transform active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/20">
+          🧪 Згенерувати тест
+        </button>
+        <a href="/interviewer.html" target="_blank" class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white font-mono text-xs transition-colors">
+          📱 Симулятор інтерв'юера →
+        </a>
+      </div>
+    </div>
+
+    <!-- Active Hero Card -->
+    <div id="hero-card" class="hidden flex flex-col gap-4">
+
+      <!-- Stop-Question / Freeze Banner -->
+      <div id="hud-freeze-banner" class="hidden p-3 rounded-2xl bg-cyan-950/50 border border-cyan-500/50 flex items-center justify-between gap-3 shadow-[0_0_20px_rgba(6,182,212,0.2)]">
+        <div class="flex items-center gap-2 text-xs font-mono text-cyan-200">
+          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping"></span>
+          <span><b>ПЕРЕГЛЯД ЗАФІКСОВАНО:</b> ШІ слухає у фоні</span>
+          <span id="hud-freeze-counter" class="hidden px-2 py-0.5 rounded-full bg-cyan-500 text-black font-extrabold text-[10px]"></span>
+        </div>
+        <button onclick="toggleHudFreeze()" class="px-3 py-1 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-black font-extrabold text-xs font-mono cursor-pointer transition-all active:scale-95 shadow-sm">
+          До останнього [Space] →
+        </button>
+      </div>
+
+      <!-- 15-Second Read Lock Timer Bar -->
+      <div class="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden border border-white/5">
+        <div id="read-lock-bar" class="bg-gradient-to-r from-emerald-400 to-teal-300 h-full w-full transition-all duration-100 ease-linear rounded-full"></div>
+      </div>
+
+      <!-- Main Answer Card -->
+      <div class="bg-zinc-900/90 border border-emerald-500/40 rounded-3xl p-5 sm:p-7 shadow-2xl glow-box relative overflow-hidden backdrop-blur-xl">
+
+        <!-- Header: Question -->
+        <div class="flex items-start justify-between gap-4 pb-4 border-b border-white/10">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2">
+              <span id="card-tag" class="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">#InterviewQA</span>
+              <span id="card-time" class="text-[11px] font-mono text-zinc-500">00:00</span>
+            </div>
+            <h2 id="card-question" class="text-base sm:text-lg lg:text-xl font-extrabold text-white leading-snug"></h2>
+          </div>
+
+          <button onclick="copyCurrentAnswer()" class="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 transition-colors flex-shrink-0" title="Скопіювати відповідь">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+          </button>
+        </div>
+
+        <!-- ⚡ ВІДПОВІДЬ -->
+        <div class="my-5 p-5 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 relative overflow-hidden">
+          <div class="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-black mb-2 flex items-center gap-1.5">
+            <span>⚡ ВІДПОВІДЬ:</span>
+          </div>
+          <p id="card-quick" class="font-bold text-emerald-50 leading-relaxed tracking-tight text-base sm:text-lg lg:text-xl"></p>
+        </div>
+
+        <!-- 📋 3. Key Bullet Points -->
+        <div class="my-4 pt-3 border-t border-white/10 space-y-2">
+          <div class="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold">
+            📌 КЛЮЧОВІ АРХІТЕКТУРНІ ТЕЗИ (3 факти):
+          </div>
+          <ul id="card-hints" class="space-y-2 text-zinc-300 font-medium text-xs sm:text-sm lg:text-base"></ul>
+        </div>
+
+        <!-- 💻 4. Code Snippet (Conditional) -->
+        <div id="card-code-container" class="hidden my-4 pt-3 border-t border-white/10 space-y-1.5">
+          <div class="flex items-center justify-between text-[10px] font-mono uppercase text-emerald-400 font-bold">
+            <span>💻 ПРИКЛАД КОДУ (TypeScript / Node):</span>
+            <button onclick="copyCodeSnippet()" class="text-zinc-400 hover:text-white text-[10px] font-mono underline">Копіювати код</button>
+          </div>
+          <pre class="bg-black/80 p-3.5 rounded-xl border border-white/10 text-emerald-300 font-mono text-xs overflow-x-auto"><code id="card-code"></code></pre>
+        </div>
+
+        <!-- 💡 5. Strategic Tip (Conditional) -->
+        <div id="card-tip-container" class="hidden mt-4 p-3 rounded-xl bg-violet-950/40 border border-violet-500/30 text-violet-200 text-xs flex items-center gap-2">
+          <span class="text-sm">🎯</span>
+          <span id="card-tip" class="font-medium"></span>
+        </div>
+
+        <!-- 🎛️ 6. Fast Refine Toolbar -->
+        <div class="mt-5 pt-3 border-t border-white/10 flex flex-wrap items-center gap-2">
+          <span class="text-[10px] font-mono text-zinc-500 mr-1">Швидке коригування:</span>
+          <button onclick="refineCurrent('under_the_hood')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-mono text-zinc-300 border border-white/10 hover:border-emerald-500/40 transition-colors">⚙️ Під капотом</button>
+          <button onclick="refineCurrent('code')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-mono text-zinc-300 border border-white/10 hover:border-emerald-500/40 transition-colors">💻 Дай код</button>
+          <button onclick="refineCurrent('shorter')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-mono text-zinc-300 border border-white/10 hover:border-emerald-500/40 transition-colors">✂️ Коротше</button>
+          <button onclick="refineCurrent('re_angle')" class="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[11px] font-mono text-zinc-300 border border-white/10 hover:border-emerald-500/40 transition-colors">🔄 Інший ракурс</button>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── 4. History Feed ────────────────────────────────────────── -->
+    <div id="history-section" class="hidden space-y-3 pt-4 border-t border-white/10">
+      <div class="flex items-center justify-between text-xs font-mono text-zinc-400">
+        <span class="uppercase tracking-wider">Хроніка питань (<span id="history-count">0</span>)</span>
+        <span class="text-[11px] text-zinc-500">Клавіші: Пробіл / Стрілки для перемикання</span>
+      </div>
+      <div id="history-list" class="space-y-2"></div>
+    </div>
+
+  </main>
+
+  <script>
+    // State
+    let items = [];
+    let activeId = null;
+    let fontScale = 1; // 0 = 1x, 1 = 2x, 2 = 3x
+    let readLockTimer = null;
+    let readLockRemaining = 15;
+    const channel = 'BroadcastChannel' in window ? new BroadcastChannel('ghostboard_hud_channel') : null;
+
+    // Font Scale Presets
+    function setFontScale(scale) {
+      fontScale = scale;
+      document.getElementById('btn-font-sm').className = scale === 0 ? 'px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'px-2 py-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors';
+      document.getElementById('btn-font-md').className = scale === 1 ? 'px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'px-2 py-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors';
+      document.getElementById('btn-font-lg').className = scale === 2 ? 'px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30' : 'px-2 py-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-colors';
+
+      const hookEl = document.getElementById('card-hook');
+      const quickEl = document.getElementById('card-quick');
+      const hintsEl = document.getElementById('card-hints');
+
+      if (scale === 0) {
+        hookEl.className = 'font-extrabold text-emerald-100 leading-snug tracking-tight text-base sm:text-lg glow-text';
+        quickEl.className = 'text-zinc-200 font-medium leading-relaxed text-xs sm:text-sm';
+        hintsEl.className = 'space-y-1.5 text-zinc-300 font-medium text-xs';
+      } else if (scale === 1) {
+        hookEl.className = 'font-extrabold text-emerald-100 leading-snug tracking-tight text-lg sm:text-xl lg:text-2xl glow-text';
+        quickEl.className = 'text-zinc-200 font-medium leading-relaxed text-sm sm:text-base lg:text-lg';
+        hintsEl.className = 'space-y-2 text-zinc-300 font-medium text-xs sm:text-sm lg:text-base';
+      } else {
+        hookEl.className = 'font-extrabold text-emerald-100 leading-snug tracking-tight text-2xl sm:text-3xl lg:text-4xl glow-text';
+        quickEl.className = 'text-zinc-200 font-medium leading-relaxed text-base sm:text-lg lg:text-xl';
+        hintsEl.className = 'space-y-2.5 text-zinc-300 font-medium text-sm sm:text-base lg:text-lg';
+      }
+    }
+
+    function renderActiveCard() {
+      const active = items.find(it => it.id === activeId) || items[0];
+      const emptyState = document.getElementById('empty-state');
+      const heroCard = document.getElementById('hero-card');
+      const historySec = document.getElementById('history-section');
+
+      if (!active) {
+        emptyState.classList.remove('hidden');
+        heroCard.classList.add('hidden');
+        historySec.classList.add('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      heroCard.classList.remove('hidden');
+      historySec.classList.remove('hidden');
+
+      // Populate card
+      document.getElementById('card-tag').textContent = active.tag || '#InterviewQA';
+      document.getElementById('card-time').textContent = active.timecode || '00:00';
+      document.getElementById('card-question').textContent = active.question || 'Питання співбесіди';
+      const hookEl = document.getElementById('card-hook');
+      if (hookEl) hookEl.textContent = active.quickAnswer || active.startHook || '';
+      const quickEl = document.getElementById('card-quick');
+      if (quickEl) quickEl.textContent = active.quickAnswer || active.startHook || '';
+
+      // Bullets
+      const hintsEl = document.getElementById('card-hints');
+      hintsEl.innerHTML = '';
+      if (Array.isArray(active.hints) && active.hints.length > 0) {
+        active.hints.forEach(h => {
+          const li = document.createElement('li');
+          li.className = 'flex items-start gap-2';
+          li.innerHTML = `<span class="text-emerald-400 font-bold">•</span><span>${h}</span>`;
+          hintsEl.appendChild(li);
+        });
+      }
+
+      // Code snippet
+      const codeCont = document.getElementById('card-code-container');
+      const codeEl = document.getElementById('card-code');
+      if (active.codeSnippet && active.codeSnippet.trim()) {
+        codeEl.textContent = active.codeSnippet.trim();
+        codeCont.classList.remove('hidden');
+      } else {
+        codeCont.classList.add('hidden');
+      }
+
+      // Delivery tip
+      const tipCont = document.getElementById('card-tip-container');
+      const tipEl = document.getElementById('card-tip');
+      if (active.deliveryTip && active.deliveryTip.trim()) {
+        tipEl.textContent = active.deliveryTip.trim();
+        tipCont.classList.remove('hidden');
+      } else {
+        tipCont.classList.add('hidden');
+      }
+
+      // Start 15s progress bar
+      startReadLockBar();
+
+      // Render history
+      renderHistory();
+    }
+
+    function startReadLockBar() {
+      if (readLockTimer) clearInterval(readLockTimer);
+      readLockRemaining = 15;
+      const bar = document.getElementById('read-lock-bar');
+      bar.style.width = '100%';
+
+      const start = Date.now();
+      const duration = 15000;
+
+      readLockTimer = setInterval(() => {
+        const elapsed = Date.now() - start;
+        const progress = Math.max(0, 1 - (elapsed / duration));
+        bar.style.width = (progress * 100) + '%';
+        if (progress <= 0) {
+          clearInterval(readLockTimer);
+        }
+      }, 100);
+    }
+
+    function renderHistory() {
+      const list = document.getElementById('history-list');
+      const countEl = document.getElementById('history-count');
+      countEl.textContent = items.length;
+      list.innerHTML = '';
+
+      items.forEach((it, idx) => {
+        const isActive = it.id === activeId;
+        const btn = document.createElement('button');
+        btn.onclick = () => selectItem(it.id);
+        btn.className = `w-full text-left p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+          isActive 
+            ? 'bg-emerald-950/40 border-emerald-500/60 text-emerald-200' 
+            : 'bg-zinc-900/40 border-white/5 text-zinc-400 hover:bg-white/5 hover:text-zinc-200'
+        }`;
+        btn.innerHTML = `
+          <div class="flex items-center gap-2.5 truncate">
+            <span class="text-xs font-mono font-bold text-zinc-500">#${items.length - idx}</span>
+            <span class="text-xs font-medium truncate">${it.question}</span>
+          </div>
+          <span class="text-[10px] font-mono text-zinc-500 flex-shrink-0">${it.timecode || ''}</span>
+        `;
+        list.appendChild(btn);
+      });
+    }
+
+    function selectItem(id) {
+      activeId = id;
+      renderActiveCard();
+      channel?.postMessage({ type: 'SELECT_QA', id });
+    }
+
+    function refineCurrent(refinement) {
+      if (!activeId) return;
+      channel?.postMessage({ type: 'REFINE_QA', id: activeId, refinement });
+      document.getElementById('card-hook').textContent = 'Оновлюю відповідь під цим кутом... ⚡';
+    }
+
+    function copyCurrentAnswer() {
+      const active = items.find(it => it.id === activeId) || items[0];
+      if (!active) return;
+      const text = `${active.question}\n\n${active.startHook}\n\n${active.quickAnswer}\n\n${(active.hints || []).join('\n')}`;
+      navigator.clipboard.writeText(text);
+      alert('Скопійовано в буфер!');
+    }
+
+    function copyCodeSnippet() {
+      const code = document.getElementById('card-code').textContent;
+      if (code) {
+        navigator.clipboard.writeText(code);
+        alert('Код скопійовано!');
+      }
+    }
+
+    function clearCards() {
+      if (confirm('Очистити телесуфлер?')) {
+        items = [];
+        activeId = null;
+        renderActiveCard();
+      }
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    }
+
+    let isFrozen = false;
+    let pendingCount = 0;
+
+    function updateFreezeUI() {
+      const banner = document.getElementById('hud-freeze-banner');
+      const counter = document.getElementById('hud-freeze-counter');
+      const btn = document.getElementById('btn-freeze-hud');
+      const label = document.getElementById('hud-freeze-label');
+
+      if (!banner || !btn || !label) return;
+
+      if (isFrozen) {
+        banner.classList.remove('hidden');
+        btn.classList.add('bg-cyan-500/25', 'text-cyan-300', 'border-cyan-500/50');
+        label.textContent = `Зафіксовано${pendingCount > 0 ? ` (+${pendingCount})` : ''}`;
+        if (pendingCount > 0 && counter) {
+          counter.classList.remove('hidden');
+          counter.textContent = `+${pendingCount} у черзі`;
+        } else if (counter) {
+          counter.classList.add('hidden');
+        }
+      } else {
+        banner.classList.add('hidden');
+        btn.classList.remove('bg-cyan-500/25', 'text-cyan-300', 'border-cyan-500/50');
+        label.textContent = 'Стоп [Space]';
+      }
+    }
+
+    function toggleHudFreeze() {
+      if (isFrozen) {
+        isFrozen = false;
+        pendingCount = 0;
+        updateFreezeUI();
+        if (items.length > 0) {
+          activeId = items[0].id;
+          renderActiveCard();
+        }
+      } else {
+        if (!activeId && items.length > 0) activeId = items[0].id;
+        if (!activeId) return;
+        isFrozen = true;
+        pendingCount = 0;
+        updateFreezeUI();
+      }
+    }
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.key === ' ') {
+        e.preventDefault();
+        toggleHudFreeze();
+      } else if (e.key === 'ArrowRight' || e.code === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const curIdx = items.findIndex(it => it.id === activeId);
+        if (curIdx !== -1 && curIdx < items.length - 1) {
+          selectItem(items[curIdx + 1].id);
+        }
+      } else if (e.key === 'ArrowLeft' || e.code === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const curIdx = items.findIndex(it => it.id === activeId);
+        if (curIdx > 0) {
+          selectItem(items[curIdx - 1].id);
+        }
+      } else if (e.code === 'KeyC' || e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'с') {
+        e.preventDefault();
+        copyCurrentAnswer();
+      } else if (e.code === 'KeyF' || e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        toggleFullscreen();
+      } else if (e.key === '1') {
+        setFontScale(0);
+      } else if (e.key === '2') {
+        setFontScale(1);
+      } else if (e.key === '3') {
+        setFontScale(2);
+      }
+    }, { capture: true });
+
+    // BroadcastChannel Listener (Instant sync from main window)
+    if (channel) {
+      channel.onmessage = (e) => {
+        const data = e.data;
+        if (!data) return;
+
+        if (data.type === 'NEW_QA' && data.qa) {
+          const existsIdx = items.findIndex(q => q.id === data.qa.id);
+          if (existsIdx !== -1) {
+            items[existsIdx] = data.qa;
+          } else {
+            items.unshift(data.qa);
+          }
+          if (isFrozen) {
+            pendingCount++;
+            updateFreezeUI();
+            renderHistory();
+          } else {
+            activeId = data.qa.id;
+            renderActiveCard();
+          }
+        } else if (data.type === 'SELECT_QA' && data.id) {
+          if (!isFrozen) {
+            activeId = data.id;
+            renderActiveCard();
+          }
+        } else if (data.type === 'STATUS') {
+          const banner = document.getElementById('processing-banner');
+          if (data.isProcessing) {
+            banner.classList.remove('hidden');
+          } else {
+            banner.classList.add('hidden');
+          }
+        } else if (data.type === 'SYNC_ALL') {
+          if (Array.isArray(data.items)) {
+            items = data.items;
+            activeId = data.activeId || (items[0] ? items[0].id : null);
+            renderActiveCard();
+          }
+        }
+      };
+
+      // Request initial state on open
+      channel.postMessage({ type: 'REQUEST_SYNC' });
+    }
+
+    // Fallback SSE Stream for multi-device (if on another device via LAN)
+    try {
+      const evtSource = new EventSource('/api/companion/stream');
+      evtSource.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'NEW_QA' && msg.payload) {
+            const existsIdx = items.findIndex(q => q.id === msg.payload.id);
+            if (existsIdx !== -1) {
+              items[existsIdx] = msg.payload;
+            } else {
+              items.unshift(msg.payload);
+            }
+            activeId = msg.payload.id;
+            renderActiveCard();
+          } else if (msg.type === 'STATUS' && msg.payload) {
+            const banner = document.getElementById('processing-banner');
+            if (msg.payload.isProcessing) banner.classList.remove('hidden');
+            else banner.classList.add('hidden');
+          }
+        } catch {}
+      };
+    } catch {}
+
+    // LAN REST Polling Fallback (ensures 100% sync reliability across laptops/phones over Wi-Fi)
+    let lastPollTime = 0;
+    setInterval(async () => {
+      try {
+        const res = await fetch(`/api/ai/interview-sync?since=${lastPollTime}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.hasUpdate && Array.isArray(data.qas) && data.qas.length > 0) {
+          lastPollTime = data.lastUpdated || Date.now();
+          items = data.qas;
+          if (!isFrozen) {
+            activeId = data.activeId || items[0].id;
+            renderActiveCard();
+          } else {
+            renderHistory();
+          }
+        }
+      } catch {}
+    }, 1200);
+
+    function injectTestQuestion() {
+      const mockQuestions = [
+        {
+          id: 'mock_' + Date.now(),
+          timecode: '01:15',
+          question: 'Як у Node.js влаштований Event Loop і чим відрізняється process.nextTick від setImmediate?',
+          startHook: 'Це ключове питання внутрішньої архітектури Node.js: Event Loop працює на базі бібліотеки libuv і ділиться на 6 фаз.',
+          quickAnswer: 'process.nextTick виконується одразу після поточної операції до переходу на наступну фазу циклу, а setImmediate спрацьовує виключно у фазі Check.',
+          hints: [
+            'Фази libuv: Timers → Pending I/O → Idle/Prepare → Poll → Check → Close callbacks',
+            'Мікротаски (Promises, nextTick) мають пріоритет над макротасками',
+            'У своїх проєктах я уникаю важких циклів у nextTick щоб не блокувати чергу I/O'
+          ],
+          codeSnippet: `// Приклад черговості виконання:\nprocess.nextTick(() => console.log('1. nextTick (миттєво)'));\nsetImmediate(() => console.log('2. setImmediate (Check фаза)'));`,
+          deliveryTip: 'Підкресліть, що розумієте різницю між чергою мікротасок та фазами libuv — це одразу вирізняє сильного кандидата.',
+          tag: '#NodeJS'
+        }
+      ];
+      const q = mockQuestions[0];
+      items.unshift(q);
+      activeId = q.id;
+      renderActiveCard();
+    }
+  </script>
+</body>
+</html>

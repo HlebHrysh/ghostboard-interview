@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Ghostboard | Симулятор Інтерв'юера</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800;900&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: #07090e;
+      color: #f3f4f6;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col p-4 sm:p-6 max-w-lg mx-auto">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-base">
+        🎙️
+      </div>
+      <div>
+        <h1 class="text-sm font-bold font-mono tracking-tight text-white flex items-center gap-1.5">
+          <span>СИМУЛЯТОР ІНТЕРВ'ЮЕРА</span>
+          <span class="text-[9px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 font-normal">PHONE TTS</span>
+        </h1>
+        <p class="text-[10px] text-zinc-400">Озвучує питання вголос через динамік</p>
+      </div>
+    </div>
+    <span id="voice-indicator" class="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+      TTS Готовий
+    </span>
+  </header>
+
+  <!-- Google Meet Guide Collapsible -->
+  <div class="mb-4 bg-zinc-900/60 border border-white/10 rounded-2xl p-3 text-xs">
+    <div class="flex items-center justify-between cursor-pointer font-medium text-zinc-300" onclick="toggleGuide()">
+      <span class="flex items-center gap-1.5 font-bold text-blue-400">
+        💡 Як провести тренування через Google Meet:
+      </span>
+      <span id="guide-arrow" class="text-zinc-500">▼</span>
+    </div>
+    <div id="guide-content" class="hidden mt-2.5 pt-2 border-t border-white/5 space-y-1.5 text-zinc-400 leading-relaxed text-[11px]">
+      <p>1. Створіть зустріч у <b class="text-white">meet.google.com</b> на ноутбуці.</p>
+      <p>2. Приєднайтеся до цього ж дзвінка з <b class="text-white">телефона</b>.</p>
+      <p>3. На телефоні увімкніть звук, а на цій сторінці натискайте <b class="text-emerald-400">«▶ Озвучити»</b>.</p>
+      <p>4. Телефон говорить питання в дзвінок → Ghostboard на ноутбуці чує його через звук дзвінка і за 1.5с видає відповідь на екран!</p>
+    </div>
+  </div>
+
+  <!-- Category Selector Tabs -->
+  <div class="flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none text-xs font-mono">
+    <button onclick="setCategory('all')" id="tab-all" class="px-3 py-1.5 rounded-xl bg-blue-500 text-white font-bold whitespace-nowrap">Всі</button>
+    <button onclick="setCategory('python')" id="tab-python" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">🐍 Python / FastAPI</button>
+    <button onclick="setCategory('js')" id="tab-js" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">JS/TS</button>
+    <button onclick="setCategory('react')" id="tab-react" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">React/Next</button>
+    <button onclick="setCategory('node')" id="tab-node" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">Node.js</button>
+    <button onclick="setCategory('db')" id="tab-db" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">PostgreSQL</button>
+    <button onclick="setCategory('arch')" id="tab-arch" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">System Design</button>
+    <button onclick="setCategory('soft')" id="tab-soft" class="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap">Soft Skills</button>
+  </div>
+
+  <!-- Active Question Box -->
+  <div class="flex-1 flex flex-col justify-between bg-zinc-900/90 border border-blue-500/30 rounded-3xl p-5 shadow-2xl relative overflow-hidden backdrop-blur-xl mb-4">
+    <div>
+      <div class="flex items-center justify-between mb-2">
+        <span id="q-category" class="text-[10px] font-mono uppercase font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">JS / Event Loop</span>
+        <span id="q-index" class="text-[11px] font-mono text-zinc-500">1 / 48</span>
+      </div>
+
+      <h2 id="q-text" class="text-base sm:text-lg font-bold text-white leading-snug mt-2 min-h-[70px]">
+        Як у JavaScript влаштований Event Loop і чим відрізняється мікротаска від макротаски?
+      </h2>
+
+      <!-- Stopwatch timer since question spoken -->
+      <div id="stopwatch-container" class="hidden mt-4 p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs font-mono">
+        <span class="text-zinc-400">Таймер відповіді:</span>
+        <span id="stopwatch-val" class="font-bold text-emerald-400 text-sm">00:00</span>
+      </div>
+    </div>
+
+    <!-- Big Action Buttons -->
+    <div class="space-y-2 mt-6">
+      <button id="btn-speak" onclick="speakCurrentQuestion()" class="w-full py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold text-base flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition-all cursor-pointer">
+        <span class="text-xl">🔊</span>
+        <span>ОЗВУЧИТИ ПИТАННЯ (TTS)</span>
+      </button>
+
+      <div class="grid grid-cols-2 gap-2">
+        <button onclick="prevQuestion()" class="py-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-semibold text-xs border border-white/10 transition-colors">
+          ← Попереднє
+        </button>
+        <button onclick="nextQuestion()" class="py-3 rounded-xl bg-white/5 hover:bg-white/10 active:scale-95 text-zinc-300 font-semibold text-xs border border-white/10 transition-colors">
+          Наступне →
+        </button>
+      </div>
+
+      <button onclick="randomQuestion()" class="w-full py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-mono text-xs border border-amber-500/20 transition-colors">
+        🎲 Випадкове питання (Стрес-тест)
+      </button>
+    </div>
+  </div>
+
+  <!-- Footer settings -->
+  <footer class="text-[11px] font-mono text-zinc-500 flex items-center justify-between pt-2 border-t border-white/10">
+    <div class="flex items-center gap-2">
+      <span>Мова:</span>
+      <select id="voice-lang" onchange="updateVoiceLanguage()" class="bg-zinc-900 text-zinc-300 border border-white/10 rounded px-1.5 py-0.5 text-[10px]">
+        <option value="uk-UA" selected>🇺🇦 Українська</option>
+        <option value="en-US">🇬🇧 English</option>
+      </select>
+    </div>
+    <a href="/companion.html" class="text-blue-400 underline">Екран підказок →</a>
+  </footer>
+
+  <script>
+    const QUESTIONS = [
+      // 0. Python & FastAPI / Django
+      { cat: 'python', tag: 'FastAPI', text: 'Як влаштована асинхронність у FastAPI і чому звичайні синхронні def ендпоінти запускаються в окремому threadpool?' },
+      { cat: 'python', tag: 'Python', text: 'Як влаштований Global Interpreter Lock (GIL) у Python і чому він не блокує I/O-bound операції в Asyncio?' },
+      { cat: 'python', tag: 'Django ORM', text: 'У чому різниця між select_related та prefetch_related у Django ORM і як вони виконують SQL під капотом?' },
+      { cat: 'python', tag: 'SQLAlchemy', text: 'Що таке проблема N+1 запитів у SQLAlchemy та як її вирішити через joinedload або selectinload?' },
+      { cat: 'python', tag: 'Pydantic v2', text: 'Як влаштована валідація та серіалізація в Pydantic v2 на базі pydantic-core і Rust?' },
+      { cat: 'python', tag: 'Celery / Redis', text: 'Як влаштована черга задач Celery з брокером Redis і як запобігти втраті повідомлень при падінні воркера?' },
+      { cat: 'python', tag: 'Asyncio', text: 'Як працює asyncio.gather проти TaskGroup і що відбувається при виникненні Exception в одній із задач?' },
+      { cat: 'python', tag: 'PostgreSQL', text: 'Як влаштовані B-Tree індекси у PostgreSQL і в яких випадках планувальник обирає Sequential Scan замість Index Scan?' },
+      { cat: 'python', tag: 'Docker / Linux', text: 'Як оптимізувати Dockerfile для Python бекенду: multi-stage build, права non-root користувача та poetry/pipenv?' },
+
+      // 1. JS / TS
+      { cat: 'js', tag: 'JavaScript', text: 'Як у JavaScript влаштований Event Loop і чим відрізняється мікротаска від макротаски?' },
+      { cat: 'js', tag: 'JavaScript', text: 'Поясни, як працює замикання (closure) в JS і де воно може викликати витік памʼяті?' },
+      { cat: 'js', tag: 'TypeScript', text: 'Чим відрізняється interface від type у TypeScript, і коли що краще обрати?' },
+      { cat: 'js', tag: 'JavaScript', text: 'Як під капотом працює Promise.all, Promise.allSettled та Promise.race?' },
+      { cat: 'js', tag: 'JavaScript', text: 'Що таке прототипне наслідування в JS і як працює ланцюжок прототипів __proto__?' },
+      { cat: 'js', tag: 'TypeScript', text: 'Як працюють Generics у TypeScript? Наведи приклад використання утиліт Pick та Omit.' },
+      { cat: 'js', tag: 'JavaScript', text: 'У чому різниця між shallow copy та deep copy обʼєкта? Як зробити deep copy без JSON.stringify?' },
+      { cat: 'js', tag: 'JavaScript', text: 'Як працює Garbage Collection у V8 движку? Що таке Mark-and-Sweep?' },
+
+      // 2. React / Next.js
+      { cat: 'react', tag: 'React', text: 'Як влаштований алгоритм Reconciliation та React Fiber під капотом?' },
+      { cat: 'react', tag: 'React', text: 'Чим відрізняється useMemo від useCallback, і чому надмірне їх використання шкідливе?' },
+      { cat: 'react', tag: 'React', text: 'Як працює useEffect? Чому важливо правильно повертати cleanup функцію?' },
+      { cat: 'react', tag: 'Next.js', text: 'У чому різниця між SSR, SSG та ISR у Next.js? Коли яку стратегію застосовувати?' },
+      { cat: 'react', tag: 'Next.js', text: 'Як працюють React Server Components (RSC) в Next.js App Router і чому вони зменшують бандл?' },
+      { cat: 'react', tag: 'React', text: 'Що таке Hydration mismatch у Next.js і як його діагностувати та виправляти?' },
+      { cat: 'react', tag: 'React', text: 'Як організувати глобальний стейт менеджмент: Zustand проти Context API проти Redux Toolkit?' },
+      { cat: 'react', tag: 'React', text: 'Як оптимізувати рендер великого списку на 10 000 елементів у React?' },
+
+      // 3. Node.js / Backend
+      { cat: 'node', tag: 'Node.js', text: 'Як Node.js обробляє асинхронний I/O за допомогою бібліотеки libuv і скільки потоків у thread pool?' },
+      { cat: 'node', tag: 'Node.js', text: 'Чим відрізняються streams від буферів у Node.js і як уникнути проблеми backpressure?' },
+      { cat: 'node', tag: 'Node.js', text: 'Як масштабувати додаток на Node.js за допомогою модуля cluster або Worker Threads?' },
+      { cat: 'node', tag: 'Node.js', text: 'Як безпечно обробляти помилки в асинхронних Express або Fastify роутах?' },
+      { cat: 'node', tag: 'Node.js', text: 'Що таке CPU-intensive задачі в Node.js і чому їх не можна виконувати в головному потоці?' },
+      { cat: 'node', tag: 'Backend', text: 'Як реалізувати безпечну автентифікацію через JWT токени: access + refresh токени у HttpOnly cookies?' },
+      { cat: 'node', tag: 'Backend', text: 'Як влаштований протокол WebSockets і чим він відрізняється від Server-Sent Events (SSE) та Long Polling?' },
+
+      // 4. PostgreSQL / Databases
+      { cat: 'db', tag: 'PostgreSQL', text: 'Як працюють індекси B-Tree у PostgreSQL і чому додавання індексу може сповільнити INSERT?' },
+      { cat: 'db', tag: 'PostgreSQL', text: 'У чому різниця між Index Scan, Index Only Scan та Sequential Scan під час EXPLAIN ANALYZE?' },
+      { cat: 'db', tag: 'Databases', text: 'Що таке рівні ізоляції транзакцій (ACID) і що таке Dirty Read та Non-Repeatable Read?' },
+      { cat: 'db', tag: 'PostgreSQL', text: 'Чим відрізняється партиціонування (Partitioning) таблиць від шардингу (Sharding)?' },
+      { cat: 'db', tag: 'PostgreSQL', text: 'Для чого потрібен Connection Pooling (наприклад PgBouncer) у високонавантажених базах даних?' },
+      { cat: 'db', tag: 'PostgreSQL', text: 'Як правильно працювати з транзакціями у PostgreSQL щоб уникнути Deadlock?' },
+
+      // 5. System Design & Architecture
+      { cat: 'arch', tag: 'System Design', text: 'Як би ти спроектував систему сповіщень у реальному часі для 100 000 одночасних користувачів?' },
+      { cat: 'arch', tag: 'System Design', text: 'Як організувати кешування за допомогою Redis: стратегії Cache-Aside проти Write-Through?' },
+      { cat: 'arch', tag: 'System Design', text: 'Що таке Rate Limiting і які алгоритми для нього існують: Token Bucket проти Leaky Bucket?' },
+      { cat: 'arch', tag: 'System Design', text: 'Як забезпечити ідемпотентність API запитів при повторних платежах або замовленнях?' },
+      { cat: 'arch', tag: 'System Design', text: 'Чим монолітна архітектура відрізняється від мікросервісів і коли варто переходити на мікросервіси?' },
+
+      // 6. Soft Skills
+      { cat: 'soft', tag: 'Soft Skills', text: 'Розкажи про найскладніший технічний баг, який ти самостійно розібрав і виправив у своєму проєкті?' },
+      { cat: 'soft', tag: 'Soft Skills', text: 'Як ти підходиш до вивчення нової складної технології або бібліотеки у стислі терміни?' },
+      { cat: 'soft', tag: 'Soft Skills', text: 'Як ти дієш, якщо виникає суперечка щодо архітектурного рішення з іншим розробником?' },
+      { cat: 'soft', tag: 'Soft Skills', text: 'Чому ти обрав саме цей стек технологій для своїх основних пет-проєктів?' }
+    ];
+
+    let currentCategory = 'all';
+    let filteredQuestions = [...QUESTIONS];
+    let currentIndex = 0;
+    let stopwatchTimer = null;
+    let stopwatchSeconds = 0;
+
+    function renderCurrent() {
+      const q = filteredQuestions[currentIndex];
+      if (!q) return;
+
+      document.getElementById('q-category').textContent = q.tag;
+      document.getElementById('q-text').textContent = q.text;
+      document.getElementById('q-index').textContent = `${currentIndex + 1} / ${filteredQuestions.length}`;
+      resetStopwatch();
+    }
+
+    function setCategory(cat) {
+      currentCategory = cat;
+      ['all', 'python', 'js', 'react', 'node', 'db', 'arch', 'soft'].forEach(c => {
+        const btn = document.getElementById(`tab-${c}`);
+        if (c === cat) {
+          btn.className = 'px-3 py-1.5 rounded-xl bg-blue-500 text-white font-bold whitespace-nowrap';
+        } else {
+          btn.className = 'px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 whitespace-nowrap';
+        }
+      });
+
+      if (cat === 'all') {
+        filteredQuestions = [...QUESTIONS];
+      } else {
+        filteredQuestions = QUESTIONS.filter(q => q.cat === cat);
+      }
+      currentIndex = 0;
+      renderCurrent();
+    }
+
+    function nextQuestion() {
+      if (currentIndex < filteredQuestions.length - 1) {
+        currentIndex++;
+      } else {
+        currentIndex = 0;
+      }
+      renderCurrent();
+    }
+
+    function prevQuestion() {
+      if (currentIndex > 0) {
+        currentIndex--;
+      } else {
+        currentIndex = filteredQuestions.length - 1;
+      }
+      renderCurrent();
+    }
+
+    function randomQuestion() {
+      const rand = Math.floor(Math.random() * filteredQuestions.length);
+      currentIndex = rand;
+      renderCurrent();
+    }
+
+    function speakCurrentQuestion() {
+      const q = filteredQuestions[currentIndex];
+      if (!q) return;
+
+      if (!('speechSynthesis' in window)) {
+        alert('Ваш браузер не підтримує SpeechSynthesis.');
+        return;
+      }
+
+      window.speechSynthesis.cancel(); // Stop any previous speech
+
+      const utterance = new SpeechSynthesisUtterance(q.text);
+      const selectedLang = document.getElementById('voice-lang').value;
+      utterance.lang = selectedLang;
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+
+      // Find appropriate voice
+      const voices = window.speechSynthesis.getVoices();
+      const langPrefix = selectedLang.split('-')[0];
+      const matchedVoice = voices.find(v => v.lang.startsWith(langPrefix));
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      }
+
+      const btn = document.getElementById('btn-speak');
+      btn.classList.add('animate-pulse', 'from-amber-600', 'to-rose-600');
+      btn.innerHTML = '<span class="text-xl animate-spin">⚡</span><span>ВІДТВОРЮЮ ГОЛОСОМ...</span>';
+
+      utterance.onend = () => {
+        btn.classList.remove('animate-pulse', 'from-amber-600', 'to-rose-600');
+        btn.innerHTML = '<span class="text-xl">🔊</span><span>ОЗВУЧИТИ ЗНОВУ (TTS)</span>';
+        startStopwatch();
+      };
+
+      utterance.onerror = () => {
+        btn.classList.remove('animate-pulse', 'from-amber-600', 'to-rose-600');
+        btn.innerHTML = '<span class="text-xl">🔊</span><span>ОЗВУЧИТИ ПИТАННЯ (TTS)</span>';
+      };
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function startStopwatch() {
+      resetStopwatch();
+      document.getElementById('stopwatch-container').classList.remove('hidden');
+      stopwatchSeconds = 0;
+      stopwatchTimer = setInterval(() => {
+        stopwatchSeconds++;
+        const mins = Math.floor(stopwatchSeconds / 60).toString().padStart(2, '0');
+        const secs = (stopwatchSeconds % 60).toString().padStart(2, '0');
+        document.getElementById('stopwatch-val').textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function resetStopwatch() {
+      if (stopwatchTimer) {
+        clearInterval(stopwatchTimer);
+        stopwatchTimer = null;
+      }
+      document.getElementById('stopwatch-container').classList.add('hidden');
+      document.getElementById('stopwatch-val').textContent = '00:00';
+    }
+
+    function toggleGuide() {
+      const content = document.getElementById('guide-content');
+      const arrow = document.getElementById('guide-arrow');
+      content.classList.toggle('hidden');
+      arrow.textContent = content.classList.contains('hidden') ? '▼' : '▲';
+    }
+
+    function updateVoiceLanguage() {
+      const selected = document.getElementById('voice-lang').value;
+      if (selected.startsWith('en')) {
+        alert('Мову змінено на English. Питання також будуть озвучуватися англійським акцентом.');
+      }
+    }
+
+    // Preload voices
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          document.getElementById('voice-indicator').textContent = `TTS Готовий (${voices.length} голосів)`;
+        }
+      };
+    }
+
+    renderCurrent();
+  </script>
+</body>
+</html>

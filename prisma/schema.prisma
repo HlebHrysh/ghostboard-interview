@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  plan      String   @default("free") // free, pro, lifetime
+  role               String?
+  trialQuestionsUsed Int      @default(0)
+  stripeCustomerId   String?
+  resumeContext      String?
+  createdAt          DateTime @default(now())
+
+  sessions Session[]
+  history  History[]
+}
+
+model Session {
+  token     String   @id @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+model History {
+  id             String @id @default(uuid())
+  userId         String
+  user           User   @relation(fields: [userId], references: [id])
+  title          String
+  timestamp      BigInt
+  durationSec    Int
+  questionsCount Int
+  items          Json // Stores InterviewQAItem array
+  isPublic       Boolean @default(false)
+  publicSlug     String? @unique
+
+  @@index([userId])
+  @@index([publicSlug])
+}

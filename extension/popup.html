@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ghostboard LeetCode Copilot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      background: #09090D;
+      color: #E4E4E7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      padding: 16px;
+      font-size: 12px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: #FFFFFF;
+    }
+    .badge {
+      background: rgba(200, 241, 53, 0.15);
+      color: #C8F135;
+      border: 1px solid rgba(200, 241, 53, 0.3);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 9999px;
+    }
+    .field {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      color: #A1A1AA;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    input, select {
+      width: 100%;
+      background: #12131A;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      color: #FAFAFA;
+      padding: 8px 10px;
+      font-size: 11px;
+      outline: none;
+      font-family: monospace;
+    }
+    input:focus, select:focus {
+      border-color: #C8F135;
+    }
+    .btn-solve {
+      width: 100%;
+      background: #C8F135;
+      color: #000000;
+      font-weight: 800;
+      border: none;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      box-shadow: 0 0 20px rgba(200, 241, 53, 0.25);
+      transition: all 0.2s;
+    }
+    .btn-solve:hover {
+      background: #D8FF45;
+    }
+    .btn-solve:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .hint-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 8px;
+      margin-top: 12px;
+      font-size: 10px;
+      color: #71717A;
+      line-height: 1.4;
+    }
+    .hint-box kbd {
+      background: #18181B;
+      color: #C8F135;
+      padding: 2px 4px;
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      font-family: monospace;
+    }
+    .status-msg {
+      margin-top: 8px;
+      font-size: 10px;
+      min-height: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <span style="color:#C8F135; font-size:16px;">⚡</span>
+      <span class="brand-title">GHOSTBOARD</span>
+    </div>
+    <span class="badge">LEETCODE</span>
+  </div>
+
+  <div class="field">
+    <label for="apiUrl">Ghostboard Studio URL</label>
+    <input type="text" id="apiUrl" value="http://localhost:3001" placeholder="http://localhost:3001">
+  </div>
+
+  <div class="field">
+    <label for="outputLang">Solution Language</label>
+    <select id="outputLang">
+      <option value="uk">Ukrainian (Українська)</option>
+      <option value="en">English</option>
+      <option value="pl">Polish (Polski)</option>
+      <option value="de">German (Deutsch)</option>
+      <option value="fr">French (Français)</option>
+      <option value="es">Spanish (Español)</option>
+    </select>
+  </div>
+
+  <button class="btn-solve" id="btnSolve">
+    <span>⚡ Extract & Solve Problem</span>
+  </button>
+
+  <div class="status-msg" id="statusMsg"></div>
+
+  <div class="hint-box">
+    Hotkey: Press <kbd>Alt + G</kbd> on any LeetCode problem page to solve instantly without opening this popup.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

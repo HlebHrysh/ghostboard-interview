@@ -1,9 +1,9 @@
 # ── Multi-Stage Production Dockerfile for Ghostboard on Google Cloud Run ──
 FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat openssl
 
 # 1. Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
@@ -16,6 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Generate Prisma Client for PostgreSQL
+ENV DATABASE_URL="postgresql://postgres:dummy@localhost:5432/dummy?sslmode=disable"
 RUN npx prisma generate
 
 # Disable Next.js telemetry during build

@@ -17,6 +17,7 @@ import {
   Loader2,
   AlertCircle,
   ExternalLink,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 

@@ -15,6 +15,14 @@ const OAUTH_COOKIE_NAME = 'ghostboard_oauth_session';
  * Resolves the application base URL accurately across Docker, Cloud Run, Vercel, and local development.
  */
 export function getAppBaseUrl(req: NextRequest): string {
+  const rawHost = req.headers.get('x-forwarded-host') || req.headers.get('host') || req.nextUrl.host;
+  const isLocal = rawHost ? (rawHost.includes('localhost') || rawHost.includes('127.0.0.1')) : false;
+
+  // If testing locally, always preserve local host & port
+  if (isLocal && rawHost) {
+    return `http://${rawHost.split(',')[0].trim()}`.replace(/\/$/, '');
+  }
+
   // 1. Explicit configured production URL
   if (process.env.NEXT_PUBLIC_APP_URL && !process.env.NEXT_PUBLIC_APP_URL.includes('localhost')) {
     return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
@@ -23,13 +31,10 @@ export function getAppBaseUrl(req: NextRequest): string {
   // 2. Derive from reverse-proxy forwarding headers (e.g., Google Cloud Run, Cloudflare, NGINX)
   const rawProto = req.headers.get('x-forwarded-proto') || 'https';
   const forwardedProto = rawProto.split(',')[0].trim();
-  const rawHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
 
   if (rawHost) {
     const forwardedHost = rawHost.split(',')[0].trim();
-    const isLocal = forwardedHost.includes('localhost') || forwardedHost.includes('127.0.0.1');
-    const proto = isLocal ? 'http' : (forwardedProto || 'https');
-    return `${proto}://${forwardedHost}`.replace(/\/$/, '');
+    return `${forwardedProto || 'https'}://${forwardedHost}`.replace(/\/$/, '');
   }
 
   // 3. Fallback to Next.js request origin

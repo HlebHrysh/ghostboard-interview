@@ -153,6 +153,19 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
           </p>
         </div>
 
+        {/* ── 1.5 BILINGUAL NATIVE TRANSLATION CRIB-SHEET ── */}
+        {activeQA.nativeTranslation && (
+          <div className="my-2 p-3 sm:p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/25">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold mb-1 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+              <span>Переклад / Суть (Родна мова)</span>
+            </div>
+            <p className="text-xs sm:text-sm font-medium text-blue-100/90 leading-relaxed font-sans">
+              {activeQA.nativeTranslation}
+            </p>
+          </div>
+        )}
+
         {/* ── 2. KEY THESES BULLETS ── */}
         {activeQA.hints && activeQA.hints.length > 0 && (
           <div className="my-3.5 space-y-2">

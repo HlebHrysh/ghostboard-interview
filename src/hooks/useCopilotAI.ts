@@ -151,6 +151,7 @@ export function useCopilotAI({
             question: data.question || cleanText,
             startHook: data.startHook || data.quickAnswer,
             quickAnswer: data.quickAnswer,
+            nativeTranslation: data.nativeTranslation || null,
             hints: data.hints?.length
               ? data.hints
               : ['Поясни внутрішню архітектуру та механізми памʼяті', 'Наведи практичний приклад зі свого стеку'],

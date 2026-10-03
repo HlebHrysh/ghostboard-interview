@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghostboard Stealth HUD</title>
+  <link rel="stylesheet" href="hud.css">
+</head>
+<body>
+  <div id="hud-container" class="hud-container">
+    <!-- Draggable Header Drag Bar -->
+    <header class="hud-header drag-region">
+      <div class="header-left no-drag">
+        <span class="stealth-badge active" id="stealth-badge" title="Window excluded from Screen Share (Zoom/Meet/Teams)">
+          <span class="status-dot"></span>
+          STEALTH ON
+        </span>
+        <span class="connection-badge" id="conn-badge">READY</span>
+      </div>
+
+      <div class="hud-drag-pill" title="Drag to position under your webcam">
+        <span class="drag-grip">:::</span>
+        <span class="drag-label">EYELINE HUD</span>
+      </div>
+
+      <div class="header-actions no-drag">
+        <button id="btn-tr" class="icon-btn active" title="Toggle Native Translation Crib-Sheet">TR</button>
+        <button id="btn-freeze" class="icon-btn" title="Freeze Current Answer (Space / F8)">❄️</button>
+        <button id="btn-settings" class="icon-btn" title="Account Pairing & Server URL">⚙️</button>
+        <button id="btn-panic" class="icon-btn danger" title="Panic Shield (Esc / F12)">🛡️</button>
+        <button id="btn-close" class="icon-btn close" title="Close Window">✕</button>
+      </div>
+    </header>
+
+    <!-- Settings / Pairing Modal (Hidden by default) -->
+    <div id="settings-panel" class="settings-panel hidden">
+      <div class="settings-content">
+        <div class="settings-title">Pair Account / Server</div>
+        <p class="settings-desc">Enter your Ghostboard session token from the website, or click "Open in App" on the website.</p>
+        <input type="text" id="server-url-input" placeholder="http://localhost:3001" value="http://localhost:3001" class="input-field" />
+        <input type="password" id="token-input" placeholder="Paste session token..." class="input-field" />
+        <div class="settings-buttons">
+          <button id="btn-save-auth" class="btn-primary">Connect Account</button>
+          <button id="btn-close-settings" class="btn-secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Answer Card View -->
+    <main id="hud-main" class="hud-main">
+      <div id="waiting-state" class="waiting-state">
+        <div class="pulsing-radar"></div>
+        <span class="waiting-text">LISTENING FOR INTERVIEWER SPEECH...</span>
+      </div>
+
+      <div id="qa-card" class="qa-card hidden">
+        <div class="card-question" id="card-question">Waiting for question...</div>
+        
+        <div class="card-hook-wrap" id="card-hook-wrap">
+          <span class="tag-label">HOOK:</span>
+          <span class="card-hook" id="card-hook"></span>
+        </div>
+
+        <div class="card-answer-wrap">
+          <div class="card-answer" id="card-answer"></div>
+        </div>
+
+        <!-- Bilingual Native Language Translation -->
+        <div class="card-translation-wrap" id="card-translation-wrap">
+          <span class="tag-label-blue">ПЕРЕВОД / СУТЬ:</span>
+          <div class="card-translation" id="card-translation"></div>
+        </div>
+
+        <div class="card-hints-wrap" id="card-hints-wrap">
+          <ul class="card-hints" id="card-hints"></ul>
+        </div>
+      </div>
+    </main>
+
+    <!-- Live Transcript Ticker -->
+    <footer class="hud-footer">
+      <div class="transcript-ticker" id="transcript-ticker">
+        <span class="ticker-dot"></span>
+        <span class="ticker-text" id="ticker-text">Ghostboard Steath Engine Ready</span>
+      </div>
+    </footer>
+
+    <!-- Panic Shield Simulation Overlay -->
+    <div id="panic-overlay" class="panic-overlay hidden">
+      <div class="terminal-bar">bash — 80x24</div>
+      <div class="terminal-content">
+        gleb@archlinux:~/project$ git status<br>
+        On branch main<br>
+        Your branch is up to date with 'origin/main'.<br>
+        <br>
+        nothing to commit, working tree clean<br>
+        gleb@archlinux:~/project$ docker ps<br>
+        CONTAINER ID   IMAGE          COMMAND       STATUS         PORTS<br>
+        a1b2c3d4e5f6   redis:alpine   "docker-..."  Up 4 hours     6379/tcp<br>
+        <span class="terminal-cursor">█</span>
+      </div>
+      <div class="panic-hint">Press Esc or click to restore HUD</div>
+    </div>
+  </div>
+
+  <script src="hud.js"></script>
+</body>
+</html>

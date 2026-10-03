@@ -9,6 +9,7 @@ export interface SyncQAItem {
   deliveryTip?: string;
   tag?: string;
   timestamp?: number;
+  nativeTranslation?: string;
   // Screenshot-specific breakdown
   codeFound?: boolean;
   language?: string;
@@ -23,11 +24,15 @@ export interface SyncQAItem {
 export interface InterviewSyncState {
   qas: SyncQAItem[];
   activeId?: string;
-  outputLanguage: 'uk' | 'en' | 'auto';
-  speechLanguage: 'uk' | 'en' | 'ru' | 'auto';
+  outputLanguage: 'uk' | 'en' | 'auto' | string;
+  speechLanguage: 'uk' | 'en' | 'ru' | 'auto' | string;
+  nativeLanguage?: string;
   liveTranscript: string;
   isCapturing: boolean;
   sttStatus?: 'connected' | 'reconnecting' | 'idle' | 'disconnected';
+  isFrozen?: boolean;
+  isPanic?: boolean;
+  connectedDevices?: { desktop?: boolean; web?: boolean; phone?: boolean };
   sessionDuration: number;
   lastUpdated: number;
 }
@@ -41,6 +46,7 @@ export function getItemTimestamp(q: SyncQAItem): number {
 
 const globalForSync = globalThis as unknown as {
   __interviewSyncState?: InterviewSyncState;
+  __userInterviewSyncStates?: Map<string, InterviewSyncState>;
 };
 
 import fs from 'fs';
@@ -82,23 +88,47 @@ function savePersistedState(state: InterviewSyncState) {
 
 const persisted = loadPersistedState();
 
-if (!globalForSync.__interviewSyncState) {
-  globalForSync.__interviewSyncState = persisted || {
+if (!globalForSync.__userInterviewSyncStates) {
+  globalForSync.__userInterviewSyncStates = new Map<string, InterviewSyncState>();
+}
+
+function getInitialState(): InterviewSyncState {
+  return {
     qas: [],
     activeId: undefined,
     outputLanguage: 'uk',
     speechLanguage: 'uk',
+    nativeLanguage: 'uk',
     liveTranscript: '',
     isCapturing: false,
     sttStatus: 'idle',
+    isFrozen: false,
+    isPanic: false,
+    connectedDevices: { desktop: false, web: false, phone: false },
     sessionDuration: 0,
     lastUpdated: Date.now(),
   };
 }
 
+if (!globalForSync.__interviewSyncState) {
+  globalForSync.__interviewSyncState = persisted || getInitialState();
+}
+
+function resolveState(userId?: string): InterviewSyncState {
+  if (!userId || userId === 'default') {
+    return globalForSync.__interviewSyncState!;
+  }
+  let userState = globalForSync.__userInterviewSyncStates!.get(userId);
+  if (!userState) {
+    userState = getInitialState();
+    globalForSync.__userInterviewSyncStates!.set(userId, userState);
+  }
+  return userState;
+}
+
 export const interviewSyncStore = {
-  getState(): InterviewSyncState {
-    const state = globalForSync.__interviewSyncState!;
+  getState(userId?: string): InterviewSyncState {
+    const state = resolveState(userId);
     // Auto-expire zombie capture session if no ping received for > 15s
     if (state.isCapturing && Date.now() - state.lastUpdated > 15000) {
       state.isCapturing = false;
@@ -108,8 +138,8 @@ export const interviewSyncStore = {
     return state;
   },
 
-  addOrUpdateQA(qa: SyncQAItem, activeId?: string) {
-    const state = globalForSync.__interviewSyncState!;
+  addOrUpdateQA(qa: SyncQAItem, activeId?: string, userId?: string) {
+    const state = resolveState(userId);
     const ts = getItemTimestamp(qa) || Date.now();
     const qaWithTime: SyncQAItem = { ...qa, timestamp: ts };
     const idx = state.qas.findIndex((item) => item.id === qa.id);
@@ -123,17 +153,46 @@ export const interviewSyncStore = {
     if (state.qas.length > 50) {
       state.qas = state.qas.slice(0, 50);
     }
-    state.activeId = activeId || qa.id;
+    // Only switch activeId if not currently frozen
+    if (!state.isFrozen || !state.activeId) {
+      state.activeId = activeId || qa.id;
+    }
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  setActiveId(activeId: string) {
-    const state = globalForSync.__interviewSyncState!;
+  setActiveId(activeId: string, userId?: string) {
+    const state = resolveState(userId);
     state.activeId = activeId;
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
+    return state;
+  },
+
+  setFrozen(isFrozen: boolean, userId?: string) {
+    const state = resolveState(userId);
+    state.isFrozen = isFrozen;
+    state.lastUpdated = Date.now();
+    if (!userId || userId === 'default') savePersistedState(state);
+    return state;
+  },
+
+  setPanic(isPanic: boolean, userId?: string) {
+    const state = resolveState(userId);
+    state.isPanic = isPanic;
+    state.lastUpdated = Date.now();
+    if (!userId || userId === 'default') savePersistedState(state);
+    return state;
+  },
+
+  registerDevice(device: 'desktop' | 'web' | 'phone', active: boolean, userId?: string) {
+    const state = resolveState(userId);
+    if (!state.connectedDevices) {
+      state.connectedDevices = { desktop: false, web: false, phone: false };
+    }
+    state.connectedDevices[device] = active;
+    state.lastUpdated = Date.now();
     return state;
   },
 
@@ -142,9 +201,10 @@ export const interviewSyncStore = {
     isCapturing?: boolean,
     sessionDuration?: number,
     activeId?: string,
-    sttStatus?: 'connected' | 'reconnecting' | 'idle' | 'disconnected'
+    sttStatus?: 'connected' | 'reconnecting' | 'idle' | 'disconnected',
+    userId?: string
   ) {
-    const state = globalForSync.__interviewSyncState!;
+    const state = resolveState(userId);
     if (Array.isArray(qas)) {
       const existingMap = new Map(state.qas.map((q) => [q.id, q]));
       qas.forEach((q) => {
@@ -171,60 +231,70 @@ export const interviewSyncStore = {
       state.sessionDuration = sessionDuration;
     }
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  setLiveTranscript(text: string) {
-    const state = globalForSync.__interviewSyncState!;
+  setLiveTranscript(text: string, userId?: string) {
+    const state = resolveState(userId);
     state.liveTranscript = text;
     state.lastUpdated = Date.now();
     return state;
   },
 
-  setCapturingStatus(isCapturing: boolean) {
-    const state = globalForSync.__interviewSyncState!;
+  setCapturingStatus(isCapturing: boolean, userId?: string) {
+    const state = resolveState(userId);
     state.isCapturing = isCapturing;
     if (!isCapturing) {
       state.sttStatus = 'idle';
       state.liveTranscript = '';
     }
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  setSttStatus(sttStatus: 'connected' | 'reconnecting' | 'idle' | 'disconnected') {
-    const state = globalForSync.__interviewSyncState!;
+  setSttStatus(sttStatus: 'connected' | 'reconnecting' | 'idle' | 'disconnected', userId?: string) {
+    const state = resolveState(userId);
     state.sttStatus = sttStatus;
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  setOutputLanguage(lang: 'uk' | 'en' | 'auto') {
-    const state = globalForSync.__interviewSyncState!;
+  setOutputLanguage(lang: string, userId?: string) {
+    const state = resolveState(userId);
     state.outputLanguage = lang;
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  setSpeechLanguage(lang: 'uk' | 'en' | 'ru' | 'auto') {
-    const state = globalForSync.__interviewSyncState!;
+  setSpeechLanguage(lang: string, userId?: string) {
+    const state = resolveState(userId);
     state.speechLanguage = lang;
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 
-  clear() {
-    const state = globalForSync.__interviewSyncState!;
+  setNativeLanguage(lang: string, userId?: string) {
+    const state = resolveState(userId);
+    state.nativeLanguage = lang;
+    state.lastUpdated = Date.now();
+    if (!userId || userId === 'default') savePersistedState(state);
+    return state;
+  },
+
+  clear(userId?: string) {
+    const state = resolveState(userId);
     state.qas = [];
     state.liveTranscript = '';
     state.sttStatus = 'idle';
+    state.isFrozen = false;
+    state.isPanic = false;
     state.lastUpdated = Date.now();
-    savePersistedState(state);
+    if (!userId || userId === 'default') savePersistedState(state);
     return state;
   },
 };

@@ -36,6 +36,7 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
 
   const navLinks = [
     { href: '/#features', label: t.nav.features },
+    { href: '/download', label: '⚡ Desktop App' },
     { href: '/mock-interview', label: t.nav.mockSimulator },
     { href: '/sandbox', label: t.nav.arena },
     { href: '/pricing', label: t.nav.pricing },

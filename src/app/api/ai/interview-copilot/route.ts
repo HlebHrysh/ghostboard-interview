@@ -4,11 +4,13 @@ import { z } from 'zod';
 import { callGeminiWithFallback, FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
 import { normalizeTechnicalSpeech, detectQuestionLanguage, isolateTargetQuestionHeuristics } from '@/lib/techSpeechNormalizer';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { interviewSyncStore } from '@/lib/interviewSyncStore';
 
 const CopilotPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000, 'Question exceeds maximum length'),
   locale: z.string().optional().default('auto'),
-  outputLanguage: z.enum(['uk', 'en', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'auto']).optional().default('uk'),
+  outputLanguage: z.enum(['uk', 'en', 'ru', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'auto']).optional().default('uk'),
+  nativeLanguage: z.string().optional().default('auto'),
   candidateProfile: z.any().optional(),
   refinement: z.string().optional(),
   existingQA: z.any().optional(),
@@ -34,7 +36,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });
     }
 
-    const token = req.cookies.get("ghostboard_session")?.value;
+    const token =
+      req.cookies.get("ghostboard_session")?.value ||
+      req.headers.get("x-ghostboard-client") ||
+      req.headers.get("authorization")?.replace(/^Bearer\s+/i, '');
+
     const user = token ? await getSessionUser(token) : null;
     if (!user) {
       return NextResponse.json(
@@ -76,6 +82,7 @@ export async function POST(req: NextRequest) {
       question,
       locale,
       outputLanguage,
+      nativeLanguage,
       candidateProfile,
       refinement,
       existingQA,
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest) {
     const normalizedQuestion = normalizeTechnicalSpeech(safeRawQuestion);
     const heuristic = isolateTargetQuestionHeuristics(normalizedQuestion);
     
-    // Language directive map for all 10 supported locales
+    // Language directive map for all 11 supported locales
     const LANG_DIRECTIVES: Record<string, string> = {
       uk: `OUTPUT LANGUAGE: STRICTLY UKRAINIAN (Українська мова).
       - ALWAYS formulate all answer fields ("startHook", "quickAnswer", "hints", "deliveryTip") strictly in NATURAL, CONVERSATIONAL UKRAINIAN.
@@ -98,6 +105,9 @@ export async function POST(req: NextRequest) {
       en: `OUTPUT LANGUAGE: STRICTLY ENGLISH (Natural, Clear Technical English at B2 level).
       - Formulate ALL answer fields strictly in CLEAR, NATURAL, CONVERSATIONAL TECHNICAL ENGLISH (B2 level).
       - Keep sentences direct, punchy, confident, and easy to speak during an interview.`,
+      ru: `OUTPUT LANGUAGE: STRICTLY RUSSIAN (Русский язык).
+      - Formulate ALL answer fields strictly in CLEAR, NATURAL, CONVERSATIONAL TECHNICAL RUSSIAN (B2 level).
+      - Keep standard English technical terms intact (e.g. FastAPI, PostgreSQL, Celery, Redis, Docker, REST).`,
       pl: `OUTPUT LANGUAGE: STRICTLY POLISH (język polski).
       - Formulate ALL answer fields in natural, conversational Polish (B2 level). Keep English technical terms intact.`,
       de: `OUTPUT LANGUAGE: STRICTLY GERMAN (Deutsch).
@@ -123,7 +133,17 @@ export async function POST(req: NextRequest) {
       effectiveOutputLang = detected;
     }
 
+    let effectiveNativeLang = nativeLanguage || 'auto';
+    if (effectiveNativeLang === 'auto') {
+      effectiveNativeLang = effectiveOutputLang === 'en' ? 'uk' : effectiveOutputLang;
+    }
+
     const languageDirective = LANG_DIRECTIVES[effectiveOutputLang] || LANG_DIRECTIVES['en'];
+    const translationDirective = (effectiveNativeLang && effectiveNativeLang !== effectiveOutputLang)
+      ? `\nBILINGUAL DUAL-STREAM CRIB-SHEET DIRECTIVE:
+- Candidate's native language is "${effectiveNativeLang}", while the spoken interview answer must be in "${effectiveOutputLang}".
+- In "nativeTranslation": provide an accurate, high-clarity 1-2 sentence translation or gist in ${effectiveNativeLang} so the candidate can instantly understand subtle technical nuances without mental strain.`
+      : '';
     const isEn = effectiveOutputLang === 'en';
     const geminiApiKey = getCleanGeminiKey();
 
@@ -197,8 +217,9 @@ ${jobDescriptionStr || cvContextStr ? '0. MATCH JOB REQUIREMENTS: Explicitly ali
 1. DO NOT pretend to have "10 years of legacy enterprise experience". Instead, formulate answers from the perspective of an extraordinarily sharp ${candidateAge}-year-old who understands deep core computer science fundamentals, internal runtime mechanics, modern architecture, pet-projects, production best practices, and clean code.
 2. ORGANIC PET-PROJECT INJECTION: Whenever relevant, naturally reference one of the candidate's real pet-projects or stack tools (e.g. "У моєму проєкті на ${candidateRole} я якраз вирішував схожу проблему...").
 3. ${languageDirective}
+${translationDirective}
 4. NATURAL TECHNICAL CODE-SWITCHING:
-   - When formulating in Ukrainian or other languages, KEEP standard developer terms in clean English or established developer parlance (e.g. "event loop", "connection pool", "deadlock", "middleware", "async/await", "hooks", "goroutines", "ORM", "indexes").
+   - When formulating in Ukrainian, Russian, or other languages, KEEP standard developer terms in clean English or established developer parlance (e.g. "event loop", "connection pool", "deadlock", "middleware", "async/await", "hooks", "goroutines", "ORM", "indexes").
    - NEVER awkwardly translate technical terms into unnatural literal phrases. Speak the way real modern software engineers talk in meetings.
 ${refinementDirective}
 ${previousQAContext}
@@ -241,6 +262,7 @@ Return ONLY valid JSON matching this schema:
   "question": "Cleaned up version of the question",
   "startHook": "Direct spoken response",
   "quickAnswer": "Direct, concise, high-value developer answer",
+  "nativeTranslation": null,
   "hints": ["Point 1", "Point 2", "Point 3"],
   "codeSnippet": null,
   "deliveryTip": "Practical coaching tip",
@@ -271,17 +293,28 @@ Return ONLY valid JSON matching this schema:
             await incrementUserTrialQuestions(user.id);
           }
 
-          return NextResponse.json({
-            success: true,
+          const resolvedQA = {
+            id: `qa_${Date.now()}`,
             question: parsed.question || heuristic.isolatedQuestion || question,
             startHook: parsed.startHook || parsed.quickAnswer,
             quickAnswer: parsed.quickAnswer,
+            nativeTranslation: parsed.nativeTranslation || undefined,
             hints: parsed.hints || [],
             codeSnippet: effectiveCodeSnippet,
             deliveryTip: parsed.deliveryTip || undefined,
             tag: parsed.tag || (isIntroQuestion ? '#Introduction' : '#TechnicalInterview'),
             confidenceScore: parsed.confidenceScore ?? 95,
             docReference: parsed.docReference || undefined,
+          };
+
+          // Synchronize immediately to the user's multi-device room (Web, Desktop, Phone)
+          if (user) {
+            interviewSyncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id);
+          }
+
+          return NextResponse.json({
+            success: true,
+            ...resolvedQA,
           });
         }
       } catch (geminiErr) {

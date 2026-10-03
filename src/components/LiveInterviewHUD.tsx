@@ -12,6 +12,7 @@ export interface InterviewQAItem {
   question: string;
   quickAnswer: string | null;
   startHook?: string | null;
+  nativeTranslation?: string | null;
   hints: string[];
   tag?: string;
   isPinned?: boolean;

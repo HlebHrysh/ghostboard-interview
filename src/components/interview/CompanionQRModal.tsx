@@ -21,8 +21,25 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
   const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const url = `${window.location.origin}/companion/live`;
+    if (!isOpen || typeof window === 'undefined') return;
+
+    let isMounted = true;
+
+    const initPairing = async () => {
+      let url = `${window.location.origin}/companion/live`;
+      try {
+        const res = await fetch('/api/companion/pair', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.companionUrl) {
+            url = data.companionUrl;
+          }
+        }
+      } catch (err) {
+        // Fallback to local url
+      }
+
+      if (!isMounted) return;
       setHudUrl(url);
 
       QRCode.toDataURL(url, {
@@ -34,12 +51,18 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
         },
       })
         .then((dataUri) => {
-          setQrDataUrl(dataUri);
+          if (isMounted) setQrDataUrl(dataUri);
         })
         .catch((err) => {
           console.error('QR code generation error:', err);
         });
-    }
+    };
+
+    initPairing();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;

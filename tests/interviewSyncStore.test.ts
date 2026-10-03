@@ -63,4 +63,43 @@ describe("interviewSyncStore", () => {
     interviewSyncStore.setSpeechLanguage("uk");
     expect(interviewSyncStore.getState().speechLanguage).toBe("uk");
   });
+
+  it("isolates state between different user accounts and syncs freeze/device state", () => {
+    const userA = "usr_alice_123";
+    const userB = "usr_bob_456";
+
+    interviewSyncStore.clear(userA);
+    interviewSyncStore.clear(userB);
+
+    // User A adds a QA item with native translation
+    interviewSyncStore.addOrUpdateQA(
+      {
+        id: "qa_alice_1",
+        question: "How does epoll work?",
+        startHook: "Epoll is an I/O event notification mechanism...",
+        quickAnswer: "O(1) event polling using an RB-tree and ready list.",
+        nativeTranslation: "Epoll — це механізм сповіщення про події вводу-виводу з O(1)...",
+        hints: ["RB-tree", "wait queue"],
+      },
+      undefined,
+      userA
+    );
+
+    // User A freezes
+    interviewSyncStore.setFrozen(true, userA);
+    interviewSyncStore.registerDevice("phone", true, userA);
+
+    // User B should NOT see User A's data
+    const stateB = interviewSyncStore.getState(userB);
+    expect(stateB.qas.length).toBe(0);
+    expect(stateB.isFrozen).toBe(false);
+
+    // User A should see their data
+    const stateA = interviewSyncStore.getState(userA);
+    expect(stateA.qas.length).toBe(1);
+    expect(stateA.qas[0].id).toBe("qa_alice_1");
+    expect(stateA.qas[0].nativeTranslation).toContain("Epoll");
+    expect(stateA.isFrozen).toBe(true);
+    expect(stateA.connectedDevices?.phone).toBe(true);
+  });
 });

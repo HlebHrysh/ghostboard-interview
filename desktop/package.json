@@ -1,0 +1,26 @@
+{
+  "name": "ghostboard-desktop",
+  "version": "1.0.0",
+  "description": "Ghostboard Stealth Desktop HUD - Autonomous AI Interview Copilot with Screen Share Invisibility",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --x64",
+    "build:mac": "electron-builder --mac --universal",
+    "build:linux": "electron-builder --linux AppImage"
+  },
+  "keywords": [
+    "ghostboard",
+    "stealth-hud",
+    "interview-copilot",
+    "screen-share-invisible",
+    "tauri",
+    "electron"
+  ],
+  "author": "Ghostboard Team",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.2.1"
+  }
+}

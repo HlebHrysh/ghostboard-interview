@@ -16,22 +16,24 @@ export async function OPTIONS() {
 }
 
 export async function GET(req: NextRequest) {
-  // Auth guard: only authenticated users can read live session state
-  const token = req.cookies.get('ghostboard_session')?.value;
-  const clientToken = req.headers.get('x-ghostboard-client');
-  if (!token && !clientToken) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const { searchParams } = new URL(req.url);
+  const token =
+    searchParams.get('token') ||
+    req.cookies.get('ghostboard_session')?.value ||
+    req.headers.get('x-ghostboard-client') ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  let userId: string | undefined = undefined;
   if (token) {
     const user = await getSessionUser(token);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    userId = user.id;
+  } else {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-
-  const { searchParams } = new URL(req.url);
   const since = Number(searchParams.get('since') || 0);
-
-  const state = interviewSyncStore.getState();
+  const state = interviewSyncStore.getState(userId);
 
   if (since > 0 && state.lastUpdated <= since) {
     return NextResponse.json({ hasUpdate: false, lastUpdated: state.lastUpdated });
@@ -44,59 +46,90 @@ export async function GET(req: NextRequest) {
     activeId: state.activeId,
     outputLanguage: state.outputLanguage || 'uk',
     speechLanguage: state.speechLanguage || 'uk',
+    nativeLanguage: state.nativeLanguage || 'uk',
     liveTranscript: state.liveTranscript,
     isCapturing: state.isCapturing,
     sttStatus: state.sttStatus || 'idle',
+    isFrozen: !!state.isFrozen,
+    isPanic: !!state.isPanic,
+    connectedDevices: state.connectedDevices || { desktop: false, web: false, phone: false },
     sessionDuration: state.sessionDuration || 0,
   });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    // Auth guard: only authenticated users can write to live session state
-    const token = req.cookies.get('ghostboard_session')?.value;
-    const clientToken = req.headers.get('x-ghostboard-client');
-    if (!token && !clientToken) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { searchParams } = new URL(req.url);
+    const token =
+      searchParams.get('token') ||
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('x-ghostboard-client') ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+    let userId: string | undefined = undefined;
     if (token) {
       const user = await getSessionUser(token);
       if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      userId = user.id;
+    } else {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Rate limit writes: max 120 per minute (high for real-time sync, but bounded)
+    // Rate limit writes: max 120 per minute
     const rateLimit = await checkRateLimit(req, 120, 60000, 'interview_sync');
     if (!rateLimit.allowed) {
       return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
     }
 
     const body = await req.json().catch(() => ({}));
-    const { action, qa, qas, text, isCapturing, sttStatus, sessionDuration, activeId, outputLanguage, speechLanguage } = body;
-
+    const {
+      action,
+      qa,
+      qas,
+      text,
+      isCapturing,
+      sttStatus,
+      sessionDuration,
+      activeId,
+      outputLanguage,
+      speechLanguage,
+      nativeLanguage,
+      isFrozen,
+      isPanic,
+      device,
+      active,
+    } = body;
 
     if (action === 'SYNC_ALL' && Array.isArray(qas)) {
-      interviewSyncStore.syncAll(qas, isCapturing, sessionDuration, activeId, sttStatus);
+      interviewSyncStore.syncAll(qas, isCapturing, sessionDuration, activeId, sttStatus, userId);
     } else if (action === 'ADD_OR_UPDATE_QA' && qa) {
-      interviewSyncStore.addOrUpdateQA(qa, activeId);
+      interviewSyncStore.addOrUpdateQA(qa, activeId, userId);
     } else if (action === 'SELECT_QA' && activeId) {
-      interviewSyncStore.setActiveId(activeId);
+      interviewSyncStore.setActiveId(activeId, userId);
     } else if (action === 'SET_OUTPUT_LANGUAGE' && outputLanguage) {
-      interviewSyncStore.setOutputLanguage(outputLanguage);
+      interviewSyncStore.setOutputLanguage(outputLanguage, userId);
     } else if (action === 'SET_SPEECH_LANGUAGE' && speechLanguage) {
-      interviewSyncStore.setSpeechLanguage(speechLanguage);
+      interviewSyncStore.setSpeechLanguage(speechLanguage, userId);
+    } else if (action === 'SET_NATIVE_LANGUAGE' && nativeLanguage) {
+      interviewSyncStore.setNativeLanguage(nativeLanguage, userId);
+    } else if (action === 'SET_FREEZE' || action === 'FREEZE_TOGGLE') {
+      interviewSyncStore.setFrozen(typeof isFrozen === 'boolean' ? isFrozen : true, userId);
+    } else if (action === 'SET_PANIC' || action === 'PANIC_TOGGLE') {
+      interviewSyncStore.setPanic(typeof isPanic === 'boolean' ? isPanic : true, userId);
+    } else if (action === 'REGISTER_DEVICE' && device) {
+      interviewSyncStore.registerDevice(device, typeof active === 'boolean' ? active : true, userId);
     } else if (action === 'SET_STT_STATUS' && sttStatus) {
-      interviewSyncStore.setSttStatus(sttStatus);
+      interviewSyncStore.setSttStatus(sttStatus, userId);
     } else if (action === 'LIVE_TRANSCRIPT' && typeof text === 'string') {
-      interviewSyncStore.setLiveTranscript(text);
+      interviewSyncStore.setLiveTranscript(text, userId);
     } else if (action === 'STATUS' && typeof isCapturing === 'boolean') {
-      interviewSyncStore.setCapturingStatus(isCapturing);
+      interviewSyncStore.setCapturingStatus(isCapturing, userId);
     } else if (action === 'LOG' && typeof text === 'string') {
       try {
         const logPath = '/tmp/ghostboard_stt.log';
         if (fs.existsSync(logPath)) {
           const stats = fs.statSync(logPath);
           if (stats.size > 2 * 1024 * 1024) {
-            // Truncate to avoid filling disk
             fs.writeFileSync(logPath, `[Log truncated at ${new Date().toISOString()}]\n`);
           }
         }
@@ -104,17 +137,21 @@ export async function POST(req: NextRequest) {
         fs.appendFileSync(logPath, `${new Date().toISOString()} ${safeText}\n`);
       } catch {}
     } else if (action === 'CLEAR') {
-      interviewSyncStore.clear();
+      interviewSyncStore.clear(userId);
     }
 
-    const state = interviewSyncStore.getState();
+    const state = interviewSyncStore.getState(userId);
     return NextResponse.json({
       success: true,
       lastUpdated: state.lastUpdated,
       activeId: state.activeId,
       outputLanguage: state.outputLanguage,
       speechLanguage: state.speechLanguage,
+      nativeLanguage: state.nativeLanguage,
       sttStatus: state.sttStatus,
+      isFrozen: !!state.isFrozen,
+      isPanic: !!state.isPanic,
+      connectedDevices: state.connectedDevices,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });

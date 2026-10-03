@@ -21,11 +21,14 @@ export function getAppBaseUrl(req: NextRequest): string {
   }
 
   // 2. Derive from reverse-proxy forwarding headers (e.g., Google Cloud Run, Cloudflare, NGINX)
-  const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
-  const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  const rawProto = req.headers.get('x-forwarded-proto') || 'https';
+  const forwardedProto = rawProto.split(',')[0].trim();
+  const rawHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
 
-  if (forwardedHost) {
-    const proto = forwardedHost.includes('localhost') ? 'http' : forwardedProto;
+  if (rawHost) {
+    const forwardedHost = rawHost.split(',')[0].trim();
+    const isLocal = forwardedHost.includes('localhost') || forwardedHost.includes('127.0.0.1');
+    const proto = isLocal ? 'http' : (forwardedProto || 'https');
     return `${proto}://${forwardedHost}`.replace(/\/$/, '');
   }
 

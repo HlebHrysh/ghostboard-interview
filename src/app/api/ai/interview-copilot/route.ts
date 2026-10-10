@@ -147,8 +147,8 @@ export async function POST(req: NextRequest) {
     const isEn = effectiveOutputLang === 'en';
     const geminiApiKey = getCleanGeminiKey();
 
-    const candidateAge = candidateProfile?.age || 18;
-    const candidateRole = candidateProfile?.role || 'Full-Stack Software Engineer';
+    const candidateRole = candidateProfile?.role?.trim() || 'Software Engineer';
+    const candidateLevel = candidateProfile?.level || (candidateProfile?.age ? (candidateProfile.age >= 28 ? 'senior' : candidateProfile.age >= 23 ? 'middle' : 'junior') : 'middle');
     const techStackStr = Array.isArray(candidateProfile?.techStack) && candidateProfile.techStack.length > 0
       ? candidateProfile.techStack.join(', ')
       : 'TypeScript, JavaScript, React, Next.js, Node.js, Python, PostgreSQL, Docker, REST API, Git';
@@ -159,6 +159,35 @@ export async function POST(req: NextRequest) {
     
     const jobDescriptionStr = candidateProfile?.jobDescription || '';
     const cvContextStr = [candidateProfile?.cvContext, user?.resumeContext].filter(Boolean).join('\n\n');
+
+    const aiDirectives = candidateProfile?.aiDirectives;
+    let compiledAiDirectives = '';
+    if (aiDirectives) {
+      const dirParts: string[] = [];
+      if (aiDirectives.responseLength === 'ultra-concise') dirParts.push('• LENGTH: ULTRA-CONCISE (1-2 sentences max).');
+      else if (aiDirectives.responseLength === 'bullets') dirParts.push('• STRUCTURE: BULLET POINTS ONLY (3 structured bullets with bold keywords).');
+      else if (aiDirectives.responseLength === 'structured') dirParts.push('• STRUCTURE: STRUCTURED & IN-DEPTH.');
+      
+      if (aiDirectives.toneOfVoice === 'authoritative') dirParts.push(`• TONE: AUTHORITATIVE ${candidateLevel.toUpperCase()} ARCHITECT.`);
+      else if (aiDirectives.toneOfVoice === 'pragmatic') dirParts.push('• TONE: PRAGMATIC & DIRECT.');
+      else if (aiDirectives.toneOfVoice === 'star') dirParts.push('• TONE: STAR METHOD (Situation, Task, Action, Result).');
+
+      if (aiDirectives.engineeringFocus === 'architecture') dirParts.push('• FOCUS: SYSTEM ARCHITECTURE & BOTTLENECK MITIGATION.');
+      else if (aiDirectives.engineeringFocus === 'clean_code') dirParts.push('• FOCUS: CLEAN CODE & ALGORITHMIC RIGOR.');
+      else if (aiDirectives.engineeringFocus === 'business_impact') dirParts.push('• FOCUS: BUSINESS IMPACT & ROI.');
+
+      if (Array.isArray(aiDirectives.guardrails)) {
+        if (aiDirectives.guardrails.includes('no_fluff')) dirParts.push('• GUARDRAIL: ZERO FLUFF (No "Sure!", "Great question!", "Under the hood").');
+        if (aiDirectives.guardrails.includes('challenge_weak')) dirParts.push('• GUARDRAIL: CHALLENGE WEAK ASSUMPTIONS.');
+        if (aiDirectives.guardrails.includes('show_tradeoffs')) dirParts.push('• GUARDRAIL: ALWAYS MENTION PRODUCTION TRADE-OFFS.');
+      }
+      if (aiDirectives.customNuances?.trim()) {
+        dirParts.push(`• SPECIAL INSTRUCTIONS: ${aiDirectives.customNuances.trim()}`);
+      }
+      if (dirParts.length > 0) {
+        compiledAiDirectives = `\nAI BEHAVIORAL DIRECTIVES & PERSONA TUNING:\n${dirParts.join('\n')}\n`;
+      }
+    }
 
     let refinementDirective = '';
     if (refinement === 'under_the_hood') {
@@ -195,27 +224,29 @@ PREVIOUS ANSWER GIVEN (IMPROVE / ADJUST THIS):
 ` : '';
 
     const personaDefinition = sessionMode === 'meeting'
-      ? `You are a world-class real-time AI assistant for a software engineer during a live Daily Standup, sprint planning, or architectural meeting.
-The user is a ${candidateAge}-year-old developer employed as a ${candidateRole}. Your job is to help them answer technical questions from their Team Lead, PM, or peers seamlessly, report progress, and defend architectural decisions.`
-      : `You are a world-class real-time technical interview copilot and coach.
-The user is a talented, ambitious ${candidateAge}-year-old developer taking a high-stakes software engineering interview.`;
+      ? `You are an elite, world-class real-time AI assistant for a software engineer during a live team meeting, sprint planning, or architectural review.
+The candidate works as a ${candidateLevel.toUpperCase()} ${candidateRole}. Your job is to help them answer technical questions seamlessly, report progress, and defend architectural decisions with supreme confidence.`
+      : `You are an elite, world-class real-time technical interview copilot and coach.
+The candidate is taking a high-stakes technical interview specifically for the target position: "${candidateRole}" at a ${candidateLevel.toUpperCase()} level.`;
 
     const systemPrompt = `${personaDefinition}
 
-CANDIDATE'S ACTUAL PROFILE & TECH STACK:
-- Age: ${candidateAge} years old.
-- Target Role: ${candidateRole}.
-- Real Tech Stack: ${techStackStr}.
+CANDIDATE'S TARGET VACANCY & ACTIVE PROFILE:
+- Target Position / Vacancy: "${candidateRole}"
+- Target Seniority Level: ${candidateLevel.toUpperCase()}
+- Active Tech Stack: ${techStackStr}
 - Actual Pet-Projects to reference:
 ${petProjectsStr}
 - Background Highlights: ${customContextStr}
 ${jobDescriptionStr ? `- JOB DESCRIPTION (TARGET ROLE REQUIREMENTS): ${jobDescriptionStr}` : ''}
 ${cvContextStr ? `- CANDIDATE'S EXTENDED CV CONTEXT: ${cvContextStr}` : ''}
+${compiledAiDirectives}
 
-CRITICAL RULES FOR AUTHENTICITY:
-${jobDescriptionStr || cvContextStr ? '0. MATCH JOB REQUIREMENTS: Explicitly align your answers with the provided Job Description. If the candidate\'s CV Context or Pet Projects match the requirements, seamlessly weave their past experience into the answer to prove they are the perfect fit.' : ''}
-1. DO NOT pretend to have "10 years of legacy enterprise experience". Instead, formulate answers from the perspective of an extraordinarily sharp ${candidateAge}-year-old who understands deep core computer science fundamentals, internal runtime mechanics, modern architecture, pet-projects, production best practices, and clean code.
-2. ORGANIC PET-PROJECT INJECTION: Whenever relevant, naturally reference one of the candidate's real pet-projects or stack tools (e.g. "У моєму проєкті на ${candidateRole} я якраз вирішував схожу проблему...").
+CRITICAL RULES FOR TARGET ROLE ALIGNMENT & AUTHENTICITY:
+0. EXACT VACANCY ALIGNMENT: The candidate wrote "${candidateRole}" as their target vacancy. Every explanation, code sample, performance optimization, and architectural consideration MUST strictly match this target vacancy and their active tech stack (${techStackStr}).
+1. SENIORITY CALIBRATION: Calibrate depth directly to a ${candidateLevel.toUpperCase()} level. Do not give generic textbook definitions; instead, immediately highlight real-world production trade-offs, internal runtime mechanics, memory management, scale bottlenecks, and resilience patterns expected from a ${candidateLevel.toUpperCase()} ${candidateRole}.
+${jobDescriptionStr || cvContextStr ? '2. MATCH JOB REQUIREMENTS: Explicitly align your answers with the provided Job Description. If the candidate\'s CV Context or Pet Projects match the requirements, seamlessly weave their past experience into the answer to prove they are the perfect fit.' : ''}
+3. ORGANIC EXPERIENCE INJECTION: Whenever relevant, naturally reference one of the candidate's real pet-projects or stack tools (e.g. "У моєму проєкті на ${candidateRole} я якраз вирішував схожу проблему...").
 3. ${languageDirective}
 ${translationDirective}
 4. NATURAL TECHNICAL CODE-SWITCHING:

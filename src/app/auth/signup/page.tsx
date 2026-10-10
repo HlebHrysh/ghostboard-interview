@@ -1,13 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowLeft, Check, Sparkles, ShieldCheck, Zap } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  Sparkles,
+  ShieldCheck,
+  Zap,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ROLE_PRESETS } from "@/components/CandidateProfileModal";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
 import { LangDropdown } from "@/components/ui/LangDropdown";
+import { MonochromeStripesCanvas } from "@/components/ui/MonochromeStripesCanvas";
 import { useLocale } from "@/contexts/LocaleContext";
 import { getAuthTranslations } from "@/lib/authI18n";
 
@@ -18,13 +30,25 @@ export default function SignupPage() {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [selectedRole, setSelectedRole] = useState("python_backend");
+  const [isCustomRole, setIsCustomRole] = useState(false);
+  const [customRoleText, setCustomRoleText] = useState("");
   const [selectedLevel, setSelectedLevel] = useState("middle");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailTakenError, setEmailTakenError] = useState(false);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (typeof window !== "undefined") {
       const search = new URLSearchParams(window.location.search);
+      const emailParam = search.get("email");
+      if (emailParam) {
+        setEmail(emailParam);
+        // If an email was passed from login page, step directly to final step
+        setStep(3);
+      }
       const error = search.get("error");
       const provider = search.get("provider") || "OAuth";
       if (error === "missing_credentials") {
@@ -43,25 +67,6 @@ export default function SignupPage() {
   }, [locale]);
 
   const handleFinish = async (provider = "Email") => {
-    setLoading(true);
-
-    const userEmail = email.trim() || `user_${Date.now()}@ghostboard.ai`;
-    const tempPassword = `Pass_${Date.now()}`;
-
-    // Save personalized candidate profile
-    const preset = ROLE_PRESETS[selectedRole];
-    if (preset) {
-      const customContext = `Candidate Level: ${selectedLevel}. ${preset.role || ""}`;
-      const profile = {
-        age: 23,
-        role: preset.role || "Software Engineer",
-        techStack: preset.techStack || [],
-        petProjects: [],
-        customContext,
-      };
-      localStorage.setItem("ghostboard_candidate_profile", JSON.stringify(profile));
-    }
-
     const getDestination = () => {
       if (typeof window !== "undefined") {
         const from = new URLSearchParams(window.location.search).get("from");
@@ -70,11 +75,57 @@ export default function SignupPage() {
       return "/interview";
     };
 
+    // Save personalized candidate profile
+    const effectiveRoleName = isCustomRole && customRoleText.trim()
+      ? customRoleText.trim()
+      : (ROLE_PRESETS[selectedRole]?.role || "Software Engineer");
+
+    const effectiveTechStack = isCustomRole
+      ? (customRoleText.toLowerCase().includes('python') ? (ROLE_PRESETS.python_backend?.techStack || [])
+         : customRoleText.toLowerCase().includes('react') || customRoleText.toLowerCase().includes('front') ? (ROLE_PRESETS.frontend?.techStack || [])
+         : customRoleText.toLowerCase().includes('go') ? (ROLE_PRESETS.golang_backend?.techStack || [])
+         : customRoleText.toLowerCase().includes('node') ? (ROLE_PRESETS.nodejs_backend?.techStack || [])
+         : (ROLE_PRESETS.fullstack?.techStack || []))
+      : (ROLE_PRESETS[selectedRole]?.techStack || []);
+
+    const customContext = `Candidate Level: ${selectedLevel}. Target Interview Vacancy: ${effectiveRoleName}`;
+    const profile = {
+      age: selectedLevel === 'junior' ? 21 : selectedLevel === 'middle' ? 24 : selectedLevel === 'senior' ? 28 : 33,
+      level: selectedLevel,
+      role: effectiveRoleName,
+      techStack: effectiveTechStack,
+      petProjects: [],
+      customContext,
+    };
+    try {
+      localStorage.setItem("ghostboard_candidate_profile", JSON.stringify(profile));
+    } catch {}
+
     if (provider === "Google" || provider === "GitHub") {
       const provLower = provider.toLowerCase();
       window.location.href = `/api/auth/oauth/${provLower}?from=${encodeURIComponent(getDestination())}&role=${encodeURIComponent(selectedRole)}`;
       return;
     }
+
+    // Email registration validation
+    const userEmail = email.trim().toLowerCase();
+    if (!userEmail || !userEmail.includes("@")) {
+      toast.error(t.emailPlaceholder);
+      return;
+    }
+
+    if (password.length < 8) {
+      toast.error(t.passwordMinLength);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      toast.error(t.passwordsMismatch);
+      return;
+    }
+
+    setLoading(true);
+    setEmailTakenError(false);
 
     try {
       const res = await fetch("/api/auth/register", {
@@ -82,40 +133,47 @@ export default function SignupPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: userEmail,
-          password: tempPassword,
+          password,
           role: selectedRole,
         }),
       });
       const data = await res.json();
-      if (data?.success) {
-        localStorage.setItem("ghostboard_auth_user", JSON.stringify(data.user));
-        toast.success(t.toastSuccess(selectedRole));
-        router.push(getDestination());
-      } else {
-        // Fallback for demo
-        localStorage.setItem("ghostboard_auth_user", JSON.stringify({ email: userEmail, role: selectedRole, plan: "free" }));
-        router.push(getDestination());
+
+      if (res.status === 409 || data?.code === "EMAIL_TAKEN") {
+        setEmailTakenError(true);
+        toast.error(t.emailTaken);
+        return;
       }
-    } catch {
-      localStorage.setItem("ghostboard_auth_user", JSON.stringify({ email: userEmail, role: selectedRole, plan: "free" }));
+
+      if (!res.ok || !data?.success) {
+        toast.error(data?.error || "Registration failed");
+        return;
+      }
+
+      if (data?.user) {
+        localStorage.setItem("ghostboard_auth_user", JSON.stringify(data.user));
+      }
+      toast.success(t.toastSuccess(selectedRole));
       router.push(getDestination());
+    } catch {
+      toast.error("Registration error, please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#040406] text-zinc-100 flex flex-col md:flex-row selection:bg-[#C8F135]/30">
+    <div className="min-h-screen bg-black text-zinc-100 flex flex-col md:flex-row selection:bg-white/20 selection:text-white">
       {/* ── Left Editorial Panel (Luxury Obsidian) ── */}
-      <div className="md:w-5/12 bg-gradient-to-b from-[#07070b] via-[#040406] to-[#050508] p-8 md:p-12 flex flex-col justify-between relative overflow-hidden border-b md:border-b-0 md:border-r border-white/[0.08]">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-[#C8F135]/10 rounded-full blur-[140px] pointer-events-none" />
+      <div className="md:w-5/12 bg-gradient-to-b from-[#07070b] via-black to-[#050508] p-8 md:p-12 flex flex-col justify-between relative overflow-hidden border-b md:border-b-0 md:border-r border-white/[0.08]">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-white/[0.02] rounded-full blur-[140px] pointer-events-none" />
 
         <div>
           <div className="flex items-center justify-between">
             <Link href="/" className="inline-flex items-center gap-3 group">
               <GhostDetectiveLogo size="md" className="group-hover:scale-105 transition-transform" />
               <div className="flex flex-col">
-                <span className="text-lg font-black font-mono tracking-widest text-white group-hover:text-[#C8F135] transition-colors">
+                <span className="text-lg font-black font-mono tracking-widest text-white group-hover:text-zinc-300 transition-colors">
                   GHOSTBOARD
                 </span>
                 <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
@@ -127,7 +185,7 @@ export default function SignupPage() {
           </div>
 
           <div className="mt-8">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-[#C8F135] bg-[#C8F135]/10 px-2.5 py-1 rounded-full border border-[#C8F135]/20">
+            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 bg-white/10 px-2.5 py-1 rounded-full border border-white/20">
               {t.badge}
             </span>
             <h2 className="text-2xl md:text-3xl font-black text-white mt-4 font-display">
@@ -150,9 +208,9 @@ export default function SignupPage() {
               <div
                 className={`w-7 h-7 rounded-full flex items-center justify-center font-mono text-xs font-bold transition-all ${
                   item.done
-                    ? "bg-emerald-500 text-black"
+                    ? "bg-white text-black"
                     : item.active
-                    ? "bg-[#C8F135] text-black ring-4 ring-[#C8F135]/20"
+                    ? "bg-white text-black ring-4 ring-white/20"
                     : "bg-zinc-800 text-zinc-500 border border-white/5"
                 }`}
               >
@@ -170,14 +228,19 @@ export default function SignupPage() {
         </div>
       </div>
 
-      {/* ── Right Step Wizard (Luxury Obsidian) ── */}
-      <div className="md:w-7/12 p-8 md:p-14 flex flex-col justify-center bg-[#040406]">
-        <div className="max-w-xl w-full mx-auto bg-[#08080c]/80 backdrop-blur-2xl p-6 sm:p-9 rounded-3xl border border-white/[0.08] shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
+      {/* ── Right Step Wizard with Biometric Shutter Striped Canvas ── */}
+      <MonochromeStripesCanvas
+        direction="horizontal"
+        density="tight"
+        glowIntensity={0.06}
+        className="md:w-7/12 p-8 md:p-14 flex flex-col justify-center"
+      >
+        <div className="max-w-xl w-full mx-auto bento-card p-6 sm:p-9 bg-[#08080c]/90 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
           {/* STEP 1: ROLE */}
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div>
-                <span className="text-[11px] font-mono text-[#C8F135] uppercase tracking-wider">{t.stepIndicator(1, 3)}</span>
+                <span className="text-[11px] font-mono text-zinc-300 uppercase tracking-wider">{t.stepIndicator(1, 3)}</span>
                 <h3 className="text-2xl font-black text-white mt-1">{t.roleStepTitle}</h3>
                 <p className="text-xs text-zinc-400 mt-1">{t.roleStepDesc}</p>
               </div>
@@ -187,10 +250,13 @@ export default function SignupPage() {
                   <button
                     key={r.key}
                     type="button"
-                    onClick={() => setSelectedRole(r.key)}
+                    onClick={() => {
+                      setIsCustomRole(false);
+                      setSelectedRole(r.key);
+                    }}
                     className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                      selectedRole === r.key
-                        ? "bg-[#C8F135]/10 border-[#C8F135] shadow-[0_0_30px_rgba(200,241,53,0.12)]"
+                      !isCustomRole && selectedRole === r.key
+                        ? "bg-white/10 border-white/40 shadow-[0_0_25px_rgba(255,255,255,0.08)]"
                         : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
                     }`}
                   >
@@ -201,16 +267,70 @@ export default function SignupPage() {
                         <div className="text-xs text-zinc-400 font-sans mt-0.5">{r.desc}</div>
                       </div>
                     </div>
-                    {selectedRole === r.key && <Check className="w-5 h-5 text-[#C8F135]" />}
+                    {!isCustomRole && selectedRole === r.key && <Check className="w-5 h-5 text-white" />}
                   </button>
                 ))}
+
+                {/* Custom Role / Job Title Card */}
+                <div
+                  onClick={() => setIsCustomRole(true)}
+                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-2.5 ${
+                    isCustomRole
+                      ? "bg-white/10 border-white/40 shadow-[0_0_25px_rgba(255,255,255,0.08)]"
+                      : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-3.5">
+                      <span className="text-2xl">🎯</span>
+                      <div>
+                        <div className="text-sm font-bold text-white font-mono">
+                          {locale === "ua" ? "Власна посада / Вакансія" : "Custom Target Role / Vacancy"}
+                        </div>
+                        <div className="text-xs text-zinc-400 font-sans mt-0.5">
+                          {locale === "ua"
+                            ? "Введіть точну назву вакансії або компанії, куди проходите співбесіду"
+                            : "Type the exact job title or company you are preparing to interview for"}
+                        </div>
+                      </div>
+                    </div>
+                    {isCustomRole && <Check className="w-5 h-5 text-white" />}
+                  </div>
+
+                  {isCustomRole && (
+                    <div className="mt-1 w-full" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="text"
+                        autoFocus
+                        value={customRoleText}
+                        onChange={(e) => setCustomRoleText(e.target.value)}
+                        placeholder={
+                          locale === "ua"
+                            ? "Наприклад: Senior Golang Developer у FinTech або Lead AI Engineer"
+                            : "e.g. Senior Golang Developer at FinTech or Lead AI Engineer"
+                        }
+                        className="w-full bg-[#12121a] border border-white/15 focus:border-white/40 focus:ring-1 focus:ring-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none font-sans"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end pt-4">
                 <button
                   type="button"
-                  onClick={() => setStep(2)}
-                  className="btn-lime font-mono text-xs md:text-sm py-3 px-6 shadow-[0_0_20px_rgba(200,241,53,0.25)]"
+                  onClick={() => {
+                    if (isCustomRole && !customRoleText.trim()) {
+                      toast.error(
+                        locale === "ua"
+                          ? "Будь ласка, введіть назву вакансії або оберіть зі списку"
+                          : "Please enter your target vacancy title or choose a preset"
+                      );
+                      return;
+                    }
+                    setStep(2);
+                  }}
+                  className="btn-resend-primary font-mono text-xs md:text-sm !py-2.5 !px-6"
                 >
                   <span>{t.btnNextExp}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -223,7 +343,7 @@ export default function SignupPage() {
           {step === 2 && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div>
-                <span className="text-[11px] font-mono text-[#C8F135] uppercase tracking-wider">{t.stepIndicator(2, 3)}</span>
+                <span className="text-[11px] font-mono text-zinc-300 uppercase tracking-wider">{t.stepIndicator(2, 3)}</span>
                 <h3 className="text-2xl font-black text-white mt-1">{t.levelStepTitle}</h3>
                 <p className="text-xs text-zinc-400 mt-1">{t.levelStepDesc}</p>
               </div>
@@ -236,13 +356,13 @@ export default function SignupPage() {
                     onClick={() => setSelectedLevel(l.key)}
                     className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
                       selectedLevel === l.key
-                        ? "bg-[#C8F135]/10 border-[#C8F135] shadow-[0_0_30px_rgba(200,241,53,0.12)]"
+                        ? "bg-white/10 border-white/40 shadow-[0_0_25px_rgba(255,255,255,0.08)]"
                         : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm font-bold text-white font-mono">{l.label}</span>
-                      {selectedLevel === l.key && <Check className="w-4 h-4 text-[#C8F135]" />}
+                      {selectedLevel === l.key && <Check className="w-4 h-4 text-white" />}
                     </div>
                     <span className="text-xs text-zinc-400">{l.exp}</span>
                   </button>
@@ -253,7 +373,7 @@ export default function SignupPage() {
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="btn-ghost font-mono text-xs py-3 px-5 flex items-center gap-1.5"
+                  className="btn-resend-glass font-mono text-xs !py-2.5 !px-5 flex items-center gap-1.5"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>{t.btnBack}</span>
@@ -261,7 +381,7 @@ export default function SignupPage() {
                 <button
                   type="button"
                   onClick={() => setStep(3)}
-                  className="btn-lime font-mono text-xs md:text-sm py-3 px-6 shadow-[0_0_20px_rgba(200,241,53,0.25)]"
+                  className="btn-resend-primary font-mono text-xs md:text-sm !py-2.5 !px-6"
                 >
                   <span>{t.btnNextStart}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -274,7 +394,7 @@ export default function SignupPage() {
           {step === 3 && (
             <div className="space-y-6 animate-in fade-in duration-300">
               <div>
-                <span className="text-[11px] font-mono text-[#C8F135] uppercase tracking-wider">{t.stepIndicator(3, 3)}</span>
+                <span className="text-[11px] font-mono text-zinc-300 uppercase tracking-wider">{t.stepIndicator(3, 3)}</span>
                 <h3 className="text-2xl font-black text-white mt-1">{t.finalStepTitle}</h3>
                 <p className="text-xs text-zinc-400 mt-1">{t.finalStepDesc}</p>
               </div>
@@ -284,13 +404,15 @@ export default function SignupPage() {
                 <div>
                   <div className="text-xs font-mono text-zinc-400 uppercase">{t.selectedProfileLabel}</div>
                   <div className="text-sm font-bold text-white font-mono mt-0.5">
-                    {t.roles.find((r) => r.key === selectedRole)?.label || selectedRole} · {selectedLevel.toUpperCase()}
+                    {isCustomRole && customRoleText.trim()
+                      ? customRoleText.trim()
+                      : (t.roles.find((r) => r.key === selectedRole)?.label || selectedRole)} · {selectedLevel.toUpperCase()}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="text-xs text-[#C8F135] font-mono hover:underline cursor-pointer"
+                  className="text-xs text-zinc-300 hover:text-white font-mono hover:underline cursor-pointer"
                 >
                   {t.btnChange}
                 </button>
@@ -302,7 +424,7 @@ export default function SignupPage() {
                   type="button"
                   disabled={loading}
                   onClick={() => handleFinish("Google")}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-white hover:bg-zinc-100 text-black font-bold text-xs md:text-sm transition-all shadow-lg active:scale-[0.98] cursor-pointer"
+                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-gradient-to-b from-white/[0.06] to-white/[0.02] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] hover:border-white/25 active:scale-[0.98] transition-all cursor-pointer font-medium text-xs md:text-sm text-white"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path
@@ -329,7 +451,7 @@ export default function SignupPage() {
                   type="button"
                   disabled={loading}
                   onClick={() => handleFinish("GitHub")}
-                  className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-[#16161c] hover:bg-[#202028] border border-white/10 text-white font-bold text-xs md:text-sm transition-all shadow-lg active:scale-[0.98] cursor-pointer"
+                  className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-gradient-to-b from-white/[0.06] to-white/[0.02] border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] hover:border-white/25 active:scale-[0.98] transition-all cursor-pointer font-medium text-xs md:text-sm text-white"
                 >
                   <svg className="w-4 h-4 fill-white" viewBox="0 0 24 24">
                     <path
@@ -348,19 +470,71 @@ export default function SignupPage() {
                 <div className="flex-1 h-[1px] bg-white/[0.08]" />
               </div>
 
-              <div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t.emailPlaceholder}
-                  className="w-full bg-[#0c0c12] border border-white/[0.08] focus:border-[#C8F135]/60 rounded-xl px-4 py-3 text-xs md:text-sm font-mono text-zinc-100 placeholder-zinc-700 outline-none transition-all mb-3 shadow-inner focus:shadow-[0_0_20px_rgba(200,241,53,0.15)]"
-                />
+              {emailTakenError && (
+                <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-between text-xs font-mono text-rose-300">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{t.emailTaken}</span>
+                  </div>
+                  <Link href={`/auth/login?email=${encodeURIComponent(email)}`} className="text-white underline font-bold hover:text-zinc-300">
+                    {t.loginLink}
+                  </Link>
+                </div>
+              )}
+
+              {/* Form fields */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-mono text-zinc-400 mb-1">Email</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (emailTakenError) setEmailTakenError(false);
+                    }}
+                    placeholder={t.emailPlaceholder}
+                    className="input-obsidian font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-zinc-400 mb-1">{t.passwordLabel}</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t.passwordPlaceholder}
+                      className="input-obsidian font-mono pr-11"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 p-1"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-mono text-zinc-400 mb-1">{t.confirmPasswordLabel}</label>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder={t.confirmPasswordPlaceholder}
+                    className="input-obsidian font-mono"
+                  />
+                </div>
+
                 <button
                   type="button"
                   disabled={loading}
                   onClick={() => handleFinish("Email")}
-                  className="w-full btn-lime font-mono text-xs md:text-sm py-3.5 shadow-[0_0_25px_rgba(200,241,53,0.3)] hover:shadow-[0_0_35px_rgba(200,241,53,0.5)] transition-all"
+                  className="w-full btn-resend-primary font-mono text-xs md:text-sm py-3 flex items-center justify-center gap-2 mt-2 cursor-pointer shadow-[0_0_25px_rgba(255,255,255,0.15)]"
                 >
                   <span>{t.btnStartTrial}</span>
                   <ArrowRight className="w-4 h-4" />
@@ -371,19 +545,19 @@ export default function SignupPage() {
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="btn-ghost font-mono text-xs py-2.5 px-4 flex items-center gap-1.5"
+                  className="btn-resend-glass font-mono text-xs py-2.5 px-4 flex items-center gap-1.5 cursor-pointer"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   <span>{t.btnBack}</span>
                 </button>
                 <Link href="/auth/login" className="text-xs text-zinc-400 hover:text-white font-mono py-2.5">
-                  {t.haveAccount} <span className="text-[#C8F135] underline">{t.loginLink}</span>
+                  {t.haveAccount} <span className="text-white underline">{t.loginLink}</span>
                 </Link>
               </div>
             </div>
           )}
         </div>
-      </div>
+      </MonochromeStripesCanvas>
     </div>
   );
 }

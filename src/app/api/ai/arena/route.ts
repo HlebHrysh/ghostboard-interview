@@ -18,6 +18,20 @@ const TRACK_PROFILES: Record<string, { title: string; skills: string }> = {
   },
 };
 
+const LANG_DIRECTIVES: Record<string, string> = {
+  ua: 'Ukrainian (Українською мовою). Всі запитання, складності, теми, контекстні підказки, вердикти та пояснення формулюй українською мовою. Загальноприйняті технічні терміни, назви бібліотек та коду залишай англійською.',
+  uk: 'Ukrainian (Українською мовою). Всі запитання, складності, теми, контекстні підказки, вердикти та пояснення формулюй українською мовою. Загальноприйняті технічні терміни, назви бібліотек та коду залишай англійською.',
+  en: 'English. All questions, difficulties, topics, context hints, verdicts, strengths, missing concepts, and ideal answers must be strictly in clear, natural Technical English at B2/C1 level.',
+  pl: 'Polish (Język polski). Wszystkie pytania, poziom trudności, tematy, wskazówki kontekstowe, werdykty i idealne odpowiedzi muszą być w języku polskim.',
+  de: 'German (Deutsch). Alle Fragen, Schwierigkeiten, Themen, Kontexthinweise, Urteile und Musterantworten müssen auf Deutsch sein.',
+  fr: 'French (Français). Toutes les questions, difficultés, sujets, indices de contexte, verdicts et réponses modèles doivent être en français.',
+  es: 'Spanish (Español). Todas las preguntas, niveles de dificultad, temas, pistas de contexto, veredictos y respuestas modelo deben ser en español.',
+  pt: 'Portuguese (Português). Todas as perguntas, níveis de dificuldade, tópicos, dicas de contexto, veredictos e respostas ideais devem ser em português.',
+  it: 'Italian (Italiano). Tutte le domande, i livelli di difficoltà, gli argomenti, i suggerimenti di contesto, i verdetti e le risposte modello devono essere in italiano.',
+  cs: 'Czech (Čeština). Všechny otázky, obtížnosti, témata, nápovědy ke kontextu, verdikty a vzorové odpovědi musí být v češtině.',
+  nl: 'Dutch (Nederlands). Alle vragen, moeilijkheidsgraden, onderwerpen, contexthints, oordelen en modelantwoorden moeten in het Nederlands zijn.',
+};
+
 export async function POST(req: NextRequest) {
   try {
     const rateLimit = await checkRateLimit(req, 20, 60000, 'arena_session');
@@ -26,43 +40,47 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action } = body;
+    const { action, language = 'uk' } = body;
+    const targetDirective = LANG_DIRECTIVES[language] || LANG_DIRECTIVES['en'];
 
     // ── 1. START ARENA: Generate 5 blitz questions + 1 architectural case ────
     if (action === 'START_ARENA') {
       const { track = 'frontend', level = 'Senior', candidateName = 'Developer' } = body;
       const profile = TRACK_PROFILES[track] || TRACK_PROFILES.frontend;
 
-      const prompt = `Ти — суворий Staff Engineer у FAANG компанії. Ти проводиш технічну оцінку в "Ghostboard Arena".
-Трек: ${profile.title} (${profile.skills})
-Рівень кандидата: ${level}
-Кандидат: ${candidateName}
+      const prompt = `You are a demanding Staff Engineer at a top FAANG company conducting a technical assessment in "Ghostboard Arena".
+Track: ${profile.title} (${profile.skills})
+Candidate Seniority Level: ${level}
+Candidate: ${candidateName}
 
-Згенеруй рівно 6 запитань:
-- Питання 1-5: гострі, практичні бліц-запитання з глибоким технічним підґрунтям (без банальних "що таке клас").
-- Питання 6: розгорнутий практичний архітектурний кейс (System Design / Architecture trade-off) реального production-рівня.
+LANGUAGE DIRECTIVE (CRITICAL - FOLLOW STRICTLY):
+${targetDirective}
 
-Поверни виключно валідний JSON у такому форматі:
+Generate exactly 6 questions:
+- Questions 1-5: sharp, practical blitz questions with deep engineering substance (no trivial questions like "what is a class").
+- Question 6: comprehensive practical System Design / Architecture trade-off case study at production scale.
+
+Return ONLY a valid JSON object matching this schema:
 {
   "questions": [
     {
       "id": "q1",
       "index": 1,
-      "topic": "Тема запитання",
-      "difficulty": "Середня / Висока",
-      "question": "Текст технічного запитання українською мовою",
+      "topic": "Concise topic in the target language",
+      "difficulty": "Medium / Hard in the target language",
+      "question": "Full question text in the target language",
       "isArchitectureCase": false,
-      "contextHint": "Короткий орієнтир, на що звертати увагу у відповіді"
+      "contextHint": "Short hint on what key engineering points to touch upon in target language"
     },
     ...
     {
       "id": "q6",
       "index": 6,
-      "topic": "Архітектурний кейс",
-      "difficulty": "Staff / Архітектура",
-      "question": "Текст складного архітектурного кейсу",
+      "topic": "Architecture Case in target language",
+      "difficulty": "Staff / Architecture in target language",
+      "question": "Full complex architectural case in target language",
       "isArchitectureCase": true,
-      "contextHint": "Спроєктуйте рішення з урахуванням відмовостійкості та навантаження"
+      "contextHint": "Design guidance regarding high availability and load in target language"
     }
   ]
 }`;
@@ -74,7 +92,10 @@ export async function POST(req: NextRequest) {
       });
 
       if (res.ok && res.text) {
-        return NextResponse.json(JSON.parse(res.text));
+        let jsonStr = res.text.trim();
+        if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
+        if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
+        return NextResponse.json(JSON.parse(jsonStr));
       }
       throw new Error('Не вдалося згенерувати запитання арени через Gemini.');
     }
@@ -100,24 +121,28 @@ export async function POST(req: NextRequest) {
       else if (answerTimeSec < 120) calculatedSpeed = 74;
       else calculatedSpeed = 62;
 
-      const prompt = `Ти — суворий Staff Engineer у FAANG компанії, що оцінює відповідь кандидата.
-Трек: ${profile.title} (${level})
-Запитання: "${question}"
-Відповідь кандидата: "${candidateAnswer || '(Кандидат промовчав або дав дуже коротку відповідь)'}"
-Час відповіді: ${answerTimeSec} секунд
-Це архітектурний кейс: ${isArchitectureCase ? 'ТАК' : 'НІ'}
+      const prompt = `You are a demanding Staff Engineer at a top FAANG company evaluating a candidate's answer.
+Track: ${profile.title} (${level})
+Question asked: "${question}"
+Candidate Answer: "${candidateAnswer || '(Candidate was silent or provided an empty response)'}"
+Answer duration: ${answerTimeSec} seconds
+Is architectural case: ${isArchitectureCase ? 'YES' : 'NO'}
 
-Оціни відповідь об'єктивно за 5 критеріями (число від 10 до 100):
-1. technicalAccuracy (Технічна точність, відсутність помилок)
-2. architecturalVision (Розуміння масштабів, trade-offs, проектування)
-3. communication (Чіткість, структура думки, відсутність води)
-4. stressResilience (Впевненість, здатність вирішувати нестандартні задачі)
-5. thinkingSpeed (Оціни темп: запропонований базовий бал ${calculatedSpeed})
+LANGUAGE DIRECTIVE (CRITICAL - YOU MUST FOLLOW THIS STRICTLY):
+${targetDirective}
+(Write verdict, strengths, missingKeyConcepts, and staffEngineerAnswer strictly in the target language).
 
-Поверни виключно валідний JSON:
+Objectively evaluate the answer across 5 dimensions (score 10 to 100):
+1. technicalAccuracy (Technical accuracy, absence of errors or falsehoods)
+2. architecturalVision (Grasp of scale, trade-offs, design patterns)
+3. communication (Clarity, structural thought, no fluff)
+4. stressResilience (Confidence, problem solving demeanor)
+5. thinkingSpeed (Evaluate pace: proposed base score ${calculatedSpeed})
+
+Return ONLY valid JSON:
 {
-  "score": 88, // загальний бал за раунд (10-100)
-  "verdict": "Відмінно / Добре / Потребує покращення",
+  "score": 88, // overall score (10-100)
+  "verdict": "Verdict in target language (e.g. Excellent / Good / Needs Improvement)",
   "scores": {
     "technicalAccuracy": 90,
     "architecturalVision": 85,
@@ -125,9 +150,9 @@ export async function POST(req: NextRequest) {
     "stressResilience": 90,
     "thinkingSpeed": ${calculatedSpeed}
   },
-  "strengths": ["Що було сказано вірно"],
-  "missingKeyConcepts": ["Що упущено або потребує доопрацювання"],
-  "staffEngineerAnswer": "Еталонна, стисла відповідь Staff Engineer без води."
+  "strengths": ["Points stated correctly (in target language)"],
+  "missingKeyConcepts": ["Omissions or misunderstandings (in target language)"],
+  "staffEngineerAnswer": "Benchmark Staff Engineer concise answer with zero fluff (in target language)."
 }`;
 
       const res = await callGeminiWithFallback({
@@ -137,7 +162,10 @@ export async function POST(req: NextRequest) {
       });
 
       if (res.ok && res.text) {
-        return NextResponse.json(JSON.parse(res.text));
+        let jsonStr = res.text.trim();
+        if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
+        if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
+        return NextResponse.json(JSON.parse(jsonStr));
       }
       throw new Error('Не вдалося оцінити відповідь.');
     }
@@ -201,9 +229,13 @@ export async function POST(req: NextRequest) {
       const percentile = Math.min(99, Math.max(70, totalOverall + 4));
 
       // Synthesize brief Staff summary feedback
-      const promptSummary = `Сформулюй 2-3 речення підсумкового відгуку Staff Engineer для кандидата ${candidateName} (${badge}), який набрав ${totalOverall}/100 у Ghostboard Arena. Оціни технічну готовність до роботи в топ-командах.`;
+      const promptSummary = `Formulate 2-3 sentences of Staff Engineer feedback for candidate ${candidateName} (${badge}) who scored ${totalOverall}/100 in Ghostboard Arena. Assess their technical readiness for top-tier engineering teams.
+LANGUAGE DIRECTIVE (CRITICAL):
+${targetDirective}`;
 
-      let summaryFeedback = `Кандидат продемонстрував глибоке розуміння технологічного стеку ${profile.title} та системного проектування. Рекомендовано для позиції ${level}.`;
+      let summaryFeedback = language === 'en'
+        ? `The candidate demonstrated a strong command of the ${profile.title} stack and system design principles. Recommended for ${level} level responsibilities.`
+        : `Кандидат продемонстрував глибоке розуміння технологічного стеку ${profile.title} та системного проектування. Рекомендовано для позиції ${level}.`;
 
       try {
         const sumRes = await callGeminiWithFallback({
@@ -215,6 +247,21 @@ export async function POST(req: NextRequest) {
           summaryFeedback = sumRes.text.trim();
         }
       } catch {}
+
+      const dateLocaleMap: Record<string, string> = {
+        ua: 'uk-UA',
+        uk: 'uk-UA',
+        en: 'en-US',
+        pl: 'pl-PL',
+        de: 'de-DE',
+        fr: 'fr-FR',
+        es: 'es-ES',
+        pt: 'pt-BR',
+        it: 'it-IT',
+        cs: 'cs-CZ',
+        nl: 'nl-NL',
+      };
+      const dateLocale = dateLocaleMap[language] || 'en-US';
 
       const scorecardData = {
         slug,
@@ -231,7 +278,7 @@ export async function POST(req: NextRequest) {
           communication: avgComm,
           stressResilience: avgStress,
         },
-        dateStr: new Date().toLocaleDateString('uk-UA', {
+        dateStr: new Date().toLocaleDateString(dateLocale, {
           year: 'numeric',
           month: 'long',
           day: 'numeric',

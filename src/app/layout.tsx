@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display, Inter, JetBrains_Mono } from "next/font/google";
+import { Playfair_Display, Inter, JetBrains_Mono, Kanit } from "next/font/google";
 import "./globals.css";
 import { Toaster } from 'sonner';
 import { LocaleProvider } from '@/contexts/LocaleContext';
+import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -29,6 +30,13 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin", "cyrillic"],
+  display: "swap",
+});
+
+const kanit = Kanit({
+  variable: "--font-kanit",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
   display: "swap",
 });
 
@@ -64,10 +72,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark min-h-full w-full">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} ${playfairDisplay.variable} min-h-screen w-full overflow-x-hidden antialiased bg-black text-zinc-100 font-sans`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} ${playfairDisplay.variable} ${kanit.variable} min-h-screen w-full overflow-x-hidden antialiased bg-black text-zinc-100 font-sans`}>
         <LocaleProvider>
           {children}
         </LocaleProvider>
+        <ServiceWorkerRegister />
         <Toaster theme="dark" position="bottom-right" closeButton richColors />
       </body>
     </html>

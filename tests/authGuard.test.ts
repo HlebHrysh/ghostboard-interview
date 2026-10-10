@@ -46,6 +46,28 @@ describe('Auth Guard & Middleware Protection', () => {
     expect(res.headers.get('location')).toContain('/admin/login');
   });
 
+  it('blocks forged plain string "authenticated" cookie on admin routes', () => {
+    const req = new NextRequest('http://localhost:3001/admin/dashboard', {
+      headers: { cookie: 'ghostboard_admin_session=authenticated' },
+    });
+    const res = middleware(req);
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/admin/login');
+  });
+
+  it('allows access to admin routes when a cryptographically signed HMAC token is present', async () => {
+    const { createAdminToken } = await import('../src/lib/adminGuard');
+    const token = createAdminToken();
+    const req = new NextRequest('http://localhost:3001/admin/dashboard', {
+      headers: { cookie: `ghostboard_admin_session=${token}` },
+    });
+    const res = middleware(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('location')).toBeNull();
+  });
+
   it('redirects unauthenticated users trying to access /profile to /auth/login?from=/profile', () => {
     const req = new NextRequest('http://localhost:3001/profile');
     const res = middleware(req);

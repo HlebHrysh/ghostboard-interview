@@ -21,6 +21,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `Webhook signature verification failed: ${err.message}` }, { status: 400 });
       }
     } else {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[Stripe Webhook] Missing signature or webhook secret in production');
+        return NextResponse.json({ error: 'Signature verification required in production' }, { status: 400 });
+      }
       // 2. Safe JSON parser for Local Development & Test Simulator
       try {
         event = JSON.parse(rawBody);
@@ -112,9 +116,9 @@ export async function POST(req: NextRequest) {
       // Simulator direct trigger action — DEVELOPMENT / LOCAL ONLY
       // Blocked in production when real Stripe credentials are configured.
       case 'SIMULATE_UPGRADE': {
-        // Security: refuse simulation if real Stripe secret is active
-        if (stripeKey && stripeKey.startsWith('sk_live_')) {
-          console.warn('[Stripe Webhook] ⛔ SIMULATE_UPGRADE blocked in production (live Stripe key active)');
+        // Security: refuse simulation if in production or real live Stripe secret is active
+        if (process.env.NODE_ENV === 'production' || (stripeKey && stripeKey.startsWith('sk_live_'))) {
+          console.warn('[Stripe Webhook] ⛔ SIMULATE_UPGRADE blocked in production');
           return NextResponse.json({ error: 'Simulation disabled in production' }, { status: 403 });
         }
 

@@ -175,7 +175,7 @@ export default function AdminSystem() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4 font-mono">
-        <Loader2 className="w-10 h-10 animate-spin text-[#C8F135]" />
+        <Loader2 className="w-10 h-10 animate-spin text-white" />
         <span className="text-xs text-zinc-500 uppercase tracking-widest">
           Polling Infrastructure Telemetry...
         </span>
@@ -208,7 +208,7 @@ export default function AdminSystem() {
           disabled={isRefreshing}
           className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-zinc-300 hover:text-white transition-all cursor-pointer"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#C8F135]" : ""}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-white" : ""}`} />
           <span>Оновити телеметрію</span>
         </button>
       </div>
@@ -217,7 +217,7 @@ export default function AdminSystem() {
       <div className="bg-[#08080c] border border-white/[0.08] p-6 sm:p-7 rounded-3xl space-y-6">
         <div>
           <h2 className="text-sm font-bold font-mono text-white uppercase tracking-wider flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[#C8F135]" />
+            <Zap className="w-4 h-4 text-white" />
             <span>Interactive Diagnostic Engine (Live Pings)</span>
           </h2>
           <p className="text-xs font-mono text-zinc-500 mt-1">
@@ -245,7 +245,7 @@ export default function AdminSystem() {
                   className={`mt-3 p-2.5 rounded-xl border text-[11px] ${
                     geminiResult.error
                       ? "bg-rose-500/10 border-rose-500/20 text-rose-400"
-                      : "bg-[#C8F135]/10 border-[#C8F135]/20 text-[#C8F135]"
+                      : "bg-white/10 border-white/20 text-white"
                   }`}
                 >
                   {geminiResult.error ? (
@@ -262,7 +262,7 @@ export default function AdminSystem() {
             <button
               onClick={handleTestGemini}
               disabled={testingGemini}
-              className="w-full btn-lime py-2 rounded-xl text-black font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-[0_0_15px_rgba(200,241,53,0.3)] transition-all"
+              className="w-full btn-resend-primary !py-2.5 font-mono text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow-[0_0_15px_rgba(255,255,255,0.3)] transition-all"
             >
               {testingGemini ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
               <span>{testingGemini ? "Вимірювання..." : "Ping Gemini AI"}</span>
@@ -274,7 +274,7 @@ export default function AdminSystem() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-white flex items-center gap-2">
-                  <Terminal className="w-4 h-4 text-violet-400" />
+                  <Terminal className="w-4 h-4 text-white" />
                   <span>Deepgram Nova-3</span>
                 </span>
                 <span className="text-[10px] text-zinc-500">Live STT API</span>
@@ -344,7 +344,7 @@ export default function AdminSystem() {
         {/* Core Services Status */}
         <div className="bg-[#08080c] border border-white/[0.08] p-6 sm:p-7 rounded-3xl space-y-6">
           <h2 className="text-sm font-mono text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-            <Server className="w-4 h-4 text-[#C8F135]" />
+            <Server className="w-4 h-4 text-white" />
             <span>Статус підключених сервісів</span>
           </h2>
 
@@ -392,7 +392,7 @@ export default function AdminSystem() {
 
             <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-1">
               <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Server Environment</span>
-              <div className="text-base font-black text-[#C8F135] uppercase">{r?.env}</div>
+              <div className="text-base font-black text-zinc-200 uppercase">{r?.env}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-1">

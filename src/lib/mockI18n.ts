@@ -39,6 +39,13 @@ export interface MockTranslations {
   errFailedEval: string;
   errGenQuestion: string;
   errServerUnavailable: string;
+  howItWorksTitle: string;
+  step1Title: string;
+  step1Desc: string;
+  step2Title: string;
+  step2Desc: string;
+  step3Title: string;
+  step3Desc: string;
 }
 
 export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
@@ -81,6 +88,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Не вдалося оцінити відповідь',
     errGenQuestion: 'Помилка генерації запитання',
     errServerUnavailable: 'Сервер тимчасово недоступний',
+    howItWorksTitle: 'Як працює симулятор співбесід',
+    step1Title: '1. Стек та рівень',
+    step1Desc: 'Оберіть спеціалізацію та грейд. Питання адаптуються під актуальні вимоги FAANG та європейських аутсорс/продуктових лідерів.',
+    step2Title: '2. Голосове запитання ШІ',
+    step2Desc: 'Слухайте синтезований голос технічного ліда або читайте текст запитання з підказкою, що саме перевіряє інтерв\'юер.',
+    step3Title: '3. Розбір від Staff Engineer',
+    step3Desc: 'Введіть або надиктуйте відповідь та отримайте миттєвий аудит: бали 1-10, сильні тези, пропущені деталі та еталонну відповідь.',
   },
   en: {
     title: 'AI MOCK INTERVIEWER',
@@ -121,6 +135,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Failed to evaluate answer',
     errGenQuestion: 'Error generating question',
     errServerUnavailable: 'Server temporarily unavailable',
+    howItWorksTitle: 'How the Interview Simulator Works',
+    step1Title: '1. Target Stack & Seniority',
+    step1Desc: 'Select your specialization and grade. Questions dynamically calibrate to real FAANG & Tier-1 tech screening bars.',
+    step2Title: '2. Realistic AI Voice Question',
+    step2Desc: 'Listen to the synthetic voice of a tech lead or read the question along with key context hints explaining what is being tested.',
+    step3Title: '3. Staff Engineer Audit',
+    step3Desc: 'Submit your answer and receive instant evaluation: 1-10 scoring, highlighted strengths, missing key concepts, and an ideal response.',
   },
   pl: {
     title: 'AI MOCK INTERVIEWER',
@@ -161,6 +182,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Nie udało się ocenić odpowiedzi',
     errGenQuestion: 'Błąd generowania pytania',
     errServerUnavailable: 'Serwer tymczasowo niedostępny',
+    howItWorksTitle: 'Jak działa symulator rozmowy kwalifikacyjnej',
+    step1Title: '1. Stack i poziom',
+    step1Desc: 'Wybierz specjalizację i poziom. Pytania dostosowują się do aktualnych wymagań czołowych firm technologicznych.',
+    step2Title: '2. Głosowe pytanie AI',
+    step2Desc: 'Posłuchaj pytania zadanego głosem Tech Leada lub przeczytaj treść wraz ze wskazówką, co dokładnie jest weryfikowane.',
+    step3Title: '3. Ocena Staff Engineera',
+    step3Desc: 'Wpisz swoją odpowiedź i uzyskaj natychmiastowy audyt: ocenę 1-10, mocne punkty, pominięte koncepcje oraz wzorcową odpowiedź.',
   },
   de: {
     title: 'AI MOCK INTERVIEWER',
@@ -201,6 +229,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Antwort konnte nicht bewertet werden',
     errGenQuestion: 'Fehler beim Generieren der Frage',
     errServerUnavailable: 'Server vorübergehend nicht erreichbar',
+    howItWorksTitle: 'So funktioniert der Interview-Simulator',
+    step1Title: '1. Tech-Stack & Erfahrungsstufe',
+    step1Desc: 'Wählen Sie Spezialisierung und Senioritätslevel. Fragen orientieren sich an realen FAANG- und Enterprise-Standards.',
+    step2Title: '2. Realistische KI-Sprachausgabe',
+    step2Desc: 'Hören Sie die synthetisierte Stimme des Tech Leads oder lesen Sie die Frage inklusive Prüfkontext.',
+    step3Title: '3. Feedback vom Staff Engineer',
+    step3Desc: 'Geben Sie Ihre Antwort ein und erhalten Sie sofortiges Feedback: Punktzahl 1-10, Stärken, Lücken und die optimale Musterantwort.',
   },
   fr: {
     title: 'AI MOCK INTERVIEWER',
@@ -241,6 +276,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: "Impossible d'évaluer la réponse",
     errGenQuestion: 'Erreur lors de la génération de la question',
     errServerUnavailable: 'Serveur temporairement indisponible',
+    howItWorksTitle: 'Comment fonctionne le simulateur d\'entretien',
+    step1Title: '1. Stack & Niveau',
+    step1Desc: 'Sélectionnez votre rôle et niveau de séniorité. Les questions s\'adaptent aux exigences réelles des leaders de la tech.',
+    step2Title: '2. Question vocale IA',
+    step2Desc: 'Écoutez la voix synthétique du Tech Lead ou l\'énoncé accompagné des concepts ciblés par le recruteur.',
+    step3Title: '3. Audit Staff Engineer',
+    step3Desc: 'Soumettez votre réponse et obtenez un retour immédiat : score 1-10, points forts, notions manquantes et réponse modèle.',
   },
   es: {
     title: 'AI MOCK INTERVIEWER',
@@ -281,6 +323,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'No se pudo evaluar la respuesta',
     errGenQuestion: 'Error al generar la pregunta',
     errServerUnavailable: 'Servidor temporalmente no disponible',
+    howItWorksTitle: 'Cómo funciona el simulador de entrevistas',
+    step1Title: '1. Stack y Nivel',
+    step1Desc: 'Elige tu especialidad y nivel de experiencia. Las preguntas se calibran según los estándares de empresas tecnológicas líderes.',
+    step2Title: '2. Pregunta de voz con IA',
+    step2Desc: 'Escucha la voz sintetizada del líder técnico o lee la pregunta con notas de contexto sobre lo que se está evaluando.',
+    step3Title: '3. Auditoría de Staff Engineer',
+    step3Desc: 'Ingresa tu respuesta y recibe una evaluación instantánea: puntuación 1-10, puntos fuertes, conceptos omitidos y respuesta modelo.',
   },
   pt: {
     title: 'AI MOCK INTERVIEWER',
@@ -321,6 +370,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Não foi possível avaliar a resposta',
     errGenQuestion: 'Erro ao gerar a pergunta',
     errServerUnavailable: 'Servidor temporariamente indisponível',
+    howItWorksTitle: 'Como funciona o simulador de entrevistas',
+    step1Title: '1. Stack e Nível',
+    step1Desc: 'Selecione sua especialidade e nível de senioridade. As perguntas são ajustadas aos padrões reais das principais empresas de tecnologia.',
+    step2Title: '2. Pergunta por voz com IA',
+    step2Desc: 'Ouça a voz sintética do líder técnico ou leia a pergunta com dicas contextuais sobre o que está sendo avaliado.',
+    step3Title: '3. Auditoria de Staff Engineer',
+    step3Desc: 'Envie sua resposta e receba feedback instantâneo: nota de 1 a 10, pontos fortes, tópicos omitidos e resposta exemplar.',
   },
   it: {
     title: 'AI MOCK INTERVIEWER',
@@ -361,6 +417,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Impossibile valutare la risposta',
     errGenQuestion: 'Errore nella generazione della domanda',
     errServerUnavailable: 'Server momentaneamente non disponibile',
+    howItWorksTitle: 'Come funziona il simulatore di colloqui',
+    step1Title: '1. Stack e Livello',
+    step1Desc: 'Seleziona la tua specializzazione e livello. Le domande sono calibrate sugli standard delle principali aziende tech.',
+    step2Title: '2. Domanda vocale dell\'IA',
+    step2Desc: 'Ascolta la voce sintetizzata del Tech Lead o leggi la domanda con suggerimenti su cosa viene verificato.',
+    step3Title: '3. Valutazione Staff Engineer',
+    step3Desc: 'Invia la tua risposta e ricevi una revisione immediata: punteggio 1-10, punti di forza, aspetti mancanti e risposta ideale.',
   },
   cs: {
     title: 'AI MOCK INTERVIEWER',
@@ -401,6 +464,13 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Nepodařilo se vyhodnotit odpověď',
     errGenQuestion: 'Chyba při generování otázky',
     errServerUnavailable: 'Server je dočasně nedostupný',
+    howItWorksTitle: 'Jak funguje simulátor pohovoru',
+    step1Title: '1. Stack a úroveň',
+    step1Desc: 'Vyberte specializaci a úroveň. Otázky se přizpůsobují reálným standardům předních technologických společností.',
+    step2Title: '2. Hlasová otázka AI',
+    step2Desc: 'Poslechněte si syntetizovaný hlas technického vedoucího nebo si přečtěte otázku včetně nápovědy k hodnoceným konceptům.',
+    step3Title: '3. Hodnocení Staff Engineera',
+    step3Desc: 'Zadejte odpověď a získejte okamžitý audit: hodnocení 1-10, silné stránky, chybějící pojmy a vzorovou odpověď.',
   },
   nl: {
     title: 'AI MOCK INTERVIEWER',
@@ -441,5 +511,12 @@ export const MOCK_I18N: Record<SupportedLocale, MockTranslations> = {
     errFailedEval: 'Beoordeling mislukt',
     errGenQuestion: 'Fout bij het genereren van de vraag',
     errServerUnavailable: 'Server tijdelijk niet beschikbaar',
+    howItWorksTitle: 'Hoe de interviewsimulator werkt',
+    step1Title: '1. Stack & Niveau',
+    step1Desc: 'Kies je specialisatie en niveau. De vragen worden afgestemd op de standaarden van toonaangevende techbedrijven.',
+    step2Title: '2. AI-spraakvraag',
+    step2Desc: 'Luister naar de stem van de Tech Lead of lees de vraag inclusief context over wat er precies wordt getoetst.',
+    step3Title: '3. Staff Engineer Beoordeling',
+    step3Desc: 'Voer je antwoord in en ontvang directe feedback: score 1-10, sterke punten, ontbrekende concepten en het ideale modelantwoord.',
   },
 };

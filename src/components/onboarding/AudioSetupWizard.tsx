@@ -128,7 +128,7 @@ export const AudioSetupWizard: React.FC<AudioSetupWizardProps> = ({
           <div className="p-6 border-b border-white/10 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Volume2 className="w-5 h-5 text-[#C8F135]" />
+                <Volume2 className="w-5 h-5 text-zinc-300" />
                 {m.title}
               </h2>
               <p className="text-sm text-zinc-400 mt-1">{m.subtitle}</p>
@@ -188,7 +188,7 @@ export const AudioSetupWizard: React.FC<AudioSetupWizardProps> = ({
                   className="space-y-6"
                 >
                   <h3 className="text-lg font-semibold text-white">{m.step2Title}</h3>
-                  <div className="p-4 rounded-xl bg-[#C8F135]/10 border border-[#C8F135]/20 text-[#C8F135] text-sm">
+                  <div className="p-4 rounded-xl bg-white/[0.04] border border-white/15 text-zinc-200 text-sm">
                     {environment === 'browser' ? m.step2InstructionBrowser : m.step2InstructionApp}
                   </div>
                   
@@ -238,7 +238,7 @@ export const AudioSetupWizard: React.FC<AudioSetupWizardProps> = ({
                       <button
                         onClick={handlePlayTest}
                         disabled={isPlayingTest}
-                        className="w-full py-2.5 rounded-lg bg-[#C8F135] hover:bg-white text-black font-bold flex justify-center items-center gap-2 disabled:opacity-50"
+                        className="w-full py-2.5 rounded-lg bg-white hover:bg-white text-black font-bold flex justify-center items-center gap-2 disabled:opacity-50"
                       >
                         <Play className="w-4 h-4" /> {isPlayingTest ? m.testingBtn : m.testBtn}
                       </button>

@@ -14,12 +14,16 @@ export interface DbUser {
   trialQuestionsUsed?: number;
   stripeCustomerId?: string | null;
   resumeContext?: string | null;
+  passwordHash?: string | null;
   createdAt: Date;
 }
+
+export type DeviceType = 'web' | 'desktop' | 'phone';
 
 export interface DbSession {
   token: string;
   userId: string;
+  deviceType?: string;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -55,6 +59,40 @@ const memPublicScorecards = g.memPublicScorecards || (g.memPublicScorecards = ne
 
 export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+// ── Password hashing (scrypt, built into Node) ──────────────────────────────
+const SCRYPT_KEYLEN = 64;
+
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+export function verifyPassword(password: string, stored: string | null | undefined): boolean {
+  if (!stored || typeof password !== 'string') return false;
+  const [scheme, salt, hash] = stored.split('$');
+  if (scheme !== 'scrypt' || !salt || !hash) return false;
+  const expected = Buffer.from(hash, 'hex');
+  const actual = crypto.scryptSync(password, salt, expected.length);
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+export const MIN_PASSWORD_LENGTH = 8;
+
+export async function setUserPassword(userId: string, password: string): Promise<void> {
+  const passwordHash = hashPassword(password);
+  if (process.env.DATABASE_URL) {
+    try {
+      await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+      return;
+    } catch {
+      // Fallback
+    }
+  }
+  const memUser = memUsersById.get(userId);
+  if (memUser) memUser.passwordHash = passwordHash;
 }
 
 export async function getUserByEmail(email: string): Promise<DbUser | null> {
@@ -202,10 +240,14 @@ export async function deleteUser(userId: string): Promise<boolean> {
 }
 
 
-export async function createSession(userId: string): Promise<DbSession> {
+export async function createSession(
+  userId: string,
+  deviceType: DeviceType = 'web',
+  ttlMs: number = 30 * 24 * 60 * 60 * 1000
+): Promise<DbSession> {
   const token = generateToken();
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const expiresAt = new Date(now.getTime() + ttlMs);
 
   if (process.env.DATABASE_URL) {
     try {
@@ -213,6 +255,7 @@ export async function createSession(userId: string): Promise<DbSession> {
         data: {
           token,
           userId,
+          deviceType,
           createdAt: now,
           expiresAt,
         },
@@ -225,11 +268,106 @@ export async function createSession(userId: string): Promise<DbSession> {
   const session: DbSession = {
     token,
     userId,
+    deviceType,
     createdAt: now,
     expiresAt,
   };
   memSessions.set(token, session);
   return session;
+}
+
+export interface PublicSessionInfo {
+  id: string; // short, non-secret identifier (hash prefix of token)
+  publicId: string; // alias for id used in revocation API
+  deviceType: string;
+  createdAt: Date;
+  expiresAt: Date;
+  isCurrent: boolean;
+}
+
+function sessionPublicId(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 16);
+}
+
+export async function listUserSessions(userId: string, currentToken?: string): Promise<PublicSessionInfo[]> {
+  const now = new Date();
+  let sessions: DbSession[] = [];
+  let fromDb = false;
+  if (process.env.DATABASE_URL) {
+    try {
+      sessions = await prisma.session.findMany({
+        where: { userId, expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' },
+      });
+      fromDb = true;
+    } catch {
+      // Fallback
+    }
+  }
+  if (!fromDb) {
+    sessions = Array.from(memSessions.values())
+      .filter((s) => s.userId === userId && s.expiresAt > now)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  } else {
+    // Also include any active in-memory sessions for this user not yet in DB
+    const dbTokenSet = new Set(sessions.map((s) => s.token));
+    const extraMem = Array.from(memSessions.values())
+      .filter((s) => s.userId === userId && s.expiresAt > now && !dbTokenSet.has(s.token));
+    sessions = [...sessions, ...extraMem];
+  }
+  return sessions.map((s) => ({
+    id: sessionPublicId(s.token),
+    publicId: sessionPublicId(s.token),
+    deviceType: s.deviceType || 'web',
+    createdAt: s.createdAt,
+    expiresAt: s.expiresAt,
+    isCurrent: !!currentToken && s.token === currentToken,
+  }));
+}
+
+/** Revoke a session by its public id, only if it belongs to the given user. */
+export async function revokeUserSession(userId: string, publicId: string): Promise<boolean> {
+  const memTokens = Array.from(memSessions.values()).filter((s) => s.userId === userId).map((s) => s.token);
+  let dbTokens: string[] = [];
+  if (process.env.DATABASE_URL) {
+    try {
+      const rows = await prisma.session.findMany({ where: { userId }, select: { token: true } });
+      dbTokens = rows.map((r) => r.token);
+    } catch {
+      // Fallback
+    }
+  }
+  const allTokens = Array.from(new Set([...dbTokens, ...memTokens]));
+  const match = allTokens.find((t) => sessionPublicId(t) === publicId);
+  if (!match) return false;
+  await deleteSession(match);
+  return true;
+}
+
+/** Revoke all sessions belonging to the user except the specified current token. */
+export async function revokeAllOtherUserSessions(userId: string, currentToken: string): Promise<number> {
+  const memTokens = Array.from(memSessions.values())
+    .filter((s) => s.userId === userId && s.token !== currentToken)
+    .map((s) => s.token);
+
+  let dbTokens: string[] = [];
+  if (process.env.DATABASE_URL) {
+    try {
+      const rows = await prisma.session.findMany({
+        where: { userId, token: { not: currentToken } },
+        select: { token: true },
+      });
+      dbTokens = rows.map((r) => r.token);
+    } catch {
+      // Fallback
+    }
+  }
+
+  const allTokensToRevoke = Array.from(new Set([...dbTokens, ...memTokens]));
+  for (const t of allTokensToRevoke) {
+    await deleteSession(t);
+  }
+  return allTokensToRevoke.length;
 }
 
 export async function getSessionUser(token: string): Promise<DbUser | null> {
@@ -257,6 +395,8 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
 
   return memUsersById.get(memSession.userId) || null;
 }
+
+export const getUserBySessionToken = getSessionUser;
 
 export async function deleteSession(token: string): Promise<void> {
   if (process.env.DATABASE_URL) {

@@ -176,10 +176,10 @@ export default function AdminRevenue() {
         <div className="p-5 rounded-3xl bg-[#08080c] border border-white/[0.08] flex items-center justify-between font-mono">
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Estimated MRR</div>
-            <div className="text-2xl sm:text-3xl font-black text-[#C8F135] mt-1">${mrr.toFixed(0)}</div>
+            <div className="text-2xl sm:text-3xl font-black text-white mt-1">${mrr.toFixed(0)}</div>
             <div className="text-[10px] text-zinc-500 mt-0.5">{proPayments.length} активних Pro</div>
           </div>
-          <div className="p-3 rounded-2xl bg-[#C8F135]/10 border border-[#C8F135]/20 text-[#C8F135]">
+          <div className="p-3 rounded-2xl bg-white/10 border border-white/20 text-white">
             <TrendingUp className="w-6 h-6" />
           </div>
         </div>
@@ -216,7 +216,7 @@ export default function AdminRevenue() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Пошук за email клієнта або ID транзакції..."
-            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/50 transition-all"
+            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-white/50 transition-all"
           />
         </div>
 
@@ -232,7 +232,7 @@ export default function AdminRevenue() {
               onClick={() => setPlanFilter(tab.key)}
               className={`px-3 py-1.5 rounded-xl uppercase font-bold text-[10px] tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                 planFilter === tab.key
-                  ? "bg-[#C8F135] text-black shadow-[0_0_12px_rgba(200,241,53,0.3)]"
+                  ? "bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.3)]"
                   : "bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.07]"
               }`}
             >
@@ -266,7 +266,7 @@ export default function AdminRevenue() {
       {/* ── Payments Table ── */}
       {loading ? (
         <div className="flex justify-center py-24">
-          <Loader2 className="w-8 h-8 animate-spin text-[#C8F135]" />
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
         </div>
       ) : (
         <div className="bg-[#08080c] border border-white/[0.08] rounded-3xl overflow-hidden overflow-x-auto shadow-2xl">
@@ -300,7 +300,7 @@ export default function AdminRevenue() {
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 ${
                           p.plan.toLowerCase().includes("lifetime")
                             ? "bg-amber-400/15 text-amber-400 border border-amber-400/30"
-                            : "bg-[#C8F135]/15 text-[#C8F135] border border-[#C8F135]/30"
+                            : "bg-white/10 text-white border border-white/20"
                         }`}
                       >
                         {p.plan}
@@ -313,7 +313,7 @@ export default function AdminRevenue() {
                       <span
                         className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
                           isSimulated
-                            ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                            ? "bg-white/[0.08] text-zinc-300 border border-white/20"
                             : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                         }`}
                       >

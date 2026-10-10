@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rateLimit';
+import { createAdminToken } from '@/lib/adminGuard';
 
 export async function POST(req: NextRequest) {
   // Brute-force protection: max 5 admin login attempts per minute per IP
@@ -28,8 +29,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Невірний пароль' }, { status: 401 });
   }
 
+  const token = createAdminToken();
   const res = NextResponse.json({ success: true });
-  res.cookies.set('ghostboard_admin_session', 'authenticated', {
+  res.cookies.set('ghostboard_admin_session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

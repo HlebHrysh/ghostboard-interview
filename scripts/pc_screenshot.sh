@@ -7,7 +7,8 @@
 # updates immediately!
 # ==============================================================================
 
-curl -s -X POST http://localhost:3000/api/ai/screenshot \
+PORT="${PORT:-3001}"
+curl -s -X POST "http://localhost:${PORT}/api/ai/screenshot" \
   -H "Content-Type: application/json" \
   -d '{"captureHost": true, "locale": "uk"}' > /dev/null 2>&1 &
 

@@ -73,6 +73,7 @@ export interface SettingsI18n {
   navHome: string;
   navMock: string;
   navCopilot: string;
+  navProfile: string;
 }
 
 export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
@@ -162,6 +163,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'На головну',
     navMock: 'AI Mock Тренажер',
     navCopilot: 'Запустити Copilot →',
+    navProfile: 'Профіль',
   },
   en: {
     title: 'Platform Settings & Teleprompter System',
@@ -249,6 +251,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Home',
     navMock: 'AI Mock Simulator',
     navCopilot: 'Launch Copilot →',
+    navProfile: 'Profile',
   },
   pl: {
     title: 'Ustawienia platformy i telepromptera',
@@ -336,6 +339,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Strona główna',
     navMock: 'Symulator AI Mock',
     navCopilot: 'Uruchom Copilot →',
+    navProfile: 'Profil',
   },
   de: {
     title: 'Plattformeinstellungen & Teleprompter',
@@ -423,6 +427,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Startseite',
     navMock: 'KI-Mock-Simulator',
     navCopilot: 'Copilot starten →',
+    navProfile: 'Profil',
   },
   fr: {
     title: 'Paramètres du produit & Système Téléprompteur',
@@ -510,6 +515,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Accueil',
     navMock: 'Simulateur AI Mock',
     navCopilot: 'Lancer Copilot →',
+    navProfile: 'Profil',
   },
   es: {
     title: 'Ajustes del producto y Sistema Teleprompter',
@@ -597,6 +603,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Inicio',
     navMock: 'Simulador AI Mock',
     navCopilot: 'Iniciar Copilot →',
+    navProfile: 'Perfil',
   },
   pt: {
     title: 'Configurações do Produto e Sistema Teleprompter',
@@ -684,6 +691,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Início',
     navMock: 'Simulador AI Mock',
     navCopilot: 'Iniciar Copilot →',
+    navProfile: 'Perfil',
   },
   it: {
     title: 'Impostazioni Prodotto & Sistema Teleprompter',
@@ -771,6 +779,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Home',
     navMock: 'Simulatore AI Mock',
     navCopilot: 'Avvia Copilot →',
+    navProfile: 'Profilo',
   },
   cs: {
     title: 'Nastavení platformy a teleprompteru',
@@ -858,6 +867,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Domů',
     navMock: 'AI Mock simulátor',
     navCopilot: 'Spustit Copilot →',
+    navProfile: 'Profil',
   },
   nl: {
     title: 'Platforminstellingen & teleprompter',
@@ -945,6 +955,7 @@ export const SETTINGS_I18N: Record<SupportedLocale, SettingsI18n> = {
     navHome: 'Home',
     navMock: 'AI Mock Simulator',
     navCopilot: 'Copilot starten →',
+    navProfile: 'Profiel',
   },
 };
 

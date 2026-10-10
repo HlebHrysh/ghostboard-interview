@@ -29,6 +29,7 @@ import { GhostDetectiveLogo } from '@/components/ui/GhostDetectiveLogo';
 import { useLocale } from '@/contexts/LocaleContext';
 import { LangDropdown } from '@/components/ui/LangDropdown';
 import { getArenaTranslations } from '@/lib/arenaI18n';
+import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 
 interface ArenaQuestion {
   id: string;
@@ -84,6 +85,7 @@ export default function ArenaSandboxPage() {
 
   // Audio / Speech
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isListeningVoice, setIsListeningVoice] = useState<boolean>(false);
   const recognitionRef = useRef<any>(null);
 
@@ -96,16 +98,70 @@ export default function ArenaSandboxPage() {
 
   const sandboxAudioRef = useRef<HTMLAudioElement | null>(null);
 
-  // ── Speech Synthesis: Read Question Aloud ──────────────────────────────────
+  const BCP47_MAP: Record<string, string> = {
+    ua: 'uk-UA',
+    uk: 'uk-UA',
+    en: 'en-US',
+    pl: 'pl-PL',
+    de: 'de-DE',
+    fr: 'fr-FR',
+    es: 'es-ES',
+    pt: 'pt-PT',
+    it: 'it-IT',
+    cs: 'cs-CZ',
+    nl: 'nl-NL',
+  };
+
+  const stopSpeaking = () => {
+    if (sandboxAudioRef.current) {
+      sandboxAudioRef.current.pause();
+      sandboxAudioRef.current.currentTime = 0;
+      sandboxAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
+
+  const toggleMute = () => {
+    setIsAudioMuted((prev) => {
+      const next = !prev;
+      if (next) {
+        stopSpeaking();
+      }
+      return next;
+    });
+  };
+
+  // Immediate silence when muted changes
+  useEffect(() => {
+    if (isAudioMuted) {
+      stopSpeaking();
+    }
+  }, [isAudioMuted]);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
+  }, []);
+
+  // ── Speech Synthesis: Read Question Aloud in Selected Language ────────────
   const speakQuestion = (text: string) => {
     if (isAudioMuted || typeof window === 'undefined') return;
     stopSpeaking();
 
+    const ttsLang = locale === 'ua' ? 'uk' : locale;
+
     try {
-      const audio = new Audio(`/api/audio/tts?lang=uk&text=${encodeURIComponent(text)}`);
+      setIsSpeaking(true);
+      const audio = new Audio(`/api/audio/tts?lang=${encodeURIComponent(ttsLang)}&text=${encodeURIComponent(text)}`);
       sandboxAudioRef.current = audio;
       audio.onended = () => {
         sandboxAudioRef.current = null;
+        setIsSpeaking(false);
       };
       audio.onerror = () => {
         sandboxAudioRef.current = null;
@@ -124,31 +180,31 @@ export default function ArenaSandboxPage() {
       try {
         window.speechSynthesis.cancel();
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = 'uk-UA';
+        const langCode = BCP47_MAP[locale] || 'en-US';
+        utterance.lang = langCode;
         const voices = window.speechSynthesis.getVoices();
-        const ukVoice = voices.find(
+        const prefix = langCode.slice(0, 2).toLowerCase();
+        const matchedVoice = voices.find(
           (v) =>
-            v.lang.startsWith('uk') ||
-            v.lang === 'uk-UA' ||
-            v.name.toLowerCase().includes('ukrain') ||
-            v.name.toLowerCase().includes('україн')
+            v.lang.toLowerCase().replace('_', '-') === langCode.toLowerCase() ||
+            v.lang.toLowerCase().replace('_', '-').startsWith(prefix)
         );
-        if (ukVoice) utterance.voice = ukVoice;
+        if (matchedVoice) utterance.voice = matchedVoice;
         utterance.rate = 1.0;
         utterance.pitch = 1.0;
+        utterance.onend = () => {
+          setIsSpeaking(false);
+        };
+        utterance.onerror = () => {
+          setIsSpeaking(false);
+        };
+        setIsSpeaking(true);
         window.speechSynthesis.speak(utterance);
-      } catch {}
-    }
-  };
-
-  const stopSpeaking = () => {
-    if (sandboxAudioRef.current) {
-      sandboxAudioRef.current.pause();
-      sandboxAudioRef.current.currentTime = 0;
-      sandboxAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
+      } catch {
+        setIsSpeaking(false);
+      }
+    } else {
+      setIsSpeaking(false);
     }
   };
 
@@ -174,7 +230,7 @@ export default function ArenaSandboxPage() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'uk-UA';
+      recognition.lang = BCP47_MAP[locale] || 'en-US';
 
       recognition.onstart = () => {
         setIsListeningVoice(true);
@@ -239,6 +295,7 @@ export default function ArenaSandboxPage() {
           track: selectedTrack,
           level: selectedLevel,
           candidateName,
+          language: locale === 'ua' ? 'uk' : locale,
         }),
       });
 
@@ -285,6 +342,7 @@ export default function ArenaSandboxPage() {
           track: selectedTrack,
           level: selectedLevel,
           isArchitectureCase: activeQ.isArchitectureCase,
+          language: locale === 'ua' ? 'uk' : locale,
         }),
       });
 
@@ -326,6 +384,7 @@ export default function ArenaSandboxPage() {
             candidateName,
             roundEvaluations,
             durationSec: totalTimer,
+            language: locale === 'ua' ? 'uk' : locale,
           }),
         });
 
@@ -348,10 +407,7 @@ export default function ArenaSandboxPage() {
   const activeQuestion = questions[currentIndex];
 
   return (
-    <div className="min-h-screen bg-black text-white font-sans flex flex-col justify-between p-4 sm:p-8 relative selection:bg-[#C8F135] selection:text-black">
-      {/* Background cyber radial glow */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-950/20 via-zinc-950 to-black -z-10 pointer-events-none" />
-
+    <SubpageStripesContainer pattern="telemetry" className="min-h-screen flex flex-col justify-between p-4 sm:p-8">
       {/* Top Header */}
       <header className="max-w-5xl w-full mx-auto flex items-center justify-between py-4 border-b border-white/10 mb-8">
         <div className="flex items-center gap-3">
@@ -364,8 +420,8 @@ export default function ArenaSandboxPage() {
           </Link>
           <div className="flex items-center gap-2.5">
             <GhostDetectiveLogo size="mini" />
-            <span className="w-2 h-2 rounded-full bg-[#C8F135] animate-pulse shadow-[0_0_10px_#C8F135]" />
-            <span className="font-mono font-black text-sm tracking-widest text-[#C8F135]">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse shadow-[0_0_10px_rgba(255,255,255,0.6)]" />
+            <span className="font-mono font-black text-sm tracking-widest text-zinc-100">
               {a.headerTitle}
             </span>
             <span className="hidden sm:inline text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10 uppercase">
@@ -390,7 +446,7 @@ export default function ArenaSandboxPage() {
             </Link>
             <Link
               href="/interview"
-              className="px-2.5 py-1 rounded-lg text-[#C8F135] hover:text-white transition-colors font-bold"
+              className="px-2.5 py-1 rounded-lg text-white hover:text-zinc-200 transition-colors font-bold"
             >
               {a.navCopilot}
             </Link>
@@ -398,7 +454,7 @@ export default function ArenaSandboxPage() {
 
           {stage === 'battle' && (
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900 border border-white/10 font-mono text-xs text-zinc-300">
-              <Clock className="w-3.5 h-3.5 text-[#C8F135]" />
+              <Clock className="w-3.5 h-3.5 text-zinc-300" />
               <span>
                 {Math.floor(totalTimer / 60)}:{(totalTimer % 60).toString().padStart(2, '0')}
               </span>
@@ -407,11 +463,21 @@ export default function ArenaSandboxPage() {
 
           <button
             type="button"
-            onClick={() => setIsAudioMuted((p) => !p)}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10 transition-colors cursor-pointer"
-            title={isAudioMuted ? a.unmuteInterviewer : a.muteInterviewer}
+            onClick={toggleMute}
+            className={`p-2 rounded-xl transition-all border cursor-pointer ${
+              isAudioMuted
+                ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                : isSpeaking
+                ? 'bg-white/15 border-white/40 text-white shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+                : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
+            }`}
+            title={isAudioMuted ? a.unmuteInterviewer : isSpeaking ? a.silenceNarrator : a.muteInterviewer}
           >
-            {isAudioMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-[#C8F135]" />}
+            {isAudioMuted ? (
+              <VolumeX className="w-4 h-4 text-rose-400" />
+            ) : (
+              <Volume2 className={`w-4 h-4 ${isSpeaking ? 'text-white animate-pulse' : 'text-zinc-300'}`} />
+            )}
           </button>
 
           <LangDropdown />
@@ -423,7 +489,7 @@ export default function ArenaSandboxPage() {
         {/* ── STAGE 1: SETUP ──────────────────────────────────────────────── */}
         {stage === 'setup' && (
           <div className="flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-300">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#C8F135]/10 border border-[#C8F135]/30 text-[#C8F135] text-xs font-mono font-bold uppercase tracking-wider mb-3">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-xs font-mono font-bold uppercase tracking-wider mb-3">
               <Flame className="w-3.5 h-3.5" />
               <span>{a.setupBadge}</span>
             </div>
@@ -445,7 +511,7 @@ export default function ArenaSandboxPage() {
                 value={candidateName}
                 onChange={(e) => setCandidateName(e.target.value)}
                 placeholder={a.namePlaceholder}
-                className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-white/15 focus:border-[#C8F135] text-white font-mono text-sm focus:outline-none transition-colors"
+                className="w-full px-4 py-3 rounded-xl bg-zinc-950 border border-white/15 focus:border-white/50 focus:ring-1 focus:ring-white/20 text-white font-mono text-sm focus:outline-none transition-colors"
               />
             </div>
 
@@ -461,14 +527,14 @@ export default function ArenaSandboxPage() {
                     onClick={() => setSelectedTrack(t.id)}
                     className={`p-5 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between relative overflow-hidden ${
                       selectedTrack === t.id
-                        ? 'bg-zinc-900 border-[#C8F135] shadow-[0_0_30px_rgba(200,241,53,0.15)] scale-[1.02]'
+                        ? 'bg-zinc-900 border-white shadow-[0_0_30px_rgba(255,255,255,0.1)] scale-[1.02]'
                         : 'bg-zinc-950/80 border-white/10 hover:border-white/20'
                     }`}
                   >
                     <div>
                       <div className="text-3xl mb-3">{t.icon}</div>
                       <h3 className="font-bold text-white text-base font-sans">{t.title}</h3>
-                      <div className="text-[11px] font-mono text-[#C8F135] mb-2">{t.badge}</div>
+                      <div className="text-[11px] font-mono text-zinc-300 mb-2">{t.badge}</div>
                       <p className="text-xs text-zinc-400 leading-relaxed">{t.description}</p>
                     </div>
 
@@ -497,7 +563,7 @@ export default function ArenaSandboxPage() {
                     onClick={() => setSelectedLevel(lvl)}
                     className={`px-5 py-2.5 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer ${
                       selectedLevel === lvl
-                        ? 'bg-[#C8F135] text-black shadow-[0_0_20px_rgba(200,241,53,0.3)]'
+                        ? 'bg-white text-black shadow-[0_0_20px_rgba(255,255,255,0.25)]'
                         : 'bg-zinc-900 border border-white/10 text-zinc-400 hover:text-white'
                     }`}
                   >
@@ -512,7 +578,7 @@ export default function ArenaSandboxPage() {
               type="button"
               onClick={handleStartArena}
               disabled={isLoading}
-              className="py-4 px-8 rounded-2xl bg-[#C8F135] hover:bg-white text-black font-black text-sm font-mono shadow-[0_0_35px_rgba(200,241,53,0.4)] transition-all flex items-center gap-3 active:scale-95 cursor-pointer disabled:opacity-50"
+              className="py-4 px-8 rounded-2xl bg-white hover:bg-zinc-200 text-black font-black text-sm font-mono shadow-[0_0_35px_rgba(255,255,255,0.3)] transition-all flex items-center gap-3 active:scale-95 cursor-pointer disabled:opacity-50"
             >
               <Sparkles className="w-4 h-4 fill-black" />
               <span>
@@ -529,7 +595,7 @@ export default function ArenaSandboxPage() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between text-xs font-mono text-zinc-400">
                 <div className="flex items-center gap-2">
-                  <span className="text-[#C8F135] font-bold">
+                  <span className="text-zinc-200 font-bold">
                     {a.roundHeader(currentIndex + 1, questions.length)}
                   </span>
                   <span>•</span>
@@ -538,7 +604,7 @@ export default function ArenaSandboxPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 text-zinc-300">
-                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                  <Clock className="w-3.5 h-3.5 text-zinc-400" />
                   <span>{a.answerTimerLabel(questionTimer)}</span>
                 </div>
               </div>
@@ -550,9 +616,9 @@ export default function ArenaSandboxPage() {
                     key={q.id}
                     className={`h-full flex-1 transition-all ${
                       idx < currentIndex
-                        ? 'bg-emerald-500'
+                        ? 'bg-zinc-300'
                         : idx === currentIndex
-                        ? 'bg-[#C8F135] animate-pulse'
+                        ? 'bg-white animate-pulse'
                         : 'bg-zinc-800'
                     }`}
                   />
@@ -561,21 +627,60 @@ export default function ArenaSandboxPage() {
             </div>
 
             {/* Question Card */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-zinc-950 border-2 border-white/15 shadow-2xl relative overflow-hidden">
-              <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="p-6 sm:p-8 rounded-3xl bg-zinc-950 border border-white/15 shadow-2xl relative overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-zinc-300">
                   <span>{a.topicLabel}</span>
                   <span className="text-white font-bold">{activeQuestion.topic}</span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => speakQuestion(activeQuestion.question)}
-                  className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white transition-colors"
-                  title={a.replayQuestionAudio}
-                >
-                  <Volume2 className="w-4 h-4 text-[#C8F135]" />
-                </button>
+                {/* Narrator Controls */}
+                <div className="flex items-center gap-2">
+                  {isSpeaking ? (
+                    <button
+                      type="button"
+                      onClick={stopSpeaking}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(244,63,94,0.15)] active:scale-95"
+                      title={a.silenceNarrator}
+                    >
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
+                      <span>{a.silenceNarrator}</span>
+                      <span className="flex gap-0.5 items-center h-3">
+                        <span className="w-0.5 h-2 bg-rose-400 animate-[pulse_0.6s_ease-in-out_infinite]" />
+                        <span className="w-0.5 h-3 bg-rose-400 animate-[pulse_0.8s_ease-in-out_infinite]" />
+                        <span className="w-0.5 h-1.5 bg-rose-400 animate-[pulse_0.5s_ease-in-out_infinite]" />
+                      </span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => speakQuestion(activeQuestion.question)}
+                      disabled={isAudioMuted}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+                        isAudioMuted
+                          ? 'bg-zinc-900 border-white/5 text-zinc-500 cursor-not-allowed opacity-60'
+                          : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10 hover:border-white/20'
+                      }`}
+                      title={isAudioMuted ? a.narratorMuted : a.narratorPlay}
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
+                      <span>{a.narratorPlay}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    className={`p-1.5 rounded-xl border transition-all cursor-pointer ${
+                      isAudioMuted
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20'
+                        : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border-white/10'
+                    }`}
+                    title={isAudioMuted ? a.unmuteInterviewer : a.muteInterviewer}
+                  >
+                    {isAudioMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-zinc-400" />}
+                  </button>
+                </div>
               </div>
 
               <h2 className="text-xl sm:text-2xl font-bold text-white leading-relaxed mb-4 font-sans">
@@ -609,7 +714,7 @@ export default function ArenaSandboxPage() {
                     </>
                   ) : (
                     <>
-                      <Mic className="w-3.5 h-3.5 text-[#C8F135]" />
+                      <Mic className="w-3.5 h-3.5 text-zinc-300" />
                       <span>{a.micDictate}</span>
                     </>
                   )}
@@ -621,7 +726,7 @@ export default function ArenaSandboxPage() {
                 value={candidateAnswer}
                 onChange={(e) => setCandidateAnswer(e.target.value)}
                 placeholder={a.answerPlaceholder}
-                className="w-full p-4 rounded-2xl bg-zinc-950/90 border border-white/15 focus:border-[#C8F135] text-white font-sans text-sm focus:outline-none transition-colors leading-relaxed resize-none shadow-inner"
+                className="w-full p-4 rounded-2xl bg-zinc-950/90 border border-white/15 focus:border-white/50 focus:ring-1 focus:ring-white/20 text-white font-sans text-sm focus:outline-none transition-colors leading-relaxed resize-none shadow-inner"
               />
 
               <div className="flex items-center justify-between pt-1">
@@ -633,7 +738,7 @@ export default function ArenaSandboxPage() {
                   type="button"
                   onClick={handleSubmitAnswer}
                   disabled={isEvaluating || !candidateAnswer.trim()}
-                  className="py-3 px-6 rounded-xl bg-[#C8F135] hover:bg-white text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(200,241,53,0.3)] transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-40"
+                  className="py-3 px-6 rounded-xl bg-white hover:bg-zinc-200 text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(255,255,255,0.25)] transition-all flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-40"
                 >
                   <Send className="w-3.5 h-3.5 fill-black" />
                   <span>
@@ -657,12 +762,12 @@ export default function ArenaSandboxPage() {
                   </div>
                   <h3 className="text-xl font-bold text-white flex items-center gap-2">
                     <span>{a.verdictLabel}</span>
-                    <span className="text-[#C8F135]">{currentRoundEvaluation.verdict}</span>
+                    <span className="text-zinc-200">{currentRoundEvaluation.verdict}</span>
                   </h3>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-zinc-900 border border-[#C8F135]/40 text-center">
-                  <span className="text-2xl font-black font-mono text-[#C8F135]">
+                <div className="p-3 rounded-2xl bg-zinc-900 border border-white/20 text-center">
+                  <span className="text-2xl font-black font-mono text-white">
                     {currentRoundEvaluation.score}
                   </span>
                   <span className="text-[10px] font-mono text-zinc-500 block uppercase">{a.outOf100}</span>
@@ -705,9 +810,9 @@ export default function ArenaSandboxPage() {
 
               {/* Staff Critique: Strengths & Missing Concepts */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-zinc-300">
-                  <span className="font-mono text-emerald-400 font-bold block mb-2 uppercase text-[11px] flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> {a.keyStrengthsTitle}
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                  <span className="font-mono text-zinc-200 font-bold block mb-2 uppercase text-[11px] flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-white" /> {a.keyStrengthsTitle}
                   </span>
                   <ul className="list-disc pl-4 space-y-1 text-zinc-300">
                     {currentRoundEvaluation.strengths.map((s, idx) => (
@@ -716,9 +821,9 @@ export default function ArenaSandboxPage() {
                   </ul>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-zinc-300">
-                  <span className="font-mono text-amber-400 font-bold block mb-2 uppercase text-[11px] flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" /> {a.gapsTitle}
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs text-zinc-300">
+                  <span className="font-mono text-zinc-400 font-bold block mb-2 uppercase text-[11px] flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 text-zinc-400" /> {a.gapsTitle}
                   </span>
                   <ul className="list-disc pl-4 space-y-1 text-zinc-300">
                     {currentRoundEvaluation.missingKeyConcepts.map((m, idx) => (
@@ -731,7 +836,7 @@ export default function ArenaSandboxPage() {
               {/* Staff Reference Answer */}
               {currentRoundEvaluation.staffEngineerAnswer && (
                 <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs leading-relaxed mb-6">
-                  <span className="font-mono text-[#C8F135] font-bold block mb-1 uppercase text-[10px]">
+                  <span className="font-mono text-zinc-300 font-bold block mb-1 uppercase text-[10px]">
                     {a.staffAnswerTitle}
                   </span>
                   <p className="text-zinc-300">{currentRoundEvaluation.staffEngineerAnswer}</p>
@@ -744,7 +849,7 @@ export default function ArenaSandboxPage() {
                   type="button"
                   onClick={handleProceedNext}
                   disabled={isLoading}
-                  className="py-3 px-6 rounded-xl bg-[#C8F135] hover:bg-white text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(200,241,53,0.3)] transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                  className="py-3 px-6 rounded-xl bg-white hover:bg-zinc-200 text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(255,255,255,0.25)] transition-all flex items-center gap-2 cursor-pointer active:scale-95"
                 >
                   <span>
                     {currentIndex + 1 < questions.length ? a.nextRoundBtn : a.viewScorecardBtn}
@@ -760,8 +865,8 @@ export default function ArenaSandboxPage() {
         {stage === 'finished' && finalScorecard && (
           <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-400">
             <div className="text-center mb-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-bold uppercase tracking-wider mb-2">
-                <Award className="w-4 h-4 text-emerald-400" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-xs font-mono font-bold uppercase tracking-wider mb-2">
+                <Award className="w-4 h-4 text-white" />
                 <span>{a.assessmentPassedBadge}</span>
               </div>
               <h1 className="text-3xl font-black text-white tracking-tight">
@@ -782,13 +887,13 @@ export default function ArenaSandboxPage() {
                 onClick={() => setStage('setup')}
                 className="py-3 px-5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-white/10 font-mono text-xs flex items-center gap-2 transition-all cursor-pointer active:scale-95"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-[#C8F135]" />
+                <RotateCcw className="w-3.5 h-3.5 text-zinc-400" />
                 <span>{a.tryAnotherTrackBtn}</span>
               </button>
 
               <Link
                 href="/interview"
-                className="py-3 px-5 rounded-2xl bg-[#C8F135] hover:bg-white text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(200,241,53,0.3)] transition-all flex items-center gap-2 active:scale-95"
+                className="py-3 px-5 rounded-2xl bg-white hover:bg-zinc-200 text-black font-black text-xs font-mono shadow-[0_0_25px_rgba(255,255,255,0.25)] transition-all flex items-center gap-2 active:scale-95"
               >
                 <Sparkles className="w-3.5 h-3.5 fill-black" />
                 <span>{a.launchCopilotBtn}</span>
@@ -802,6 +907,6 @@ export default function ArenaSandboxPage() {
       <footer className="text-center text-[11px] font-mono text-zinc-600 mt-12 pb-2">
         {a.footerText}
       </footer>
-    </div>
+    </SubpageStripesContainer>
   );
 }

@@ -64,7 +64,7 @@ export function AdminHeader({ onRefresh, isRefreshing, onMobileMenuToggle }: Adm
         <div>
           <h1 className="text-base sm:text-lg font-black font-mono tracking-wider text-white uppercase flex items-center gap-2">
             <span>{meta.title}</span>
-            <span className="hidden lg:inline-flex text-[9px] px-2 py-0.5 rounded-full bg-[#C8F135]/15 text-[#C8F135] border border-[#C8F135]/30">
+            <span className="hidden lg:inline-flex text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-200 border border-white/20">
               PROD
             </span>
           </h1>
@@ -90,7 +90,7 @@ export function AdminHeader({ onRefresh, isRefreshing, onMobileMenuToggle }: Adm
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono text-zinc-300 hover:text-white transition-all active:scale-95 disabled:opacity-50"
             title="Оновити дані"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#C8F135]" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-white" : ""}`} />
             <span className="hidden md:inline">Refresh</span>
           </button>
         )}
@@ -99,7 +99,7 @@ export function AdminHeader({ onRefresh, isRefreshing, onMobileMenuToggle }: Adm
         <Link
           href="/interview"
           target="_blank"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#C8F135]/10 hover:bg-[#C8F135]/20 border border-[#C8F135]/30 text-xs font-mono font-bold text-[#C8F135] transition-all hover:shadow-[0_0_15px_rgba(200,241,53,0.2)] active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-mono font-bold text-white transition-all hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95"
         >
           <span>Live App</span>
           <ExternalLink className="w-3.5 h-3.5" />

@@ -72,14 +72,14 @@ export const SpiderRadarChart: React.FC<SpiderRadarChartProps> = ({
         width={size}
         height={size}
         viewBox={`0 0 ${size} ${size}`}
-        className="overflow-visible select-none drop-shadow-[0_0_15px_rgba(200,241,53,0.15)]"
+        className="overflow-visible select-none drop-shadow-[0_0_15px_rgba(255,255,255,0.15)]"
       >
         <defs>
           {/* Radial gradient for score polygon fill */}
           <radialGradient id="radarFillGrad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#C8F135" stopOpacity="0.45" />
-            <stop offset="70%" stopColor="#10B981" stopOpacity="0.25" />
-            <stop offset="100%" stopColor="#065F46" stopOpacity="0.05" />
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.35" />
+            <stop offset="70%" stopColor="#71717a" stopOpacity="0.15" />
+            <stop offset="100%" stopColor="#18181b" stopOpacity="0.05" />
           </radialGradient>
 
           {/* Glow filter */}
@@ -121,8 +121,8 @@ export const SpiderRadarChart: React.FC<SpiderRadarChartProps> = ({
         <polygon
           points={scorePoints}
           fill="url(#radarFillGrad)"
-          stroke="#C8F135"
-          strokeWidth="2.5"
+          stroke="#ffffff"
+          strokeWidth="2"
           filter="url(#radarGlow)"
           className="transition-all duration-700 ease-out"
         />
@@ -141,7 +141,7 @@ export const SpiderRadarChart: React.FC<SpiderRadarChartProps> = ({
                 cx={vx}
                 cy={vy}
                 r="4.5"
-                fill="#C8F135"
+                fill="#ffffff"
                 stroke="#000"
                 strokeWidth="1.5"
                 className="transition-all duration-700 ease-out"
@@ -164,7 +164,7 @@ export const SpiderRadarChart: React.FC<SpiderRadarChartProps> = ({
                 y={ly + 12}
                 textAnchor="middle"
                 dominantBaseline="central"
-                className="fill-[#C8F135] font-mono text-[9px] font-bold"
+                className="fill-zinc-200 font-mono text-[9px] font-bold"
               >
                 {rawVal}%
               </text>

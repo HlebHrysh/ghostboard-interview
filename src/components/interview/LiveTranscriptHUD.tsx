@@ -66,7 +66,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
                     ? 'bg-white animate-pulse'
                     : isFrozen
                     ? 'bg-cyan-400'
-                    : 'bg-[#C8F135]'
+                    : 'bg-white'
                 }`}
               />
               <span className="font-semibold uppercase tracking-wider text-zinc-300">
@@ -99,7 +99,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
 
             {isClearSpeech && (
               <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-zinc-400">
-                <ShieldCheck className="w-3 h-3 text-[#C8F135]" />
+                <ShieldCheck className="w-3 h-3 text-white" />
                 <span>Audio Clean</span>
               </span>
             )}
@@ -112,7 +112,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
             {liveTranscript ? (
               <span>
                 «{liveTranscript}»
-                <span className="inline-block w-1.5 h-3.5 bg-[#C8F135] ml-1.5 align-middle animate-pulse" />
+                <span className="inline-block w-1.5 h-3.5 bg-white ml-1.5 align-middle animate-pulse" />
               </span>
             ) : (
               <span className="text-zinc-500 font-mono text-xs">
@@ -130,7 +130,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
               title={hud.answerNowBtn}
             >
               <span>Answer</span>
-              <CornerDownLeft className="w-3 h-3 text-[#C8F135]" />
+              <CornerDownLeft className="w-3 h-3 text-white" />
             </button>
           )}
         </div>

@@ -18,6 +18,7 @@ import {
   Loader2,
   RefreshCw,
   ExternalLink,
+  Laptop,
 } from "lucide-react";
 
 interface AdminStats {
@@ -89,7 +90,7 @@ export default function AdminDashboard() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4 font-mono">
-        <Loader2 className="w-10 h-10 animate-spin text-[#C8F135]" />
+        <Loader2 className="w-10 h-10 animate-spin text-white" />
         <span className="text-xs text-zinc-500 uppercase tracking-widest">
           Loading Executive Telemetry...
         </span>
@@ -109,7 +110,7 @@ export default function AdminDashboard() {
           onClick={() => {
             window.location.href = "/admin/login?from=/admin";
           }}
-          className="btn-lime text-xs font-mono px-5 py-2.5 shadow-[0_0_20px_rgba(200,241,53,0.2)]"
+          className="btn-resend-primary text-xs font-mono !px-5 !py-2.5 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
         >
           Увійти в адмінку знову →
         </button>
@@ -138,12 +139,12 @@ export default function AdminDashboard() {
     <div className="space-y-8 animate-in fade-in duration-300">
       {/* ── Top Executive Welcome Strip ── */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-[#08080c] via-[#0c0c12] to-[#08080c] border border-white/[0.08] flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-80 h-full bg-[#C8F135]/5 blur-3xl pointer-events-none" />
+        <div className="absolute top-0 right-0 w-80 h-full bg-white/[0.03] blur-3xl pointer-events-none" />
 
         <div className="space-y-1 relative z-10">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] font-mono tracking-widest text-[#C8F135] uppercase font-bold">
+            <span className="text-[10px] font-mono tracking-widest text-zinc-300 uppercase font-bold">
               SYSTEM LIVE & OPTIMAL
             </span>
           </div>
@@ -156,18 +157,27 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex items-center gap-3 relative z-10">
+          <Link
+            href="/admin/desktop"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-mono text-zinc-200 font-bold transition-all active:scale-95"
+          >
+            <Laptop className="w-4 h-4" />
+            <span>Desktop Fleet</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </Link>
+
           <button
             onClick={() => fetchStats(true)}
             disabled={isRefreshing}
             className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-zinc-300 hover:text-white transition-all active:scale-95 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-[#C8F135]" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-white" : ""}`} />
             <span>Оновити метрики</span>
           </button>
 
           <Link
             href="/admin/users"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#C8F135] text-black text-xs font-mono font-bold tracking-wider hover:shadow-[0_0_25px_rgba(200,241,53,0.4)] transition-all active:scale-95"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-black text-xs font-mono font-bold tracking-wider hover:shadow-[0_0_25px_rgba(255,255,255,0.4)] transition-all active:scale-95"
           >
             <span>Керувати юзерами</span>
             <ArrowUpRight className="w-4 h-4" />
@@ -195,8 +205,8 @@ export default function AdminDashboard() {
           title="MRR (Pro Pass)"
           value={`$${mrr.toFixed(0)}`}
           subtitle={`${proUsers} активних Pro`}
-          icon={<CreditCard className="w-4 h-4 text-[#C8F135]" />}
-          glow="lime"
+          icon={<CreditCard className="w-4 h-4 text-white" />}
+          glow="white"
         />
         <MetricCard
           title="Lifetime Founder"
@@ -209,8 +219,8 @@ export default function AdminDashboard() {
           title="Всього сесій"
           value={totalSessions.toLocaleString()}
           subtitle={`Сер. трив.: ${avgDurationMin} хв`}
-          icon={<Mic className="w-4 h-4 text-violet-400" />}
-          glow="violet"
+          icon={<Mic className="w-4 h-4 text-zinc-300" />}
+          glow="white"
         />
         <MetricCard
           title="Питань Copilot"
@@ -228,14 +238,14 @@ export default function AdminDashboard() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold font-mono text-white uppercase tracking-wider flex items-center gap-2">
-                <Activity className="w-4 h-4 text-[#C8F135]" />
+                <Activity className="w-4 h-4 text-white" />
                 <span>Динаміка тренувань (останні 7 днів)</span>
               </h3>
               <p className="text-[11px] font-mono text-zinc-500 mt-1">
                 Кількість проведених сесій щодня
               </p>
             </div>
-            <span className="text-xs font-mono font-bold text-[#C8F135] bg-[#C8F135]/10 px-2.5 py-1 rounded-full border border-[#C8F135]/20">
+            <span className="text-xs font-mono font-bold text-white bg-white/10 px-2.5 py-1 rounded-full border border-white/20">
               {weekSessions.reduce((a, b) => a + b, 0)} сесій за тиждень
             </span>
           </div>
@@ -248,7 +258,7 @@ export default function AdminDashboard() {
                 return (
                   <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
                     {/* Tooltip & Value */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-mono text-[#C8F135] bg-black/90 border border-white/10 px-2 py-0.5 rounded-md shadow-lg pointer-events-none mb-1">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-mono text-white bg-black/90 border border-white/10 px-2 py-0.5 rounded-md shadow-lg pointer-events-none mb-1">
                       {count} сесій
                     </div>
 
@@ -257,8 +267,8 @@ export default function AdminDashboard() {
                       <div
                         className={`w-full rounded-lg transition-all duration-500 ${
                           isToday
-                            ? "bg-gradient-to-t from-[#C8F135] to-[#E3FFA8] shadow-[0_0_20px_rgba(200,241,53,0.35)]"
-                            : "bg-[#C8F135]/40 hover:bg-[#C8F135]/80"
+                            ? "bg-gradient-to-t from-zinc-300 to-white shadow-[0_0_20px_rgba(255,255,255,0.35)]"
+                            : "bg-white/30 hover:bg-white/60"
                         }`}
                         style={{ height: `${heightPercent}%` }}
                       />
@@ -267,7 +277,7 @@ export default function AdminDashboard() {
                     {/* Label */}
                     <span
                       className={`text-[10px] font-mono truncate w-full text-center ${
-                        isToday ? "text-[#C8F135] font-bold" : "text-zinc-500"
+                        isToday ? "text-white font-bold" : "text-zinc-500"
                       }`}
                     >
                       {weekLabels[idx] || `Day ${idx + 1}`}
@@ -302,7 +312,7 @@ export default function AdminDashboard() {
                 label="Pro Pass"
                 count={plans.pro}
                 total={totalUsers}
-                color="bg-[#C8F135]"
+                color="bg-white"
                 badgeText="$15-25/mo"
               />
               <PlanProgressRow
@@ -318,7 +328,7 @@ export default function AdminDashboard() {
           <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-xs font-mono space-y-1 text-zinc-400">
             <div className="flex justify-between">
               <span>Платна конверсія:</span>
-              <span className="text-[#C8F135] font-bold">{conversionRate}%</span>
+              <span className="text-white font-bold">{conversionRate}%</span>
             </div>
             <div className="flex justify-between">
               <span>Загалом платних:</span>
@@ -333,7 +343,7 @@ export default function AdminDashboard() {
         {/* Quick Management Hub */}
         <div className="bg-[#08080c] border border-white/[0.08] p-6 sm:p-7 rounded-3xl space-y-4">
           <h3 className="text-sm font-bold font-mono text-white uppercase tracking-wider flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[#C8F135]" />
+            <Zap className="w-4 h-4 text-white" />
             <span>Швидкі дії</span>
           </h3>
           <div className="grid grid-cols-1 gap-2.5 font-mono text-xs">
@@ -356,7 +366,7 @@ export default function AdminDashboard() {
               className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] flex items-center justify-between group transition-all"
             >
               <div className="flex items-center gap-3">
-                <Mic className="w-4 h-4 text-violet-400 group-hover:scale-110 transition-transform" />
+                <Mic className="w-4 h-4 text-zinc-300 group-hover:scale-110 transition-transform" />
                 <div>
                   <div className="text-white font-bold">Історія тренувань</div>
                   <div className="text-[10px] text-zinc-500">Записи запитань та скоркарди</div>
@@ -422,7 +432,7 @@ export default function AdminDashboard() {
                           act.type === "payment"
                             ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
                             : act.type === "session"
-                            ? "bg-violet-500/10 border-violet-500/20 text-violet-400"
+                            ? "bg-white/10 border-white/20 text-zinc-300"
                             : "bg-sky-500/10 border-sky-500/20 text-sky-400"
                         }`}
                       >
@@ -446,7 +456,7 @@ export default function AdminDashboard() {
                         <span
                           className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase ${
                             act.badge.includes("PRO") || act.badge.includes("SUCCEEDED")
-                              ? "bg-[#C8F135]/20 text-[#C8F135]"
+                              ? "bg-white/15 text-white"
                               : act.badge.includes("LIFETIME")
                               ? "bg-amber-400/20 text-amber-400"
                               : "bg-zinc-800 text-zinc-400"
@@ -477,19 +487,19 @@ function MetricCard({
   value,
   subtitle,
   icon,
-  glow = "lime",
+  glow = "white",
 }: {
   title: string;
   value: string;
   subtitle: string;
   icon: React.ReactNode;
-  glow?: "lime" | "sky" | "amber" | "violet" | "emerald" | "cyan";
+  glow?: "lime" | "sky" | "amber" | "emerald" | "cyan" | "white";
 }) {
   const glowStyles = {
-    lime: "group-hover:border-[#C8F135]/40 group-hover:shadow-[0_0_30px_rgba(200,241,53,0.15)]",
+    lime: "group-hover:border-white/30 group-hover:shadow-[0_0_30px_rgba(255,255,255,0.15)]",
     sky: "group-hover:border-sky-400/40 group-hover:shadow-[0_0_30px_rgba(56,189,248,0.15)]",
     amber: "group-hover:border-amber-400/40 group-hover:shadow-[0_0_30px_rgba(251,191,36,0.15)]",
-    violet: "group-hover:border-violet-400/40 group-hover:shadow-[0_0_30px_rgba(167,139,250,0.15)]",
+    white: "group-hover:border-white/30 group-hover:shadow-[0_0_30px_rgba(255,255,255,0.15)]",
     emerald: "group-hover:border-emerald-400/40 group-hover:shadow-[0_0_30px_rgba(52,211,153,0.15)]",
     cyan: "group-hover:border-cyan-400/40 group-hover:shadow-[0_0_30px_rgba(34,211,238,0.15)]",
   };

@@ -176,7 +176,7 @@ export default function AdminSessions() {
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Всього сесій</div>
             <div className="text-2xl font-black text-white mt-1">{totalSessions}</div>
           </div>
-          <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
+          <div className="p-2.5 rounded-xl bg-white/10 border border-white/20 text-white">
             <Mic className="w-5 h-5" />
           </div>
         </div>
@@ -184,9 +184,9 @@ export default function AdminSessions() {
         <div className="p-4 rounded-3xl bg-[#08080c] border border-white/[0.08] flex items-center justify-between font-mono">
           <div>
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Питань опрацьовано</div>
-            <div className="text-2xl font-black text-[#C8F135] mt-1">{totalQuestions}</div>
+            <div className="text-2xl font-black text-white mt-1">{totalQuestions}</div>
           </div>
-          <div className="p-2.5 rounded-xl bg-[#C8F135]/10 border border-[#C8F135]/20 text-[#C8F135]">
+          <div className="p-2.5 rounded-xl bg-white/10 border border-white/20 text-white">
             <HelpCircle className="w-5 h-5" />
           </div>
         </div>
@@ -211,7 +211,7 @@ export default function AdminSessions() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Пошук за email кандидата або темою співбесіди..."
-            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/50 transition-all"
+            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-white/50 transition-all"
           />
         </div>
 
@@ -226,7 +226,7 @@ export default function AdminSessions() {
               onClick={() => setPrivacyFilter(tab.key as any)}
               className={`px-3 py-1.5 rounded-xl uppercase font-bold text-[10px] tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                 privacyFilter === tab.key
-                  ? "bg-[#C8F135] text-black shadow-[0_0_12px_rgba(200,241,53,0.3)]"
+                  ? "bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.3)]"
                   : "bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.07]"
               }`}
             >
@@ -239,7 +239,7 @@ export default function AdminSessions() {
       {/* ── Sessions Table ── */}
       {loading ? (
         <div className="flex justify-center py-24">
-          <Loader2 className="w-8 h-8 animate-spin text-[#C8F135]" />
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
         </div>
       ) : (
         <div className="bg-[#08080c] border border-white/[0.08] rounded-3xl overflow-hidden overflow-x-auto shadow-2xl">
@@ -275,7 +275,7 @@ export default function AdminSessions() {
                       {mins > 0 ? `${mins}хв ${secs}с` : `${secs}с`}
                     </td>
                     <td className="p-4 text-right">
-                      <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 font-bold text-[#C8F135]">
+                      <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 font-bold text-zinc-200">
                         {s.questionsCount} пит.
                       </span>
                     </td>
@@ -284,7 +284,7 @@ export default function AdminSessions() {
                         <Link
                           href={`/scorecard/${s.publicSlug}`}
                           target="_blank"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#C8F135]/10 text-[#C8F135] border border-[#C8F135]/30 font-bold text-[10px] hover:bg-[#C8F135]/20"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 text-white border border-white/20 font-bold text-[10px] hover:bg-white/20"
                         >
                           <span>Public</span>
                           <ExternalLink className="w-3 h-3" />
@@ -297,7 +297,7 @@ export default function AdminSessions() {
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => setInspectingSession(s)}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-[#C8F135]/20 hover:text-[#C8F135] text-zinc-400 transition-all cursor-pointer"
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/20 hover:text-white text-zinc-400 transition-all cursor-pointer"
                           title="Інспектувати Q&A запитання"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -334,7 +334,7 @@ export default function AdminSessions() {
             <div className="flex items-start justify-between border-b border-white/[0.08] pb-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#C8F135]/15 text-[#C8F135] font-bold uppercase">
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-zinc-200 border border-white/20 font-bold uppercase">
                     Session Log
                   </span>
                   <span className="text-[10px] text-zinc-500">{new Date(inspectingSession.timestamp).toLocaleString("uk-UA")}</span>
@@ -357,7 +357,7 @@ export default function AdminSessions() {
             {/* Q&A Items Scrollable Content */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                <Sparkles className="w-3.5 h-3.5 text-[#C8F135]" />
+                <Sparkles className="w-3.5 h-3.5 text-white" />
                 <span>Опрацьовані запитання ({inspectingSession.items?.length || 0})</span>
               </h4>
 
@@ -398,7 +398,7 @@ export default function AdminSessions() {
                     {qa.codeSnippet && (
                       <div className="pt-1">
                         <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Код:</span>
-                        <pre className="p-2.5 rounded-xl bg-black border border-white/10 text-[10px] text-[#C8F135] overflow-x-auto mt-1">
+                        <pre className="p-2.5 rounded-xl bg-black border border-white/10 text-[10px] text-zinc-200 overflow-x-auto mt-1">
                           {qa.codeSnippet}
                         </pre>
                       </div>
@@ -417,7 +417,7 @@ export default function AdminSessions() {
                 <Link
                   href={`/scorecard/${inspectingSession.publicSlug}`}
                   target="_blank"
-                  className="text-xs text-[#C8F135] hover:underline flex items-center gap-1 font-bold"
+                  className="text-xs text-zinc-300 hover:text-white hover:underline flex items-center gap-1 font-bold"
                 >
                   <span>Відкрити публічний скоркард</span>
                   <ExternalLink className="w-3.5 h-3.5" />
@@ -428,7 +428,7 @@ export default function AdminSessions() {
 
               <button
                 onClick={() => setInspectingSession(null)}
-                className="btn-lime text-xs px-4 py-2 font-bold"
+                className="btn-resend-glass text-xs !px-4 !py-2 font-mono"
               >
                 Закрити
               </button>

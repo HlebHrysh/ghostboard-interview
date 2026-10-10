@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Lock, Unlock, ChevronLeft, ChevronRight, ShieldAlert, Sparkles, Radio, Globe } from 'lucide-react';
+import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 
 interface SyncQAItem {
   id: string;
@@ -188,7 +189,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
     return (
       <div
         onClick={handleTogglePanic}
-        className="min-h-screen bg-black text-zinc-500 font-mono p-6 flex flex-col justify-center items-center text-center cursor-pointer select-none"
+        className="min-h-screen bg-transparent text-zinc-500 font-mono p-6 flex flex-col justify-center items-center text-center cursor-pointer select-none"
       >
         <div className="w-12 h-12 rounded-full border border-zinc-800 flex items-center justify-center mb-4 text-zinc-600">
           <ShieldAlert className="w-6 h-6" />
@@ -200,16 +201,16 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#050608] text-white p-4 font-sans select-none flex flex-col justify-between overflow-x-hidden">
+    <SubpageStripesContainer pattern="spine" className="p-4 font-sans select-none flex flex-col justify-between">
       {/* Top Status Bar & Controls */}
-      <header className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
+      <header className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
         <div className="flex items-center gap-2">
-          <div className={`w-2.5 h-2.5 rounded-full ${isCapturing ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+          <div className={`w-2 h-2 rounded-full ${isCapturing ? 'bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse' : 'bg-zinc-600'}`} />
           <span className="text-[11px] font-mono tracking-widest uppercase text-zinc-400 font-semibold">
             {isCapturing ? 'LIVE AUDIO' : 'READY'}
           </span>
           {isConnected && (
-            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-zinc-900 text-zinc-500 border border-zinc-800">
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 text-zinc-400 border border-white/10">
               LAN SYNC
             </span>
           )}
@@ -221,8 +222,8 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
             onClick={() => setShowTranslation((prev) => !prev)}
             className={`p-2 rounded-xl border text-xs flex items-center gap-1 transition-all ${
               showTranslation
-                ? 'bg-[#C8F135]/10 border-[#C8F135]/40 text-[#C8F135]'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-500'
+                ? 'bg-white/10 border-white/20 text-white'
+                : 'btn-resend-glass !p-2 text-zinc-500'
             }`}
             title="Toggle native translation"
           >
@@ -235,8 +236,8 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
             onClick={handleToggleFreeze}
             className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
               isFrozen
-                ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
-                : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white'
+                ? 'bg-white/20 border-white/40 text-white shadow-[0_0_15px_rgba(255,255,255,0.2)]'
+                : 'btn-resend-glass !py-1.5 !px-3'
             }`}
           >
             {isFrozen ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
@@ -246,7 +247,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
           {/* Panic Trigger */}
           <button
             onClick={handleTogglePanic}
-            className="p-2 rounded-xl bg-red-950/30 border border-red-900/50 text-red-400 hover:bg-red-900/40"
+            className="p-2 rounded-xl bg-rose-950/30 border border-rose-900/50 text-rose-400 hover:bg-rose-900/40 active:scale-95 transition-all"
             title="Emergency Panic"
           >
             <ShieldAlert className="w-3.5 h-3.5" />
@@ -258,11 +259,11 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
       <main className="flex-1 flex flex-col justify-center py-6">
         {!isCapturing && !activeQA ? (
           <div className="text-center opacity-60 flex flex-col items-center justify-center gap-4 py-16">
-            <div className="w-6 h-6 rounded-full border-2 border-t-[#C8F135] border-zinc-800 animate-spin" />
-            <p className="text-lg font-bold font-mono tracking-widest text-zinc-500">
+            <div className="w-6 h-6 rounded-full border-2 border-t-white border-zinc-800 animate-spin" />
+            <p className="text-lg font-bold font-mono tracking-widest text-zinc-400">
               WAITING FOR INTERVIEW SPEECH...
             </p>
-            <p className="text-xs text-zinc-600 max-w-xs">
+            <p className="text-xs text-zinc-500 max-w-xs">
               Place phone right below your webcam for natural eyeline contact.
             </p>
           </div>
@@ -270,11 +271,11 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
           <div className="space-y-5 animate-in fade-in duration-200">
             {/* Active Question Title */}
             {activeQA && (
-              <div className="border-l-2 border-[#C8F135]/50 pl-3">
+              <div className="border-l-2 border-white/30 pl-3">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold">
                   QUESTION
                 </span>
-                <h2 className="text-base sm:text-lg font-semibold text-zinc-300 leading-snug">
+                <h2 className="text-base sm:text-lg font-semibold text-zinc-200 leading-snug">
                   {activeQA.question}
                 </h2>
               </div>
@@ -282,11 +283,11 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
 
             {/* Start Hook / Opening statement */}
             {activeQA?.startHook && (
-              <div className="bg-zinc-900/60 rounded-xl p-3 border border-white/5">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold block mb-1">
+              <div className="bg-white/[0.03] rounded-xl p-3 border border-white/[0.08]">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300 font-bold block mb-1">
                   OPENING HOOK:
                 </span>
-                <p className="text-sm font-medium text-emerald-200/90 leading-relaxed italic">
+                <p className="text-sm font-medium text-zinc-200 leading-relaxed italic">
                   &ldquo;{activeQA.startHook}&rdquo;
                 </p>
               </div>
@@ -294,8 +295,8 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
 
             {/* Active Answer (Large High-Contrast Text for Glancing) */}
             {activeQA && (
-              <div className="p-4 rounded-2xl bg-[#090b10] border border-[#C8F135]/30 shadow-[0_0_30px_rgba(200,241,53,0.08)]">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-[#C8F135] font-bold block mb-1.5">
+              <div className="bento-card p-4 sm:p-5 border border-white/[0.12] shadow-[0_0_30px_rgba(255,255,255,0.06)]">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300 font-bold block mb-1.5">
                   CORE ANSWER
                 </span>
                 <div className="text-2xl sm:text-3xl font-black text-white leading-tight break-words">
@@ -306,12 +307,12 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
 
             {/* Native Language Subtitle / Translation Crib-Sheet */}
             {showTranslation && activeQA?.nativeTranslation && (
-              <div className="p-3 rounded-xl bg-blue-950/20 border border-blue-500/20">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-blue-400 font-bold flex items-center gap-1.5 mb-1">
-                  <Globe className="w-3 h-3" />
+              <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.12]">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300 font-bold flex items-center gap-1.5 mb-1">
+                  <Globe className="w-3 h-3 text-white" />
                   ПЕРЕВОД / СУТЬ (РОДНОЙ ЯЗЫК):
                 </span>
-                <p className="text-sm text-blue-200/90 leading-relaxed">
+                <p className="text-sm text-zinc-200 leading-relaxed">
                   {activeQA.nativeTranslation}
                 </p>
               </div>
@@ -326,7 +327,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
                 <ul className="space-y-1">
                   {activeQA.hints.map((hint, i) => (
                     <li key={i} className="text-sm text-zinc-300 flex items-start gap-2">
-                      <span className="text-[#C8F135] font-bold">•</span>
+                      <span className="text-white font-bold">•</span>
                       <span>{hint}</span>
                     </li>
                   ))}
@@ -338,12 +339,12 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
       </main>
 
       {/* Bottom Navigation and Live Transcript */}
-      <footer className="pt-3 border-t border-zinc-900 space-y-3">
+      <footer className="pt-3 border-t border-white/[0.08] space-y-3">
         {/* Live Interim Transcript */}
         {liveTranscript && (
-          <div className="p-2.5 bg-zinc-950/80 rounded-xl border border-zinc-800/60 backdrop-blur-md">
+          <div className="p-2.5 bg-transparent/80 rounded-xl border border-white/[0.08] backdrop-blur-md">
             <div className="text-[10px] font-mono text-zinc-500 flex items-center gap-1.5 mb-0.5">
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+              <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
               HEARING NOW
             </div>
             <div className="text-xs text-zinc-300 italic truncate">
@@ -357,7 +358,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
           <button
             onClick={handlePrevCard}
             disabled={!activeQA || qas.length <= 1}
-            className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-xs font-mono font-semibold"
+            className="btn-resend-glass text-xs font-mono !py-2 !px-4 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1"
           >
             <ChevronLeft className="w-4 h-4" />
             PREV
@@ -372,14 +373,14 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
           <button
             onClick={handleNextCard}
             disabled={!activeQA || qas.length <= 1}
-            className="px-4 py-2.5 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-xs font-mono font-semibold"
+            className="btn-resend-glass text-xs font-mono !py-2 !px-4 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1"
           >
             NEXT
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </footer>
-    </div>
+    </SubpageStripesContainer>
   );
 }
 
@@ -387,7 +388,7 @@ export default function CompanionPage({ params }: { params: { sessionId: string 
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-black flex items-center justify-center text-zinc-500 font-mono text-xs">
+        <div className="min-h-screen bg-transparent flex items-center justify-center text-zinc-500 font-mono text-xs">
           CONNECTING HUD...
         </div>
       }

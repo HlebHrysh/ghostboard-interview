@@ -231,8 +231,8 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           className="fixed inset-0 bg-black/85 backdrop-blur-xl"
           onClick={onClose}
         >
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[#C8F135]/10 rounded-full blur-[140px] pointer-events-none" />
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-[140px] pointer-events-none" />
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-white/[0.03] rounded-full blur-[140px] pointer-events-none" />
+          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-white/[0.02] rounded-full blur-[140px] pointer-events-none" />
         </motion.div>
 
         {/* Modal Container */}
@@ -241,11 +241,11 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ type: 'spring', damping: 26, stiffness: 340 }}
-          className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-zinc-950/95 border border-white/15 rounded-3xl p-5 sm:p-7 shadow-[0_32px_120px_rgba(0,0,0,0.95)] z-10 text-white scrollbar-thin scrollbar-thumb-white/10"
+          className="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-[#08080c] border border-white/15 rounded-3xl p-5 sm:p-7 shadow-[0_32px_120px_rgba(0,0,0,0.95)] z-10 text-white scrollbar-thin scrollbar-thumb-white/10"
         >
           {/* Top Bar: Badge, Language Switcher, Close Button */}
           <div className="flex items-center justify-between gap-3 pb-4 border-b border-white/10 mb-5">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C8F135]/10 border border-[#C8F135]/30 text-[#C8F135] text-[11px] font-mono font-bold uppercase tracking-wider">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-white text-[11px] font-mono font-bold uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5" />
               <span>{m.badge}</span>
             </div>
@@ -259,7 +259,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-xs font-mono font-bold text-zinc-200 hover:text-white transition-all cursor-pointer shadow-sm"
                   title={m.langSelectLabel}
                 >
-                  <Globe className="w-3.5 h-3.5 text-[#C8F135]" />
+                  <Globe className="w-3.5 h-3.5 text-white" />
                   <span>{currentMeta.flag}</span>
                   <span className="uppercase">{locale}</span>
                   <ChevronDown className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isLangDropdownOpen ? 'rotate-180' : ''}`} />
@@ -281,7 +281,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                             onClick={() => handleLanguageChange(loc)}
                             className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-mono transition-all cursor-pointer ${
                               isSelected
-                                ? 'bg-[#C8F135]/20 text-[#C8F135] font-bold'
+                                ? 'bg-white/15 text-white font-bold'
                                 : 'text-zinc-300 hover:text-white hover:bg-white/10'
                             }`}
                           >
@@ -289,7 +289,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                               <span>{meta.flag}</span>
                               <span>{meta.nativeName}</span>
                             </span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-[#C8F135]" />}
+                            {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
                           </button>
                         );
                       })}
@@ -313,7 +313,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           {/* Modal Title and Description */}
           <div className="mb-5">
             <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              <Volume2 className="w-6 h-6 text-[#C8F135]" />
+              <Volume2 className="w-6 h-6 text-white" />
               {m.title}
             </h2>
             <p className="text-xs sm:text-sm text-zinc-400 mt-1">
@@ -325,7 +325,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           <div className="mb-5 p-4 rounded-2xl bg-zinc-900/60 border border-white/10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-[#C8F135] text-black font-mono text-xs font-black">
+                <span className="px-2 py-0.5 rounded-md bg-white text-black font-mono text-xs font-black">
                   01
                 </span>
                 <h3 className="text-sm font-bold text-white font-sans">
@@ -345,16 +345,16 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                 onClick={() => handleStartCaptureWithSource('tab')}
                 className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 active:scale-98 ${
                   isCapturing && currentSelectedSource === 'tab'
-                    ? 'bg-[#C8F135]/15 border-[#C8F135] shadow-[0_0_20px_rgba(200,241,53,0.25)]'
+                    ? 'bg-white/10 border-white/30 shadow-[0_0_20px_rgba(255,255,255,0.2)]'
                     : 'bg-black/40 border-white/10 hover:border-white/25 hover:bg-white/5'
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-2">
-                    <Radio className={`w-4 h-4 ${isCapturing && currentSelectedSource === 'tab' ? 'text-[#C8F135]' : 'text-zinc-300'}`} />
+                    <Radio className={`w-4 h-4 ${isCapturing && currentSelectedSource === 'tab' ? 'text-white' : 'text-zinc-300'}`} />
                     <span className="font-mono text-xs font-bold text-white">{m.btnTab}</span>
                   </div>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-[#C8F135]/20 text-[#C8F135] border border-[#C8F135]/30">
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/10 text-white border border-white/20">
                     REC
                   </span>
                 </div>
@@ -426,7 +426,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           <div className="mb-5 p-4 rounded-2xl bg-zinc-900/60 border border-white/10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-[#C8F135] text-black font-mono text-xs font-black">
+                <span className="px-2 py-0.5 rounded-md bg-white text-black font-mono text-xs font-black">
                   02
                 </span>
                 <h3 className="text-sm font-bold text-white font-sans">
@@ -446,8 +446,8 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                   <span>{activeVoiceMeta.nativeName} ({activeVoiceLang.toUpperCase()})</span>
                 </span>
                 {isPlayingVoice && (
-                  <span className="text-[#C8F135] flex items-center gap-1 font-bold animate-pulse">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135]" />
+                  <span className="text-white flex items-center gap-1 font-bold animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white" />
                     {m.voicePlaying}
                   </span>
                 )}
@@ -473,7 +473,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                 <button
                   type="button"
                   onClick={() => handlePlayVoice(activeVoiceLang)}
-                  className="py-2.5 px-4 rounded-xl bg-[#C8F135] hover:bg-white text-black font-mono text-xs font-black flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(200,241,53,0.3)] active:scale-95 cursor-pointer shrink-0"
+                  className="py-2.5 px-4 rounded-xl bg-white hover:bg-white text-black font-mono text-xs font-black flex items-center justify-center gap-2 transition-all shadow-[0_0_20px_rgba(255,255,255,0.3)] active:scale-95 cursor-pointer shrink-0"
                 >
                   <Play className="w-3.5 h-3.5 fill-black" />
                   <span>{m.playLocal} ({activeVoiceMeta.flag} {activeVoiceLang.toUpperCase()})</span>
@@ -495,7 +495,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                       }}
                       className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 ${
                         isCurrent
-                          ? 'bg-[#C8F135] text-black shadow-sm ring-1 ring-[#C8F135]'
+                          ? 'bg-white text-black shadow-sm ring-1 ring-white/50'
                           : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/5'
                       }`}
                       title={`Play test in ${meta.nativeName}`}
@@ -513,7 +513,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           <div className="mb-5 p-4 rounded-2xl bg-zinc-900/60 border border-white/10">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-[#C8F135] text-black font-mono text-xs font-black">
+                <span className="px-2 py-0.5 rounded-md bg-white text-black font-mono text-xs font-black">
                   03
                 </span>
                 <h3 className="text-sm font-bold text-white font-sans">
@@ -540,10 +540,10 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
               {/* Check 2: Audio Signal */}
               <div className={`p-2.5 rounded-xl border flex items-center gap-2 text-xs font-mono transition-all ${
                 hasDetectedAudio
-                  ? 'bg-[#C8F135]/10 border-[#C8F135]/40 text-[#C8F135]'
+                  ? 'bg-white/10 border-white/30 text-white'
                   : 'bg-black/30 border-white/5 text-zinc-500'
               }`}>
-                <CheckCircle2 className={`w-4 h-4 shrink-0 ${hasDetectedAudio ? 'text-[#C8F135]' : 'text-zinc-600'}`} />
+                <CheckCircle2 className={`w-4 h-4 shrink-0 ${hasDetectedAudio ? 'text-white' : 'text-zinc-600'}`} />
                 <span className="truncate">{m.checkVolume} ({liveVolume}%)</span>
               </div>
 
@@ -565,7 +565,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
                   <span className={`w-2 h-2 rounded-full ${
                     isCapturing
                       ? liveVolume > 4
-                        ? 'bg-[#C8F135] animate-ping'
+                        ? 'bg-white animate-ping'
                         : 'bg-emerald-400 animate-pulse'
                       : 'bg-zinc-700'
                   }`} />
@@ -579,12 +579,24 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
               <div className="w-full h-14 bg-zinc-950/90 rounded-lg border border-white/5 flex items-center justify-center overflow-hidden">
                 <FluidAudioWaveform isCapturing={isCapturing} width={580} height={46} />
               </div>
+
+              {/* Minimalist Audio-Wave Level Bar with Cubic-Bezier leveling and pure-white/titanium glow */}
+              <div className="mt-2.5 h-1.5 w-full bg-white/[0.04] rounded-full overflow-hidden border border-white/[0.06]">
+                <div
+                  className="h-full bg-gradient-to-r from-zinc-400 via-white to-zinc-200 shadow-[0_0_12px_rgba(255,255,255,0.7)] transition-all"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, liveVolume))}%`,
+                    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+                    transitionDuration: '150ms',
+                  }}
+                />
+              </div>
             </div>
 
             {/* Live Transcript Box */}
             <div className={`p-3 rounded-xl border transition-all ${
               liveTranscript
-                ? 'bg-[#C8F135]/10 border-[#C8F135]/30 text-[#C8F135]'
+                ? 'bg-white/10 border-white/20 text-white'
                 : 'bg-black/40 border-white/5 text-zinc-500'
             }`}>
               <div className="text-[10px] font-mono uppercase tracking-wider mb-1 flex items-center justify-between">
@@ -638,7 +650,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
           {/* Modal Footer Controls */}
           <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/10">
             <div className="text-xs font-mono text-zinc-400 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#C8F135]" />
+              <span className="w-2 h-2 rounded-full bg-white" />
               <span>{currentMeta.flag} {currentMeta.nativeName}</span>
             </div>
 
@@ -647,7 +659,7 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
               onClick={onClose}
               className={`py-2.5 px-6 rounded-xl font-mono text-xs font-bold transition-all cursor-pointer flex items-center gap-2 border active:scale-95 ${
                 hasDetectedSpeech
-                  ? 'bg-[#C8F135] text-black border-[#C8F135] hover:bg-white shadow-[0_0_20px_rgba(200,241,53,0.3)]'
+                  ? 'bg-white text-black border-white/30 hover:bg-white shadow-[0_0_20px_rgba(255,255,255,0.3)]'
                   : 'bg-white/10 hover:bg-white/20 text-white border-white/10'
               }`}
             >

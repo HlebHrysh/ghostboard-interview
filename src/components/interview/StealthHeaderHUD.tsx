@@ -68,11 +68,13 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
         {/* Left: Brand, Time & Role Pill */}
         <div className="flex items-center gap-1.5">
           <div className="px-3 py-1 rounded-full bg-[#0D0D10]/90 border border-white/[0.08] shadow-[0_8px_20px_rgba(0,0,0,0.5)] flex items-center gap-2 backdrop-blur-xl">
-            <GhostDetectiveLogo size="mini" />
+            <Link href="/" className="flex items-center gap-2 group transition-opacity hover:opacity-80" aria-label="Return to home page">
+              <GhostDetectiveLogo size="mini" />
 
-            <span className="text-[11px] font-black font-mono tracking-widest text-white">
-              GHOSTBOARD
-            </span>
+              <span className="text-[11px] font-black font-mono tracking-widest text-white group-hover:text-zinc-300 transition-colors">
+                GHOSTBOARD
+              </span>
+            </Link>
 
             {/* Session Timer */}
             <span className="text-[11px] font-mono text-zinc-400 border-l border-white/[0.08] pl-2 tabular-nums">
@@ -97,7 +99,7 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
               <button
                 type="button"
                 onClick={onUpgradeClick}
-                className="text-[9px] font-mono px-2 py-0.2 rounded-full bg-[#C8F135]/15 text-[#C8F135] border border-[#C8F135]/30 hover:bg-[#C8F135]/25 transition-all cursor-pointer hidden sm:inline-flex items-center gap-1 font-bold"
+                className="text-[9px] font-mono px-2 py-0.2 rounded-full bg-white/10 text-white border border-white/20 hover:bg-white/15 transition-all cursor-pointer hidden sm:inline-flex items-center gap-1 font-bold"
                 title={hud.trialTooltip}
               >
                 <span>FREE TRIAL</span>
@@ -130,7 +132,7 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
             >
               {sttStatus === 'connected' ? (
                 <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135] shadow-[0_0_6px_#c8f135]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />
                   <span className="font-semibold text-zinc-300">STT Live</span>
                 </span>
               ) : sttStatus === 'reconnecting' ? (
@@ -214,7 +216,7 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
                     onClick={() => setIsMenuOpen(false)}
                     className="w-full px-2.5 py-1.5 rounded-lg text-left text-zinc-300 hover:text-white hover:bg-white/[0.06] flex items-center gap-2 cursor-pointer transition-colors"
                   >
-                    <User className="w-3.5 h-3.5 text-[#C8F135]" />
+                    <User className="w-3.5 h-3.5 text-white" />
                     <span>{locale === 'ua' ? 'Профіль та тариф' : 'Profile & Plan'}</span>
                   </Link>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useTransition } from 'react';
 import {
   X,
   User,
@@ -11,11 +11,23 @@ import {
   FolderGit2,
   RotateCcw,
   FileText,
+  Briefcase,
+  Sparkles,
+  UploadCloud,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
+  Copy,
+  Terminal,
+  FileCheck2,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getModalsTranslations } from '@/lib/modalsI18n';
 import type { SupportedLocale } from '@/lib/geoLang';
+
+export type CandidateLevel = 'junior' | 'middle' | 'senior' | 'lead';
 
 export interface PetProject {
   id: string;
@@ -24,21 +36,42 @@ export interface PetProject {
   keyHighlight: string;
 }
 
+export interface AiDirectives {
+  responseLength: 'ultra-concise' | 'structured' | 'bullets';
+  toneOfVoice: 'authoritative' | 'pragmatic' | 'star';
+  engineeringFocus: 'architecture' | 'clean_code' | 'business_impact';
+  guardrails: string[];
+  customNuances: string;
+}
+
 export interface CandidateProfile {
   name?: string;
-  age: number;
+  age?: number;
+  level?: CandidateLevel;
   role: string;
+  targetCompany?: string;
   techStack: string[];
   petProjects: PetProject[];
   customContext: string;
   cvContext?: string;
   jobDescription?: string;
+  aiDirectives?: AiDirectives;
 }
+
+export const DEFAULT_AI_DIRECTIVES: AiDirectives = {
+  responseLength: 'ultra-concise',
+  toneOfVoice: 'authoritative',
+  engineeringFocus: 'architecture',
+  guardrails: ['no_fluff', 'show_tradeoffs'],
+  customNuances: '',
+};
 
 export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
   name: 'Candidate',
-  age: 23,
+  age: 26,
+  level: 'middle',
   role: 'Full-Stack Developer (React / TypeScript / Node.js)',
+  targetCompany: '',
   techStack: [
     'TypeScript', 'JavaScript', 'React', 'Next.js', 'Node.js',
     'PostgreSQL', 'Docker', 'REST API', 'Tailwind CSS', 'Git'
@@ -54,12 +87,9 @@ export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
   customContext: 'Software Engineer with strong fundamentals in clean architecture, performance optimization, and scalable modern software development.',
   cvContext: '',
   jobDescription: '',
+  aiDirectives: DEFAULT_AI_DIRECTIVES,
 };
 
-/**
- * 18 POPULAR TECH ROLES & PRESETS
- * Fully pre-configured with stacks, pet projects, and contextual background.
- */
 export interface RolePresetItem extends Partial<CandidateProfile> {
   category: 'frontend' | 'backend' | 'fullstack' | 'mobile' | 'cloud' | 'qa_data' | 'management';
   label: string;
@@ -79,7 +109,7 @@ export const ROLE_PRESETS: Record<string, RolePresetItem> = {
       {
         id: 'fe_p1',
         name: 'High-Performance SaaS Dashboard',
-        description: 'Next.js 15 App Router web application with Server Components, Tailwind CSS and Zustand state management',
+        description: 'Next.js 16 App Router web application with Server Components, Tailwind CSS and Zustand state management',
         keyHighlight: '99/100 Lighthouse performance, sub-50ms client navigation, optimistic mutations'
       }
     ],
@@ -205,7 +235,7 @@ export const ROLE_PRESETS: Record<string, RolePresetItem> = {
     role: 'iOS Developer (Swift / SwiftUI)',
     techStack: [
       'Swift', 'SwiftUI', 'UIKit', 'Combine', 'CoreData',
-      'Swift Concurrency (async/await)', 'Xcode', 'MVVM', 'TestFlight', 'Git'
+      'Swift Concurrency', 'Xcode', 'MVVM', 'TestFlight', 'Git'
     ],
     petProjects: [
       {
@@ -240,135 +270,134 @@ export const ROLE_PRESETS: Record<string, RolePresetItem> = {
     label: 'Flutter / Cross-Platform',
     role: 'Cross-Platform Mobile Developer (Flutter / React Native)',
     techStack: [
-      'Dart', 'Flutter', 'React Native', 'TypeScript', 'Bloc',
-      'Redux', 'Firebase', 'REST API', 'iOS & Android Build Tools', 'Git'
+      'Flutter', 'Dart', 'React Native', 'TypeScript', 'BLoC',
+      'Provider', 'Riverpod', 'REST API', 'SQLite', 'Firebase', 'Git'
     ],
     petProjects: [
       {
-        id: 'flt_p1',
-        name: 'Cross-Platform Marketplace App',
-        description: 'Flutter app published to iOS & Android with BLoC state management and native bridge modules',
-        keyHighlight: 'Single codebase targeting iOS and Android with 95%+ code sharing and native-like performance'
+        id: 'fl_p1',
+        name: 'Cross-Platform FinTech Wallet',
+        description: 'Flutter application with BLoC state management, biometric auth, and local SQLite caching',
+        keyHighlight: 'Unified 100% shared code for iOS and Android, 60fps animations'
       }
     ],
-    customContext: 'Mobile Developer building high-performance cross-platform apps with Flutter and React Native with clean state management and responsive UI.'
+    customContext: 'Mobile Developer specializing in cross-platform mobile apps with Flutter and React Native.'
   },
   devops: {
     category: 'cloud',
-    label: 'DevOps / SRE / Cloud',
-    role: 'DevOps / SRE / Cloud Engineer',
+    label: 'DevOps / SRE',
+    role: 'DevOps / Infrastructure Engineer',
     techStack: [
-      'Linux', 'Docker', 'Kubernetes (K8s)', 'Helm', 'Terraform',
-      'AWS', 'GCP', 'GitHub Actions', 'CI/CD', 'Nginx',
-      'Prometheus', 'Grafana', 'Ansible', 'Git'
+      'Kubernetes', 'Docker', 'Terraform', 'AWS', 'GCP',
+      'CI/CD', 'GitHub Actions', 'Prometheus', 'Grafana', 'Linux', 'Bash', 'Git'
     ],
     petProjects: [
       {
-        id: 'dev_p1',
-        name: 'Production Kubernetes Infrastructure (IaC)',
-        description: 'Multi-cluster Kubernetes setup automated with Terraform, Helm, and GitHub Actions CI/CD',
-        keyHighlight: 'Zero-downtime rolling deployments, Prometheus/Grafana alerting, automated SSL/ingress'
+        id: 'do_p1',
+        name: 'GitOps Multi-Cluster Infrastructure',
+        description: 'Declarative Kubernetes cluster deployment with Terraform, ArgoCD and automated monitoring',
+        keyHighlight: 'Zero-downtime rolling updates, automated canary deployments, sub-1s alert resolution'
       }
     ],
-    customContext: 'DevOps & Site Reliability Engineer focused on Infrastructure as Code (Terraform), Kubernetes orchestration, robust CI/CD pipelines, and high availability.'
+    customContext: 'DevOps Engineer focused on Kubernetes orchestration, immutable infrastructure-as-code, high-availability architecture, and observability.'
   },
   qa_automation: {
-    category: 'qa_data',
-    label: 'QA Automation (SDET)',
-    role: 'QA Automation Engineer (SDET)',
+    category: 'cloud',
+    label: 'QA Automation Engineer',
+    role: 'QA Automation Engineer (Python / TS)',
     techStack: [
-      'TypeScript', 'Python', 'Playwright', 'Cypress', 'Selenium',
-      'PyTest', 'Postman', 'REST Assured', 'CI/CD Pipelines', 'Allure Reports', 'Docker', 'Git'
+      'Playwright', 'Cypress', 'Selenium', 'TypeScript', 'Python',
+      'Pytest', 'Jest', 'Allure', 'Docker', 'CI/CD', 'Git'
     ],
     petProjects: [
       {
         id: 'qa_p1',
-        name: 'End-to-End Test Automation Framework',
-        description: 'Parallelized test framework built with Playwright and TypeScript integrated into CI/CD',
-        keyHighlight: 'Reduced test execution time by 60% through parallel workers and cross-browser regression testing'
+        name: 'Enterprise End-to-End Test Framework',
+        description: 'Parallelized Playwright test automation suite integrated with GitHub Actions and Allure reports',
+        keyHighlight: 'Reduced test run from 45m to 4m with parallel sharding, 99.8% test stability'
       }
     ],
-    customContext: 'QA Automation Engineer / SDET with strong background in API, UI, and performance test automation, CI/CD quality gates, and test strategy.'
+    customContext: 'QA Automation Engineer designing robust test automation frameworks for Web and API.'
   },
   data_engineer: {
     category: 'qa_data',
     label: 'Data Engineer',
-    role: 'Data Engineer (Spark / Airflow / SQL)',
+    role: 'Data Engineer (Python / Spark / SQL)',
     techStack: [
-      'Python', 'SQL', 'Apache Spark', 'Apache Airflow', 'Kafka',
-      'dbt', 'Snowflake', 'BigQuery', 'PostgreSQL', 'Docker', 'AWS S3', 'Git'
+      'Python', 'Apache Spark', 'Airflow', 'SQL', 'PostgreSQL',
+      'ClickHouse', 'Kafka', 'dbt', 'Docker', 'AWS S3', 'Git'
     ],
     petProjects: [
       {
         id: 'de_p1',
-        name: 'Streaming & Batch Analytics Pipeline',
-        description: 'Scalable data pipeline with Kafka, PySpark, Airflow scheduling and Snowflake warehouse',
-        keyHighlight: 'Processes millions of daily events with incremental dbt models and data quality checks'
+        name: 'Real-Time Event Streaming ETL Pipeline',
+        description: 'Kafka event ingestion to ClickHouse and PostgreSQL with dbt transformation models',
+        keyHighlight: 'Processes 250M daily events with sub-second analytical query response'
       }
     ],
-    customContext: 'Data Engineer specializing in ETL/ELT pipelines, distributed data processing with Spark, workflow orchestration with Airflow, and data modeling.'
+    customContext: 'Data Engineer building scalable data pipelines, streaming architectures, and analytics infrastructure.'
   },
   data_science: {
     category: 'qa_data',
-    label: 'Data Science / AI / ML',
+    label: 'Data Scientist / ML Engineer',
     role: 'Data Scientist / Machine Learning Engineer',
     techStack: [
-      'Python', 'PyTorch', 'TensorFlow', 'Pandas', 'NumPy',
-      'Scikit-learn', 'LLMs', 'LangChain', 'RAG', 'HuggingFace', 'SQL', 'Docker', 'Git'
+      'Python', 'PyTorch', 'TensorFlow', 'Scikit-Learn', 'Pandas',
+      'NumPy', 'FastAPI', 'MLflow', 'Docker', 'SQL', 'Git'
     ],
     petProjects: [
       {
         id: 'ds_p1',
-        name: 'RAG Search & LLM Document Assistant',
-        description: 'Retrieval-Augmented Generation system using LangChain, vector embeddings, and PyTorch fine-tuning',
-        keyHighlight: 'Cosine similarity semantic search with FAISS/ChromaDB and sub-second answer synthesis'
+        name: 'Production LLM Embedding & Retrieval System',
+        description: 'Semantic vector search pipeline with FAISS, Sentence Transformers and FastAPI inference server',
+        keyHighlight: 'Sub-20ms retrieval over 1M documents, automated MLflow model evaluation'
       }
     ],
-    customContext: 'Data Scientist & ML Engineer experienced in statistical modeling, deep learning (PyTorch), LLM application development, RAG systems, and MLOps.'
+    customContext: 'ML Engineer specializing in practical machine learning, deep learning models, embeddings, and MLOps.'
   },
   system_architect: {
     category: 'management',
-    label: 'System Architect / Tech Lead',
-    role: 'System Architect / Tech Lead',
+    label: 'Solutions / System Architect',
+    role: 'System Architect / Enterprise Solutions Architect',
     techStack: [
-      'System Design', 'Distributed Systems', 'Microservices', 'Event-Driven Architecture',
-      'Domain-Driven Design (DDD)', 'Cloud (AWS/GCP)', 'PostgreSQL', 'Redis', 'Kafka', 'Docker', 'K8s'
+      'System Architecture', 'Microservices', 'Event-Driven Architecture', 'Cloud Architecture (AWS/GCP)',
+      'High-Load', 'Distributed Systems', 'PostgreSQL', 'Kafka', 'Docker', 'Kubernetes', 'Security'
     ],
     petProjects: [
       {
-        id: 'arch_p1',
-        name: 'High-Availability Multi-Region Microservice Architecture',
-        description: 'Distributed system blueprint featuring event-driven orchestration, CQRS and active-active DB replication',
-        keyHighlight: '99.99% uptime design with circuit breakers, idempotency keys, and graceful degradation'
+        id: 'sa_p1',
+        name: 'High-Availability Distributed Banking Core',
+        description: 'Event-driven architecture with CQRS, event sourcing, distributed transactions, and active-active DR',
+        keyHighlight: '99.999% uptime SLA, sub-25ms global transactions, zero data loss guarantee'
       }
     ],
-    customContext: 'System Architect & Tech Lead skilled in high-load distributed systems, scalability, trade-off analysis (CAP/PACELC), microservices, and engineering mentorship.'
+    customContext: 'System Architect designing resilient, distributed, high-throughput software architectures.'
   },
   product_manager: {
     category: 'management',
     label: 'Technical Product Manager',
-    role: 'Technical Product Manager / IT Project Manager',
+    role: 'Technical Product Manager (TPM)',
     techStack: [
-      'Agile / Scrum / Kanban', 'Product Roadmapping', 'User Stories & PRDs',
-      'SQL & Data Analysis', 'Jira / Confluence', 'A/B Testing', 'System Design Basics', 'Figma', 'Metrics (AARRR, OKRs)'
+      'Product Strategy', 'Agile / Scrum', 'Roadmapping', 'User Research',
+      'SQL', 'Data Analytics', 'A/B Testing', 'System Architecture Fundamentals', 'Jira'
     ],
     petProjects: [
       {
         id: 'pm_p1',
-        name: 'SaaS User Onboarding Redesign & Growth Funnel',
-        description: 'Product discovery, PRD authoring, user journey mapping and A/B test experiments',
-        keyHighlight: 'Increased 30-day user retention by 28% through friction reduction and data-driven iterations'
+        name: 'Self-Serve B2B Onboarding Engine',
+        description: 'End-to-end redesign of enterprise customer onboarding flow with data-driven funnel optimization',
+        keyHighlight: 'Increased activation rate by 34% and reduced time-to-first-value from 14 days to 2 hours'
       }
     ],
-    customContext: 'Technical Product Manager experienced in leading cross-functional engineering teams, translating business goals into crisp PRDs, and metric-driven delivery.'
+    customContext: 'Technical Product Manager aligning product discovery, engineering delivery, metrics, and business ROI.'
   },
   uiux_designer: {
     category: 'management',
-    label: 'UI/UX & Product Designer',
-    role: 'UI/UX & Product Designer',
+    label: 'UI/UX Product Designer',
+    role: 'Lead UI/UX & Product Designer',
     techStack: [
-      'Figma', 'Design Systems', 'Wireframing', 'Interactive Prototyping',
-      'User Research', 'Usability Testing', 'Information Architecture', 'Responsive Design', 'Design Tokens'
+      'Figma', 'Design Systems', 'User Research', 'Prototyping',
+      'Design Tokens', 'HTML/CSS Basics', 'Usability Testing', 'Interaction Design'
     ],
     petProjects: [
       {
@@ -378,7 +407,7 @@ export const ROLE_PRESETS: Record<string, RolePresetItem> = {
         keyHighlight: 'Boosted design-to-development velocity by 40% and improved usability task success to 95%'
       }
     ],
-    customContext: 'Product Designer bridging user empathy, data-driven UX research, design systems, and pixel-perfect UI execution for web and mobile.'
+    customContext: 'Product Designer bridging user empathy, data-driven UX research, design systems, and pixel-perfect UI execution.'
   },
   cybersecurity: {
     category: 'management',
@@ -411,383 +440,69 @@ export function getStoredCandidateProfile(): CandidateProfile {
     return {
       ...DEFAULT_CANDIDATE_PROFILE,
       ...parsed,
+      level: (parsed.level as CandidateLevel) || 'middle',
       petProjects: Array.isArray(parsed.petProjects) ? parsed.petProjects : DEFAULT_CANDIDATE_PROFILE.petProjects,
       techStack: Array.isArray(parsed.techStack) ? parsed.techStack : DEFAULT_CANDIDATE_PROFILE.techStack,
+      aiDirectives: {
+        ...DEFAULT_AI_DIRECTIVES,
+        ...(parsed.aiDirectives || {}),
+      },
     };
   } catch {
     return DEFAULT_CANDIDATE_PROFILE;
   }
 }
 
-interface TabsI18n {
-  tabRole: string;
-  tabProjects: string;
-  tabContext: string;
-  presetTitle: string;
-  presetSubtitle: string;
-  selectRolePlaceholder: string;
-  quickAdd: string;
-  projInfo: string;
-  projectCardTitle: string;
-  projectCardDelete: string;
-  projNameLabel: string;
-  projDescLabel: string;
-  projHighlightLabel: string;
-  noProjects: string;
-  contextInfo: string;
-  jobTitle: string;
-  jobSubtitle: string;
-  cvTitle: string;
-  cvSubtitle: string;
-  bioTitle: string;
-  bioSubtitle: string;
-  activeRoleApplied: string;
-  rolePlaceholder: string;
-  tagPlaceholder: string;
-  deleteTagHint: string;
-  groupFrontend: string;
-  groupBackend: string;
-  groupMobile: string;
-  groupCloud: string;
-  groupData: string;
-  groupManagement: string;
-}
+/**
+ * Compiles user's behavioral chips and custom wishes into the final system prompt directive.
+ */
+export function compileAiDirectivesToPrompt(directives: AiDirectives, role: string, level: CandidateLevel): string {
+  const parts: string[] = [];
 
-const I18N_TABS: Record<string, TabsI18n> = {
-  ua: {
-    tabRole: 'Спеціалізація та стек',
-    tabProjects: 'Пет-проєкти',
-    tabContext: 'Резюме та вакансія',
-    presetTitle: 'Швидкий вибір спеціалізації (автозаповнення)',
-    presetSubtitle: 'Оберіть потрібну роль — стек і проєкти підставляться автоматично:',
-    selectRolePlaceholder: '— Або оберіть зі списку всіх 18 ролей —',
-    quickAdd: 'Популярні технології:',
-    projInfo: 'ШІ наводитиме ці проєкти як реальні приклади вашого досвіду у відповідях на співбесіді.',
-    projectCardTitle: 'Проєкт',
-    projectCardDelete: 'Видалити',
-    projNameLabel: 'Назва проєкту',
-    projDescLabel: 'Що робить проєкт та які технології використано',
-    projHighlightLabel: 'Головне технічне досягнення / Що підкреслити ШІ',
-    noProjects: 'У вас поки немає доданих проєктів. Ви можете додати власний або вибрати готову роль у шаблонах.',
-    contextInfo: 'Необов\'язково. Допомагає ШІ максимально точно адаптувати відповіді під конкретну вакансію та компанію.',
-    jobTitle: 'Вимоги вакансії (Job Description)',
-    jobSubtitle: 'Вставте текст вакансії сюди, щоб ШІ відповідав саме на те, що шукає компанія.',
-    cvTitle: 'Ваше резюме (CV Context)',
-    cvSubtitle: 'Вставте текст вашого CV, щоб ШІ міг наводити факти з вашої реальної біографії.',
-    bioTitle: 'Додаткові побажання до відповідей ШІ',
-    bioSubtitle: 'Будь-які вказівки (наприклад: "відповідай лаконічно", "роби акцент на практиці").',
-    activeRoleApplied: 'Застосовано роль:',
-    rolePlaceholder: 'Наприклад: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Введіть технологію (напр. Redis, Docker)...',
-    deleteTagHint: 'Натисніть на × щоб видалити',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend розробка',
-    groupMobile: 'Mobile розробка',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI / ML',
-    groupManagement: 'Архітектура та управління',
-  },
-  en: {
-    tabRole: 'Role & Tech Stack',
-    tabProjects: 'Pet Projects',
-    tabContext: 'Resume & Job Context',
-    presetTitle: 'Quick Role Presets (Auto-fill)',
-    presetSubtitle: 'Choose your specialization — role, tech stack, and projects will auto-fill:',
-    selectRolePlaceholder: '— Or choose from all 18 roles —',
-    quickAdd: 'Popular technologies:',
-    projInfo: 'AI will cite these projects as real-world examples of your experience during the interview.',
-    projectCardTitle: 'Project',
-    projectCardDelete: 'Delete',
-    projNameLabel: 'Project Name',
-    projDescLabel: 'What it does & technologies used',
-    projHighlightLabel: 'Key technical highlight / What AI should mention',
-    noProjects: 'No projects added yet. You can add your own or choose a role preset above.',
-    contextInfo: 'Optional. Helps AI precisely tailor answers to the specific job opening and company.',
-    jobTitle: 'Job Description requirements',
-    jobSubtitle: 'Paste vacancy text here so AI answers what the employer is specifically looking for.',
-    cvTitle: 'Your Resume (CV Context)',
-    cvSubtitle: 'Paste your CV text so AI mentions facts from your real career background.',
-    bioTitle: 'Additional Style & Answer Preferences',
-    bioSubtitle: 'Any specific instructions (e.g. "answer concisely", "focus on production experience").',
-    activeRoleApplied: 'Applied role:',
-    rolePlaceholder: 'e.g. Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Add technology (e.g. Redis, Docker)...',
-    deleteTagHint: 'Click × to remove',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend Development',
-    groupMobile: 'Mobile Development',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI / ML',
-    groupManagement: 'Architecture & Management',
-  },
-  pl: {
-    tabRole: 'Rola i Technologie',
-    tabProjects: 'Projekty',
-    tabContext: 'Oferta i CV',
-    presetTitle: 'Szybki wybór roli (autouzupełnianie)',
-    presetSubtitle: 'Wybierz specjalizację — rola, technologie i projekty wypełnią się same:',
-    selectRolePlaceholder: '— Lub wybierz z listy 18 ról —',
-    quickAdd: 'Popularne technologie:',
-    projInfo: 'AI wykorzysta te projekty jako przykłady Twojego doświadczenia podczas rozmowy.',
-    projectCardTitle: 'Projekt',
-    projectCardDelete: 'Usuń',
-    projNameLabel: 'Nazwa projektu',
-    projDescLabel: 'Co robi projekt i technologie',
-    projHighlightLabel: 'Kluczowe osiągnięcie / Co AI ma podkreślić',
-    noProjects: 'Brak dodanych projektów. Kliknij poniższy przycisk lub wybierz szablon roli.',
-    contextInfo: 'Opcjonalne. Pomaga AI dostosować odpowiedzi do wymagań oferty.',
-    jobTitle: 'Wymagania oferty pracy (Job Description)',
-    jobSubtitle: 'Wklej treść oferty, aby AI skupiło się na kluczowych wymaganiach.',
-    cvTitle: 'Twoje CV (CV Context)',
-    cvSubtitle: 'Wklej tekst CV, aby AI mogło odwoływać się do Twojego doświadczenia.',
-    bioTitle: 'Wskazówki co do stylu odpowiedzi',
-    bioSubtitle: 'Wskazówki (np. "odpowiadaj zwięźle", "stawiaj na praktykę").',
-    activeRoleApplied: 'Zastosowano rolę:',
-    rolePlaceholder: 'Np: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Dodaj technologię (np. Redis, Docker)...',
-    deleteTagHint: 'Kliknij × aby usunąć',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend Development',
-    groupMobile: 'Mobile Development',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI',
-    groupManagement: 'Architektura i Zarządzanie',
-  },
-  de: {
-    tabRole: 'Rolle & Tech-Stack',
-    tabProjects: 'Projekte',
-    tabContext: 'Stelle & Lebenslauf',
-    presetTitle: 'Schnelle Rollenauswahl (Auto-Fill)',
-    presetSubtitle: 'Wählen Sie Ihre Spezialisierung — Rolle, Stack und Projekte werden ausgefüllt:',
-    selectRolePlaceholder: '— Oder wählen Sie aus 18 Rollen —',
-    quickAdd: 'Beliebte Technologien:',
-    projInfo: 'Die KI nutzt diese Projekte als Beispiele Ihrer Erfahrung im Interview.',
-    projectCardTitle: 'Projekt',
-    projectCardDelete: 'Löschen',
-    projNameLabel: 'Projektname',
-    projDescLabel: 'Projektbeschreibung und Stack',
-    projHighlightLabel: 'Wichtigster technischer Erfolg',
-    noProjects: 'Noch keine Projekte hinzugefügt. Fügen Sie eines hinzu oder wählen Sie eine Rolle.',
-    contextInfo: 'Optional. Hilft der KI, Antworten exakt auf die Stelle abzustimmen.',
-    jobTitle: 'Stellenbeschreibung (Job Description)',
-    jobSubtitle: 'Stellentext einfügen, damit die KI gezielt darauf eingeht.',
-    cvTitle: 'Ihr Lebenslauf (CV Context)',
-    cvSubtitle: 'CV-Text einfügen für reale Praxiserfahrung.',
-    bioTitle: 'Zusätzliche Wünsche & Stil',
-    bioSubtitle: 'Besondere Wünsche (z. B. "prägnant antworten").',
-    activeRoleApplied: 'Rolle angewendet:',
-    rolePlaceholder: 'z. B. Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Technologie hinzufügen (z. B. Redis, Docker)...',
-    deleteTagHint: 'Klicken Sie auf × zum Entfernen',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend-Entwicklung',
-    groupMobile: 'Mobile Entwicklung',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI',
-    groupManagement: 'Architektur & Management',
-  },
-  fr: {
-    tabRole: 'Rôle et Stack',
-    tabProjects: 'Projets',
-    tabContext: 'Offre et CV',
-    presetTitle: 'Sélection rapide du rôle (auto-remplissage)',
-    presetSubtitle: 'Choisissez votre spécialité — rôle, stack et projets se remplissent automatiquement :',
-    selectRolePlaceholder: '— Ou choisissez parmi les 18 rôles —',
-    quickAdd: 'Technologies populaires :',
-    projInfo: 'L\'IA citera ces projets comme des exemples concrets de votre expérience pendant l\'entretien.',
-    projectCardTitle: 'Projet',
-    projectCardDelete: 'Supprimer',
-    projNameLabel: 'Nom du projet',
-    projDescLabel: 'Rôle du projet et technologies utilisées',
-    projHighlightLabel: 'Réalisation clé / Ce que l\'IA doit mentionner',
-    noProjects: 'Aucun projet ajouté pour le moment. Cliquez sur le bouton ci-dessous ou choisissez un rôle.',
-    contextInfo: 'Facultatif. Permet à l\'IA d\'adapter précisément les réponses aux exigences de l\'offre.',
-    jobTitle: 'Exigences de l\'offre d\'emploi (Job Description)',
-    jobSubtitle: 'Collez le texte de l\'offre pour orienter les réponses de l\'IA.',
-    cvTitle: 'Votre CV (Contexte CV)',
-    cvSubtitle: 'Collez le texte de votre CV pour citer votre parcours réel.',
-    bioTitle: 'Consignes de style et de réponse',
-    bioSubtitle: 'Consignes spécifiques (ex : "réponds de façon concise").',
-    activeRoleApplied: 'Rôle appliqué :',
-    rolePlaceholder: 'ex : Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Ajouter une technologie (ex : Redis, Docker)...',
-    deleteTagHint: 'Cliquez sur × pour supprimer',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Développement Backend',
-    groupMobile: 'Développement Mobile',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & IA',
-    groupManagement: 'Architecture & Gestion',
-  },
-  es: {
-    tabRole: 'Rol y Stack',
-    tabProjects: 'Proyectos',
-    tabContext: 'Vacante y CV',
-    presetTitle: 'Selección rápida de rol (autocompletado)',
-    presetSubtitle: 'Elige tu especialidad — el rol, el stack y los proyectos se completan solos:',
-    selectRolePlaceholder: '— O elige de la lista de 18 roles —',
-    quickAdd: 'Tecnologías populares:',
-    projInfo: 'La IA mencionará estos proyectos como ejemplos reales de tu experiencia en la entrevista.',
-    projectCardTitle: 'Proyecto',
-    projectCardDelete: 'Eliminar',
-    projNameLabel: 'Nombre del proyecto',
-    projDescLabel: 'Qué hace el proyecto y tecnologías',
-    projHighlightLabel: 'Logro clave / Qué debe resaltar la IA',
-    noProjects: 'Aún no hay proyectos añadidos. Añade uno abajo o elige un rol predefinido.',
-    contextInfo: 'Opcional. Ayuda a la IA a adaptar las respuestas a los requisitos del puesto.',
-    jobTitle: 'Descripción de la vacante (Job Description)',
-    jobSubtitle: 'Pega el texto de la vacante para que la IA responda exactamente a lo solicitado.',
-    cvTitle: 'Tu currículum (CV Context)',
-    cvSubtitle: 'Pega tu CV para que la IA cite tu trayectoria profesional real.',
-    bioTitle: 'Preferencias de respuesta y estilo',
-    bioSubtitle: 'Instrucciones específicas (ej: "responde de forma concisa").',
-    activeRoleApplied: 'Rol aplicado:',
-    rolePlaceholder: 'ej: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Agregar tecnología (ej: Redis, Docker)...',
-    deleteTagHint: 'Haz clic en × para eliminar',
-    groupFrontend: 'Frontend y Full-Stack',
-    groupBackend: 'Desarrollo Backend',
-    groupMobile: 'Desarrollo Móvil',
-    groupCloud: 'Cloud, DevOps y QA',
-    groupData: 'Data Science e IA',
-    groupManagement: 'Arquitectura y Gestión',
-  },
-  pt: {
-    tabRole: 'Cargo e Stack',
-    tabProjects: 'Projetos',
-    tabContext: 'Vaga e Currículo',
-    presetTitle: 'Seleção rápida de perfil (preenchimento automático)',
-    presetSubtitle: 'Escolha sua especialidade — cargo, tecnologias e projetos serão preenchidos:',
-    selectRolePlaceholder: '— Ou escolha na lista de 18 perfis —',
-    quickAdd: 'Tecnologias populares:',
-    projInfo: 'A IA usará esses projetos como exemplos práticos da sua experiência durante a entrevista.',
-    projectCardTitle: 'Projeto',
-    projectCardDelete: 'Excluir',
-    projNameLabel: 'Nome do projeto',
-    projDescLabel: 'O que o projeto faz e tecnologias usadas',
-    projHighlightLabel: 'Destaque técnico principal / O que a IA deve citar',
-    noProjects: 'Nenhum projeto adicionado ainda. Adicione um abaixo ou selecione um modelo acima.',
-    contextInfo: 'Opcional. Ajuda a IA a alinhar as respostas às exigências específicas da vaga.',
-    jobTitle: 'Requisitos da vaga (Job Description)',
-    jobSubtitle: 'Cole o texto da vaga aqui para a IA focar no que a empresa procura.',
-    cvTitle: 'Seu currículo (CV Context)',
-    cvSubtitle: 'Cole o texto do seu CV para a IA citar sua trajetória real.',
-    bioTitle: 'Preferências de estilo e resposta',
-    bioSubtitle: 'Instruções adicionais (ex: "responda de forma concisa").',
-    activeRoleApplied: 'Perfil aplicado:',
-    rolePlaceholder: 'ex: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Adicionar tecnologia (ex: Redis, Docker)...',
-    deleteTagHint: 'Clique em × para remover',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Desenvolvimento Backend',
-    groupMobile: 'Desenvolvimento Mobile',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & IA',
-    groupManagement: 'Arquitetura e Gestão',
-  },
-  it: {
-    tabRole: 'Ruolo e Stack',
-    tabProjects: 'Progetti',
-    tabContext: 'Offerta e CV',
-    presetTitle: 'Scelta rapida del profilo (autocompilazione)',
-    presetSubtitle: 'Scegli la tua specializzazione — ruolo, tecnologie e progetti si compileranno da soli:',
-    selectRolePlaceholder: '— O scegli dall\'elenco di 18 ruoli —',
-    quickAdd: 'Tecnologie popolari:',
-    projInfo: 'L\'IA citerà questi progetti come esempi reali della tua esperienza durante il colloquio.',
-    projectCardTitle: 'Progetto',
-    projectCardDelete: 'Elimina',
-    projNameLabel: 'Nome del progetto',
-    projDescLabel: 'Cosa fa il progetto e tecnologie impiegate',
-    projHighlightLabel: 'Risultato tecnico principale / Cosa evidenziare all\'IA',
-    noProjects: 'Nessun progetto ancora aggiunto. Aggiungine uno o seleziona un profilo.',
-    contextInfo: 'Opzionale. Aiuta l\'IA ad adattare le risposte ai requisiti specifici dell\'offerta.',
-    jobTitle: 'Requisiti dell\'offerta di lavoro (Job Description)',
-    jobSubtitle: 'Incolla il testo dell\'offerta per guidare le risposte dell\'IA.',
-    cvTitle: 'Il tuo curriculum (CV Context)',
-    cvSubtitle: 'Incolla il testo del tuo CV per consentire all\'IA di citare la tua reale esperienza.',
-    bioTitle: 'Preferenze di stile e risposte',
-    bioSubtitle: 'Istruzioni specifiche (es: "rispondi in modo conciso").',
-    activeRoleApplied: 'Profilo applicato:',
-    rolePlaceholder: 'es: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Aggiungi tecnologia (es: Redis, Docker)...',
-    deleteTagHint: 'Clicca su × per eliminare',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Sviluppo Backend',
-    groupMobile: 'Sviluppo Mobile',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & IA',
-    groupManagement: 'Architettura & Gestione',
-  },
-  cs: {
-    tabRole: 'Role a Technologie',
-    tabProjects: 'Projekty',
-    tabContext: 'Pozice a Životopis',
-    presetTitle: 'Rychlý výběr specializace (automatické vyplnění)',
-    presetSubtitle: 'Vyberte svou roli — pozice, technologie i projekty se vyplní samy:',
-    selectRolePlaceholder: '— Nebo vyberte ze seznamu 18 rolí —',
-    quickAdd: 'Oblíbené technologie:',
-    projInfo: 'AI bude tyto projekty uvádět jako praktické příklady vašich zkušeností během pohovoru.',
-    projectCardTitle: 'Projekt',
-    projectCardDelete: 'Smazat',
-    projNameLabel: 'Název projektu',
-    projDescLabel: 'Co projekt dělá a použité technologie',
-    projHighlightLabel: 'Hlavní technický úspěch / Co má AI zdůraznit',
-    noProjects: 'Zatím nemáte přidané žádné projekty. Přidejte projekt níže nebo zvolte šablonu.',
-    contextInfo: 'Volitelné. Pomáhá AI přesně přizpůsobit odpovědi požadavkům konkrétní pracovní nabídky.',
-    jobTitle: 'Požadavky pracovní pozice (Job Description)',
-    jobSubtitle: 'Vložte text inzerátu, aby AI reagovala přesně na to, co firma hledá.',
-    cvTitle: 'Váš životopis (CV Context)',
-    cvSubtitle: 'Vložte text životopisu, aby AI mohla uvádět fakta z vaší skutečné kariéry.',
-    bioTitle: 'Dodatečné pokyny ke stylu odpovědí',
-    bioSubtitle: 'Zvláštní přání (např. "odpovídej stručně", "důraz na praxi").',
-    activeRoleApplied: 'Použita role:',
-    rolePlaceholder: 'např: Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Přidat technologii (např. Redis, Docker)...',
-    deleteTagHint: 'Klikněte na × pro smazání',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend vývoj',
-    groupMobile: 'Mobilní vývoj',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI',
-    groupManagement: 'Architektura a Management',
-  },
-  nl: {
-    tabRole: 'Rol & Stack',
-    tabProjects: 'Projecten',
-    tabContext: 'Vacature & CV',
-    presetTitle: 'Snelle rolselectie (automatisch invullen)',
-    presetSubtitle: 'Kies uw specialisatie — rol, technologieën en projecten worden direct ingevuld:',
-    selectRolePlaceholder: '— Of kies uit de lijst van 18 rollen —',
-    quickAdd: 'Populaire technologieën:',
-    projInfo: 'AI noemt deze projecten als voorbeelden van uw ervaring tijdens het sollicitatiegesprek.',
-    projectCardTitle: 'Project',
-    projectCardDelete: 'Verwijderen',
-    projNameLabel: 'Projectnaam',
-    projDescLabel: 'Wat doet het project en gebruikte stack',
-    projHighlightLabel: 'Belangrijkste technische prestatie / Wat AI moet noemen',
-    noProjects: 'Nog geen projecten toegevoegd. Voeg er hieronder een toe of kies een profiel.',
-    contextInfo: 'Optioneel. Helpt AI antwoorden af te stemmen op de specifieke vacature-eisen.',
-    jobTitle: 'Vacature-eisen (Job Description)',
-    jobSubtitle: 'Plak de vacaturetekst hier zodat AI gericht antwoordt op wat het bedrijf zoekt.',
-    cvTitle: 'Uw cv (CV Context)',
-    cvSubtitle: 'Plak uw cv-tekst zodat AI feiten uit uw werkelijke loopbaan kan aanhalen.',
-    bioTitle: 'Aanvullende stijl- en antwoordvoorkeuren',
-    bioSubtitle: 'Instructies (bijv. "antwoord beknopt", "focus op praktijkvoorbeelden").',
-    activeRoleApplied: 'Rol toegepast:',
-    rolePlaceholder: 'bijv. Frontend Developer (React / Next.js)',
-    tagPlaceholder: 'Technologie toevoegen (bijv. Redis, Docker)...',
-    deleteTagHint: 'Klik op × om te verwijderen',
-    groupFrontend: 'Frontend & Full-Stack',
-    groupBackend: 'Backend Ontwikkeling',
-    groupMobile: 'Mobiele Ontwikkeling',
-    groupCloud: 'Cloud, DevOps & QA',
-    groupData: 'Data Science & AI',
-    groupManagement: 'Architectuur & Management',
-  },
-};
+  // Length directive
+  if (directives.responseLength === 'ultra-concise') {
+    parts.push('• LENGTH: ULTRA-CONCISE (1-2 punchy sentences, zero filler, immediate spoken punchline).');
+  } else if (directives.responseLength === 'bullets') {
+    parts.push('• STRUCTURE: BULLET POINTS ONLY (3 structured bullets with bold technical keywords).');
+  } else {
+    parts.push('• STRUCTURE: STRUCTURED & IN-DEPTH (Clear opening summary + technical architecture breakdown).');
+  }
 
-function getTabsI18n(locale: string): TabsI18n {
-  return I18N_TABS[locale] || I18N_TABS.en || I18N_TABS.ua;
+  // Tone directive
+  if (directives.toneOfVoice === 'authoritative') {
+    parts.push(`• TONE: AUTHORITATIVE ${level.toUpperCase()} ARCHITECT (Deep confidence, reference trade-offs and runtime internals).`);
+  } else if (directives.toneOfVoice === 'pragmatic') {
+    parts.push('• TONE: PRAGMATIC & DIRECT (No textbook definitions, focus strictly on practical production experience).');
+  } else {
+    parts.push('• TONE: STAR METHOD STORYTELLER (Situation, Task, Action taken, measurable Result).');
+  }
+
+  // Engineering focus
+  if (directives.engineeringFocus === 'architecture') {
+    parts.push('• FOCUS: SYSTEM ARCHITECTURE & BOTTLENECK MITIGATION (Latency, caching, concurrency, scalability).');
+  } else if (directives.engineeringFocus === 'clean_code') {
+    parts.push('• FOCUS: CLEAN CODE & ALGORITHMIC RIGOR (Type safety, SOLID principles, complexity, modular design).');
+  } else {
+    parts.push('• FOCUS: BUSINESS IMPACT & VELOCITY (Product delivery, ROI, failure recovery, maintainability).');
+  }
+
+  // Guardrails
+  if (directives.guardrails?.includes('no_fluff')) {
+    parts.push('• GUARDRAIL: STRICTLY FORBIDDEN: "Sure!", "Great question!", "Under the hood", "Basically", "In essence".');
+  }
+  if (directives.guardrails?.includes('challenge_weak')) {
+    parts.push('• GUARDRAIL: CHALLENGE WEAK ASSUMPTIONS: Politely clarify edge cases or suboptimal problem framings.');
+  }
+  if (directives.guardrails?.includes('show_tradeoffs')) {
+    parts.push('• GUARDRAIL: ALWAYS STATE TRADE-OFFS: Mention pros vs. cons of chosen data structures or libraries.');
+  }
+
+  // Custom nuances
+  if (directives.customNuances?.trim()) {
+    parts.push(`• CUSTOM CANDIDATE DIRECTIVES: ${directives.customNuances.trim()}`);
+  }
+
+  return parts.join('\n');
 }
 
 interface CandidateProfileModalProps {
@@ -808,25 +523,60 @@ export default function CandidateProfileModal({
   const pr = getModalsTranslations(activeLocale).profile;
 
   const [profile, setProfile] = useState<CandidateProfile>(DEFAULT_CANDIDATE_PROFILE);
-  const [activeTab, setActiveTab] = useState<'role' | 'projects' | 'context'>('role');
+  const [activeTab, setActiveTab] = useState<'role' | 'projects' | 'context' | 'persona'>('role');
   const [selectedPresetKey, setSelectedPresetKey] = useState<string | null>(null);
   const [newTagInput, setNewTagInput] = useState('');
+  const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+
+  // Resume Ingestion & Scanner state
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
+  const [uploadScanStep, setUploadScanStep] = useState<string>('');
+  const [parseBannerInfo, setParseBannerInfo] = useState<{
+    role: string;
+    skillsCount: number;
+    projectsCount: number;
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     if (isOpen) {
-      setProfile(getStoredCandidateProfile());
+      const stored = getStoredCandidateProfile();
+      setProfile(stored);
+      if (stored.petProjects.length > 0) {
+        setExpandedProjectId(stored.petProjects[0].id);
+      }
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
+  // Auto-save draft changes to localStorage so closing never loses progress
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_draft`, JSON.stringify(profile));
+    } catch {}
+  }, [profile, isOpen]);
 
-  const t = getTabsI18n(activeLocale);
+  if (!isOpen) return null;
 
   const handleSave = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
-      onSave?.(profile);
-      toast.success(pr.toastSaved);
+      const compiled = compileAiDirectivesToPrompt(
+        profile.aiDirectives || DEFAULT_AI_DIRECTIVES,
+        profile.role,
+        profile.level || 'middle'
+      );
+      const profileToSave: CandidateProfile = {
+        ...profile,
+        customContext: `${profile.customContext || ''}\n\n[COMPILED AI DIRECTIVES]\n${compiled}`.trim(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(profileToSave));
+      localStorage.removeItem(`${STORAGE_KEY}_draft`);
+      onSave?.(profileToSave);
+      toast.success(pr.toastSaved || 'Profile context saved & synced to Copilot');
       onClose();
     } catch {
       toast.error('Error saving profile');
@@ -836,8 +586,9 @@ export default function CandidateProfileModal({
   const handleReset = () => {
     setProfile(DEFAULT_CANDIDATE_PROFILE);
     setSelectedPresetKey(null);
+    setParseBannerInfo(null);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_CANDIDATE_PROFILE));
-    toast.info(pr.toastReset);
+    toast.info(pr.toastReset || 'Profile restored to defaults');
   };
 
   const applyPreset = (key: string, p: RolePresetItem) => {
@@ -849,11 +600,11 @@ export default function CandidateProfileModal({
       petProjects: p.petProjects ? [...p.petProjects] : prev.petProjects,
       customContext: p.customContext || prev.customContext,
     }));
-    toast.success(`${t.activeRoleApplied} ${p.label}`);
+    toast.success(`Applied template: ${p.label}`);
   };
 
   const handleAddTag = () => {
-    const clean = newTagInput.trim();
+    const clean = newTagInput.trim().replace(/^,+|,+$/g, '');
     if (!clean) return;
     if (!profile.techStack.includes(clean)) {
       setProfile((prev) => ({
@@ -872,16 +623,33 @@ export default function CandidateProfileModal({
   };
 
   const handleAddProject = () => {
+    const newId = `proj_${Date.now()}`;
     const newProj: PetProject = {
-      id: `p_${Date.now()}`,
-      name: pr.newProjName,
-      description: pr.newProjDesc,
-      keyHighlight: pr.newProjHighlight,
+      id: newId,
+      name: 'New Technical Project',
+      description: 'Distributed microservices architecture with automated pipeline and caching',
+      keyHighlight: 'Sub-40ms response latency under 10k RPS load',
     };
     setProfile((prev) => ({
       ...prev,
-      petProjects: [...prev.petProjects, newProj],
+      petProjects: [newProj, ...prev.petProjects],
     }));
+    setExpandedProjectId(newId);
+  };
+
+  const handleCloneProject = (proj: PetProject) => {
+    const clonedId = `proj_${Date.now()}`;
+    const cloned: PetProject = {
+      ...proj,
+      id: clonedId,
+      name: `${proj.name} (Copy)`,
+    };
+    setProfile((prev) => ({
+      ...prev,
+      petProjects: [cloned, ...prev.petProjects],
+    }));
+    setExpandedProjectId(clonedId);
+    toast.info('Project duplicated');
   };
 
   const handleUpdateProject = (id: string, field: keyof PetProject, value: string) => {
@@ -898,479 +666,986 @@ export default function CandidateProfileModal({
     }));
   };
 
+  // PDF Upload & Extraction Handler
+  const processPdfFile = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      toast.error('Only PDF files are supported (up to 15MB)');
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      toast.error('File exceeds 15MB limit');
+      return;
+    }
+
+    setIsUploadingPdf(true);
+    setUploadScanStep('Reading document binary stream...');
+
+    try {
+      const stepTimer1 = setTimeout(() => setUploadScanStep('Extracting experience & candidate background...'), 700);
+      const stepTimer2 = setTimeout(() => setUploadScanStep('Detecting tech stack & competencies...'), 1600);
+      const stepTimer3 = setTimeout(() => setUploadScanStep('Structuring pet projects & CV summary...'), 2400);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/resume/parse', {
+        method: 'POST',
+        body: formData,
+      });
+
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to extract resume');
+      }
+
+      const p = data.profile;
+      startTransition(() => {
+        setProfile((prev) => ({
+          ...prev,
+          role: p.role || prev.role,
+          level: p.level || prev.level,
+          techStack: Array.isArray(p.techStack) && p.techStack.length > 0 ? p.techStack : prev.techStack,
+          cvContext: p.cvContext || prev.cvContext,
+          petProjects: Array.isArray(p.petProjects) && p.petProjects.length > 0
+            ? p.petProjects.map((item: any, idx: number) => ({
+                id: `parsed_proj_${Date.now()}_${idx}`,
+                name: item.name || item.title || `Project #${idx + 1}`,
+                description: item.description || '',
+                keyHighlight: item.keyHighlight || item.keyAchievement || '',
+              }))
+            : prev.petProjects,
+        }));
+
+        setParseBannerInfo({
+          role: p.role,
+          skillsCount: p.techStack?.length || 0,
+          projectsCount: p.petProjects?.length || 0,
+        });
+      });
+
+      toast.success('Resume parsed & profile populated successfully!');
+    } catch (err: any) {
+      toast.error(err.message || 'Could not parse resume. Try pasting text directly into CV tab.');
+    } finally {
+      setIsUploadingPdf(false);
+      setUploadScanStep('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processPdfFile(e.dataTransfer.files[0]);
+    }
+  };
+
   const POPULAR_SUGGESTIONS = [
     'Docker', 'PostgreSQL', 'Redis', 'Kubernetes', 'AWS', 'Kafka',
-    'GraphQL', 'Tailwind CSS', 'Git', 'CI/CD'
+    'GraphQL', 'Tailwind CSS', 'Git', 'CI/CD', 'TypeScript', 'Next.js'
   ];
 
-  const hasContextFilled = Boolean(profile.jobDescription?.trim() || profile.cvContext?.trim());
-
-  // Quick 6 top roles for one-click pill bar
   const QUICK_ROLES = [
     { key: 'fullstack', label: 'Full-Stack' },
     { key: 'frontend', label: 'Frontend' },
     { key: 'python_backend', label: 'Python' },
     { key: 'nodejs_backend', label: 'Node.js' },
-    { key: 'java_backend', label: 'Java' },
+    { key: 'golang_backend', label: 'Go' },
     { key: 'devops', label: 'DevOps' },
   ];
 
+  const currentCompiledPrompt = compileAiDirectivesToPrompt(
+    profile.aiDirectives || DEFAULT_AI_DIRECTIVES,
+    profile.role,
+    profile.level || 'middle'
+  );
+
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-5 bg-black/75 backdrop-blur-md animate-in fade-in duration-150">
-      <div className="relative w-full max-w-3xl bg-[#18191E] border border-zinc-800 rounded-2xl sm:rounded-3xl shadow-2xl text-zinc-100 max-h-[92dvh] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-zinc-800/80 bg-[#18191E] flex-shrink-0">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-200">
+      {/* Outer Obsidian Modal Window */}
+      <div className="relative w-full max-w-4xl bg-black border border-white/[0.12] rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_30px_rgba(255,255,255,0.03)] text-zinc-100 max-h-[92dvh] flex flex-col overflow-hidden ring-1 ring-white/[0.05]">
+        
+        {/* Subtle Kinetic Pinstripe Canvas Layer */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-[0.035]"
+          style={{
+            backgroundImage: 'repeating-linear-gradient(to right, rgba(255,255,255,0.8) 0px, rgba(255,255,255,0.8) 1px, transparent 1px, transparent 32px)',
+            maskImage: 'radial-gradient(ellipse 90% 80% at 50% 20%, black 40%, transparent 100%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 90% 80% at 50% 20%, black 40%, transparent 100%)',
+          }}
+        />
+
+        {/* Modal Header */}
+        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#07070b]/90 backdrop-blur-xl flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-zinc-800/70 border border-zinc-700/60 flex items-center justify-center text-zinc-300">
-              <User className="w-4 h-4 text-zinc-300" />
+            <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-zinc-200 shadow-inner">
+              <User className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-semibold text-zinc-100 tracking-tight">
-                {pr.title}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-base sm:text-lg font-semibold text-white tracking-tight">
+                  Interview Context & Resume Configuration
+                </h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-white/10 text-zinc-300 border border-white/10">
+                  {profile.level || 'middle'}
+                </span>
+              </div>
               <p className="text-xs text-zinc-400 mt-0.5">
-                {pr.subtitle}
+                Calibrate real-time Copilot answers, upload your CV, and tune response directives.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800/70 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer border border-transparent hover:border-white/10"
             title="Close"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Segmented Control Tabs */}
-        <div className="px-5 sm:px-6 py-2.5 bg-[#141519] border-b border-zinc-800/60 flex-shrink-0">
-          <div className="flex bg-[#1D1E25] p-1 rounded-xl border border-zinc-800/80 gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('role')}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                activeTab === 'role'
-                  ? 'bg-zinc-700/90 text-white shadow-sm font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>{t.tabRole}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                activeTab === 'role' ? 'bg-zinc-800 text-zinc-200' : 'bg-zinc-800/60 text-zinc-400'
-              }`}>
-                {profile.techStack.length}
+        {/* AI Parse Banner (shows when auto-fill finishes) */}
+        {parseBannerInfo && (
+          <div className="relative z-10 px-6 py-2.5 bg-zinc-900/90 border-b border-white/15 flex items-center justify-between text-xs animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-2 text-zinc-200">
+              <FileCheck2 className="w-4 h-4 text-white" />
+              <span>
+                Detected <strong className="text-white">{parseBannerInfo.role}</strong> with{' '}
+                <strong className="text-white">{parseBannerInfo.skillsCount} skills</strong> and{' '}
+                <strong className="text-white">{parseBannerInfo.projectsCount} projects</strong>.
               </span>
-            </button>
-
+            </div>
             <button
               type="button"
-              onClick={() => setActiveTab('projects')}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                activeTab === 'projects'
-                  ? 'bg-zinc-700/90 text-white shadow-sm font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              onClick={() => setParseBannerInfo(null)}
+              className="text-[11px] font-mono text-zinc-400 hover:text-white underline cursor-pointer"
             >
-              <FolderGit2 className="w-3.5 h-3.5" />
-              <span>{t.tabProjects}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                activeTab === 'projects' ? 'bg-zinc-800 text-zinc-200' : 'bg-zinc-800/60 text-zinc-400'
-              }`}>
-                {profile.petProjects.length}
-              </span>
+              Dismiss
             </button>
+          </div>
+        )}
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('context')}
-              className={`flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                activeTab === 'context'
-                  ? 'bg-zinc-700/90 text-white shadow-sm font-semibold'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>{t.tabContext}</span>
-              {hasContextFilled && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-              )}
-            </button>
+        {/* Fluid Animated Sliding Pill Dock */}
+        <div className="relative z-10 px-6 py-2.5 bg-[#050508]/90 border-b border-white/[0.08] flex-shrink-0">
+          <div className="flex bg-[#0a0a0f] p-1 rounded-xl border border-white/[0.07] gap-1 relative">
+            {[
+              { id: 'role', label: 'Target Role', icon: Code2, count: profile.techStack.length },
+              { id: 'projects', label: 'Pet Projects', icon: FolderGit2, count: profile.petProjects.length },
+              { id: 'context', label: 'Resume & Vacancy', icon: FileText, hasDot: Boolean(profile.cvContext || profile.jobDescription) },
+              { id: 'persona', label: 'AI Persona & Directives', icon: Sliders, badge: 'PRO' },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`relative flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-2 z-10 ${
+                    isActive ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.div
+                      layoutId="active-modal-tab"
+                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      className="absolute inset-0 bg-white/[0.12] rounded-lg border border-white/20 shadow-sm z-[-1]"
+                    />
+                  )}
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-zinc-500'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  )}
+                  {tab.hasDot && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+                  )}
+                  {tab.badge && (
+                    <span className="text-[9px] font-mono px-1 py-0.2 bg-white/10 text-zinc-300 rounded border border-white/10">
+                      {tab.badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-6 py-5 space-y-6 custom-scrollbar">
-          {activeTab === 'role' && (
-            <div className="space-y-5 animate-in fade-in duration-150">
-              {/* Block 1: Role Presets (Selection) */}
-              <div className="bg-zinc-800/30 border border-zinc-800 rounded-xl p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-zinc-200">
-                    {t.presetTitle}
-                  </label>
-                  <span className="text-[11px] text-zinc-400 hidden sm:inline">
-                    18 готових шаблонів
-                  </span>
-                </div>
+        <div className="relative z-10 flex-1 overflow-y-auto px-6 py-5 space-y-6 custom-scrollbar bg-black/60">
+          <AnimatePresence mode="wait">
+            
+            {/* TAB 1: TARGET ROLE & INTERVIEW */}
+            {activeTab === 'role' && (
+              <motion.div
+                key="tab-role"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-6"
+              >
+                {/* Vacancy Target Input & Role Presets */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-bold text-white flex items-center gap-2">
+                        <Briefcase className="w-3.5 h-3.5 text-zinc-300" />
+                        <span>Target Position & Vacancy</span>
+                      </label>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Define your exact position, company, or target domain.
+                      </p>
+                    </div>
+                  </div>
 
-                {/* 1-Click Common Roles & Full Dropdown */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {QUICK_ROLES.map(({ key, label }) => {
-                    const preset = ROLE_PRESETS[key];
-                    if (!preset) return null;
-                    const isSelected = selectedPresetKey === key || profile.role === preset.role;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => applyPreset(key, preset)}
-                        className={`px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-zinc-200 text-zinc-950 font-bold shadow-sm'
-                            : 'bg-zinc-800/70 hover:bg-zinc-750 text-zinc-300 border border-zinc-700/60'
-                        }`}
-                      >
-                        <span>{label}</span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-zinc-950" />}
-                      </button>
-                    );
-                  })}
-
-                  {/* All 18 roles dropdown with categorized optgroups */}
-                  <select
-                    value={selectedPresetKey || ''}
-                    onChange={(e) => {
-                      const key = e.target.value;
-                      if (key && ROLE_PRESETS[key]) {
-                        applyPreset(key, ROLE_PRESETS[key]);
-                      }
-                    }}
-                    className="bg-zinc-800/70 border border-zinc-700/60 hover:border-zinc-500 rounded-xl px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-400 cursor-pointer"
-                  >
-                    <option value="">{t.selectRolePlaceholder}</option>
-                    <optgroup label={t.groupFrontend}>
-                      <option value="frontend">{ROLE_PRESETS.frontend.label} — {ROLE_PRESETS.frontend.role}</option>
-                      <option value="fullstack">{ROLE_PRESETS.fullstack.label} — {ROLE_PRESETS.fullstack.role}</option>
-                    </optgroup>
-                    <optgroup label={t.groupBackend}>
-                      <option value="python_backend">{ROLE_PRESETS.python_backend.label} — {ROLE_PRESETS.python_backend.role}</option>
-                      <option value="nodejs_backend">{ROLE_PRESETS.nodejs_backend.label} — {ROLE_PRESETS.nodejs_backend.role}</option>
-                      <option value="java_backend">{ROLE_PRESETS.java_backend.label} — {ROLE_PRESETS.java_backend.role}</option>
-                      <option value="golang_backend">{ROLE_PRESETS.golang_backend.label} — {ROLE_PRESETS.golang_backend.role}</option>
-                      <option value="dotnet_backend">{ROLE_PRESETS.dotnet_backend.label} — {ROLE_PRESETS.dotnet_backend.role}</option>
-                    </optgroup>
-                    <optgroup label={t.groupMobile}>
-                      <option value="ios_mobile">{ROLE_PRESETS.ios_mobile.label} — {ROLE_PRESETS.ios_mobile.role}</option>
-                      <option value="android_mobile">{ROLE_PRESETS.android_mobile.label} — {ROLE_PRESETS.android_mobile.role}</option>
-                      <option value="flutter_mobile">{ROLE_PRESETS.flutter_mobile.label} — {ROLE_PRESETS.flutter_mobile.role}</option>
-                    </optgroup>
-                    <optgroup label={t.groupCloud}>
-                      <option value="devops">{ROLE_PRESETS.devops.label} — {ROLE_PRESETS.devops.role}</option>
-                      <option value="qa_automation">{ROLE_PRESETS.qa_automation.label} — {ROLE_PRESETS.qa_automation.role}</option>
-                    </optgroup>
-                    <optgroup label={t.groupData}>
-                      <option value="data_engineer">{ROLE_PRESETS.data_engineer.label} — {ROLE_PRESETS.data_engineer.role}</option>
-                      <option value="data_science">{ROLE_PRESETS.data_science.label} — {ROLE_PRESETS.data_science.role}</option>
-                    </optgroup>
-                    <optgroup label={t.groupManagement}>
-                      <option value="system_architect">{ROLE_PRESETS.system_architect.label} — {ROLE_PRESETS.system_architect.role}</option>
-                      <option value="product_manager">{ROLE_PRESETS.product_manager.label} — {ROLE_PRESETS.product_manager.role}</option>
-                      <option value="uiux_designer">{ROLE_PRESETS.uiux_designer.label} — {ROLE_PRESETS.uiux_designer.role}</option>
-                      <option value="cybersecurity">{ROLE_PRESETS.cybersecurity.label} — {ROLE_PRESETS.cybersecurity.role}</option>
-                    </optgroup>
-                  </select>
-                </div>
-              </div>
-
-              {/* Block 2: Role Title & Age */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div className="sm:col-span-3">
-                  <label className="text-xs font-semibold text-zinc-300 block mb-1.5">
-                    {pr.roleLabel}
-                  </label>
                   <input
                     type="text"
                     value={profile.role}
                     onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                    placeholder={t.rolePlaceholder}
-                    className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3.5 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors font-sans"
+                    placeholder="e.g. Senior Backend Engineer (FastAPI / PostgreSQL) at Revolut"
+                    className="w-full bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/50 focus:ring-1 focus:ring-white/20 rounded-xl px-4 py-2.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none transition-all shadow-inner font-sans"
                   />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-zinc-300 block mb-1.5">
-                    {pr.ageLabel}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="16"
-                      max="75"
-                      value={profile.age}
-                      onChange={(e) => setProfile({ ...profile, age: parseInt(e.target.value) || 18 })}
-                      className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3 py-2 text-sm font-mono text-zinc-100 focus:outline-none transition-colors text-center"
-                    />
-                    <span className="text-xs text-zinc-400 font-mono shrink-0">{pr.yearsOld}</span>
+
+                  {/* 1-Click Quick Presets */}
+                  <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 font-mono">
+                      <span>Quick Role Templates:</span>
+                      <span className="text-zinc-500">Auto-fills stack & projects</span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {QUICK_ROLES.map(({ key, label }) => {
+                        const preset = ROLE_PRESETS[key];
+                        if (!preset) return null;
+                        const isSelected = selectedPresetKey === key || profile.role === preset.role;
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => applyPreset(key, preset)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-sans transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-white text-zinc-950 font-bold shadow-sm ring-1 ring-white/50'
+                                : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.08]'
+                            }`}
+                          >
+                            <span>{label}</span>
+                            {isSelected && <Check className="w-3 h-3 text-zinc-950 stroke-[3]" />}
+                          </button>
+                        );
+                      })}
+
+                      {/* Dropdown for All 18 Roles */}
+                      <select
+                        value={selectedPresetKey || ''}
+                        onChange={(e) => {
+                          const key = e.target.value;
+                          if (key && ROLE_PRESETS[key]) {
+                            applyPreset(key, ROLE_PRESETS[key]);
+                          }
+                        }}
+                        className="bg-zinc-950 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 focus:outline-none cursor-pointer hover:border-white/30"
+                      >
+                        <option value="">— All 18 roles —</option>
+                        <optgroup label="Frontend & Full-Stack">
+                          <option value="frontend">{ROLE_PRESETS.frontend.label}</option>
+                          <option value="fullstack">{ROLE_PRESETS.fullstack.label}</option>
+                        </optgroup>
+                        <optgroup label="Backend Development">
+                          <option value="python_backend">{ROLE_PRESETS.python_backend.label}</option>
+                          <option value="nodejs_backend">{ROLE_PRESETS.nodejs_backend.label}</option>
+                          <option value="java_backend">{ROLE_PRESETS.java_backend.label}</option>
+                          <option value="golang_backend">{ROLE_PRESETS.golang_backend.label}</option>
+                          <option value="dotnet_backend">{ROLE_PRESETS.dotnet_backend.label}</option>
+                        </optgroup>
+                        <optgroup label="Mobile Development">
+                          <option value="ios_mobile">{ROLE_PRESETS.ios_mobile.label}</option>
+                          <option value="android_mobile">{ROLE_PRESETS.android_mobile.label}</option>
+                          <option value="flutter_mobile">{ROLE_PRESETS.flutter_mobile.label}</option>
+                        </optgroup>
+                        <optgroup label="Cloud, DevOps & QA">
+                          <option value="devops">{ROLE_PRESETS.devops.label}</option>
+                          <option value="qa_automation">{ROLE_PRESETS.qa_automation.label}</option>
+                        </optgroup>
+                        <optgroup label="Data & Machine Learning">
+                          <option value="data_engineer">{ROLE_PRESETS.data_engineer.label}</option>
+                          <option value="data_science">{ROLE_PRESETS.data_science.label}</option>
+                        </optgroup>
+                        <optgroup label="Architecture & Management">
+                          <option value="system_architect">{ROLE_PRESETS.system_architect.label}</option>
+                          <option value="product_manager">{ROLE_PRESETS.product_manager.label}</option>
+                          <option value="uiux_designer">{ROLE_PRESETS.uiux_designer.label}</option>
+                          <option value="cybersecurity">{ROLE_PRESETS.cybersecurity.label}</option>
+                        </optgroup>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Block 3: Tech Stack Tags Box */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
-                    <span>{pr.stackLabel}</span>
-                    <span className="text-zinc-500 font-mono text-[11px]">({profile.techStack.length})</span>
+                {/* Seniority / Grade Level Selection */}
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-300 block">
+                    Experience Level (Seniority Grade):
                   </label>
-                  <span className="text-[11px] text-zinc-500">{t.deleteTagHint}</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {[
+                      { id: 'junior', label: 'Junior', sub: '1-2 yrs', age: 22 },
+                      { id: 'middle', label: 'Middle', sub: '2-4 yrs', age: 25 },
+                      { id: 'senior', label: 'Senior', sub: '5+ yrs', age: 29 },
+                      { id: 'lead', label: 'Lead / Arch', sub: 'Staff / Tech Lead', age: 34 },
+                    ].map((lvl) => {
+                      const isSelected = (profile.level || 'middle') === lvl.id;
+                      return (
+                        <button
+                          key={lvl.id}
+                          type="button"
+                          onClick={() => setProfile({ ...profile, level: lvl.id as CandidateLevel, age: lvl.age })}
+                          className={`py-2.5 px-3 rounded-xl text-xs font-medium transition-all text-center cursor-pointer border ${
+                            isSelected
+                              ? 'bg-white/15 border-white text-white font-bold shadow-[0_0_25px_rgba(255,255,255,0.18)]'
+                              : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
+                          }`}
+                        >
+                          <div className="font-semibold">{lvl.label}</div>
+                          <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{lvl.sub}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Active Stack Tags Cloud */}
-                <div className="flex flex-wrap gap-1.5 min-h-[46px] p-2.5 rounded-xl bg-[#131418] border border-zinc-800 items-center">
-                  {profile.techStack.map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-zinc-800 text-zinc-200 border border-zinc-700/60 hover:border-zinc-500 transition-colors"
-                    >
-                      <span>{tag}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveTag(tag)}
-                        className="text-zinc-400 hover:text-rose-400 font-bold px-0.5 rounded cursor-pointer transition-colors"
-                        title="Remove"
+                {/* Tech Stack Tags Cloud & Keyboard-First Input */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+                      <span>Tech Stack Competencies:</span>
+                      <span className="text-zinc-200 font-mono text-[11px] bg-white/10 px-1.5 py-0.5 rounded">
+                        {profile.techStack.length}
+                      </span>
+                    </label>
+                    <span className="text-[11px] text-zinc-500 font-mono">Press [Enter] or [,] to add tag</span>
+                  </div>
+
+                  {/* Active Tags Flow */}
+                  <div className="flex flex-wrap gap-1.5 min-h-[46px] p-3 rounded-xl bg-[#0a0a0f] border border-white/10 items-center">
+                    {profile.techStack.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono bg-white/[0.08] text-zinc-200 border border-white/10 hover:border-white/20 transition-colors"
                       >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-
-                {/* Add Custom Tag Row */}
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={newTagInput}
-                    onChange={(e) => setNewTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddTag();
-                      }
-                    }}
-                    placeholder={t.tagPlaceholder}
-                    className="flex-1 bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddTag}
-                    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 border border-zinc-700 flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{pr.addTech}</span>
-                  </button>
-                </div>
-
-                {/* Clean inline suggestions */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
-                  <span className="text-[11px] text-zinc-400">{t.quickAdd}</span>
-                  {POPULAR_SUGGESTIONS.filter((item) => !profile.techStack.includes(item)).slice(0, 8).map((sugg) => (
-                    <button
-                      key={sugg}
-                      type="button"
-                      onClick={() => {
-                        setProfile((prev) => ({
-                          ...prev,
-                          techStack: [...prev.techStack, sugg],
-                        }));
-                      }}
-                      className="text-[11px] font-mono text-zinc-400 hover:text-zinc-100 hover:underline cursor-pointer transition-colors px-1"
-                    >
-                      +{sugg}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'projects' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                {t.projInfo}
-              </p>
-
-              {profile.petProjects.length === 0 ? (
-                <div className="text-center py-10 px-4 rounded-2xl bg-zinc-800/30 border border-zinc-800">
-                  <FolderGit2 className="w-9 h-9 text-zinc-500 mx-auto mb-2 opacity-50" />
-                  <p className="text-xs text-zinc-400 mb-4">{t.noProjects}</p>
-                  <button
-                    type="button"
-                    onClick={handleAddProject}
-                    className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-xs font-medium text-zinc-200 border border-zinc-700 inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>{pr.addProject}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {profile.petProjects.map((proj, idx) => (
-                    <div
-                      key={proj.id}
-                      className="p-4 sm:p-5 rounded-2xl bg-zinc-800/35 border border-zinc-800/90 space-y-3.5"
-                    >
-                      <div className="flex items-center justify-between pb-2 border-b border-zinc-800">
-                        <div className="flex items-center gap-2">
-                          <FolderGit2 className="w-4 h-4 text-zinc-400" />
-                          <span className="text-xs font-semibold text-zinc-200">
-                            {t.projectCardTitle} #{idx + 1}
-                          </span>
-                        </div>
+                        <span>{tag}</span>
                         <button
                           type="button"
-                          onClick={() => handleDeleteProject(proj.id)}
-                          className="text-xs text-zinc-400 hover:text-rose-400 flex items-center gap-1.5 transition-colors cursor-pointer"
-                          title="Delete project"
+                          onClick={() => handleRemoveTag(tag)}
+                          className="text-zinc-400 hover:text-white font-bold px-0.5 rounded cursor-pointer transition-colors"
+                          title="Remove tag"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>{t.projectCardDelete}</span>
+                          ×
                         </button>
-                      </div>
+                      </span>
+                    ))}
+                    {profile.techStack.length === 0 && (
+                      <span className="text-xs text-zinc-500 italic">No skills listed yet. Add skills below or upload your CV.</span>
+                    )}
+                  </div>
 
-                      {/* Field 1: Project Name */}
-                      <div>
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                          {t.projNameLabel}
-                        </label>
-                        <input
-                          type="text"
-                          value={proj.name}
-                          onChange={(e) => handleUpdateProject(proj.id, 'name', e.target.value)}
-                          placeholder="Наприклад: High-Performance SaaS Platform"
-                          className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none font-sans"
-                        />
-                      </div>
+                  {/* Add Tag Row */}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={newTagInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.includes(',')) {
+                          handleAddTag();
+                        } else {
+                          setNewTagInput(val);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddTag();
+                        } else if (e.key === 'Backspace' && newTagInput === '' && profile.techStack.length > 0) {
+                          handleRemoveTag(profile.techStack[profile.techStack.length - 1]);
+                        }
+                      }}
+                      placeholder="Add technology (e.g. Kubernetes, gRPC, ClickHouse)..."
+                      className="flex-1 bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/50 rounded-xl px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddTag}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-medium text-white border border-white/15 flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
+                  </div>
 
-                      {/* Field 2: Description & Architecture */}
-                      <div>
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                          {t.projDescLabel}
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={proj.description}
-                          onChange={(e) => handleUpdateProject(proj.id, 'description', e.target.value)}
-                          placeholder="Короткий опис: яку задачу вирішує та які ключові технології використані"
-                          className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3.5 py-2 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
-                        />
-                      </div>
+                  {/* Quick Inline Suggestions */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+                    <span className="text-[11px] text-zinc-400">Popular:</span>
+                    {POPULAR_SUGGESTIONS.filter((item) => !profile.techStack.includes(item)).slice(0, 8).map((sugg) => (
+                      <button
+                        key={sugg}
+                        type="button"
+                        onClick={() => {
+                          setProfile((prev) => ({
+                            ...prev,
+                            techStack: [...prev.techStack, sugg],
+                          }));
+                        }}
+                        className="text-[11px] font-mono text-zinc-400 hover:text-white hover:bg-white/5 border border-white/5 rounded px-2 py-0.5 cursor-pointer transition-colors"
+                      >
+                        +{sugg}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                      {/* Field 3: Key Technical Highlight */}
-                      <div>
-                        <label className="text-xs font-semibold text-zinc-300 block mb-1">
-                          {t.projHighlightLabel}
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={proj.keyHighlight}
-                          onChange={(e) => handleUpdateProject(proj.id, 'keyHighlight', e.target.value)}
-                          placeholder="Головне досягнення чи оптимізація (ШІ розкаже про це як про ваш успішний кейс)"
-                          className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl px-3.5 py-2 text-xs text-zinc-300 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
-                        />
-                      </div>
+                {/* Live AI Calibration Card */}
+                <div className="p-4 rounded-xl bg-white/[0.03] border border-white/10 text-xs flex items-start gap-3">
+                  <Sparkles className="w-4 h-4 text-white shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-semibold text-zinc-200">
+                      Live AI Calibration Preview:
                     </div>
-                  ))}
+                    <p className="text-zinc-300 text-[11px] leading-relaxed">
+                      Copilot will tune depth of architecture, internal memory mechanics, and edge cases for a{' '}
+                      <strong className="text-white">{(profile.level || 'middle').toUpperCase()}</strong> level in{' '}
+                      <strong className="text-white">&ldquo;{profile.role || 'Software Engineer'}&rdquo;</strong>.
+                      Answers will organically ground themselves in your active stack ({profile.techStack.slice(0, 6).join(', ')}).
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
+            {/* TAB 2: PET PROJECTS & REAL CASES */}
+            {activeTab === 'projects' && (
+              <motion.div
+                key="tab-projects"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-zinc-400 leading-relaxed max-w-xl">
+                    Copilot weaves these projects as real-world proof points during architectural and behavioral questions.
+                  </p>
                   <button
                     type="button"
                     onClick={handleAddProject}
-                    className="w-full py-3 rounded-xl border border-dashed border-zinc-700 hover:border-zinc-500 bg-zinc-800/20 hover:bg-zinc-800/50 text-xs font-medium text-zinc-300 hover:text-white flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-medium text-white border border-white/15 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>{pr.addProject}</span>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Project</span>
                   </button>
                 </div>
-              )}
-            </div>
-          )}
 
-          {activeTab === 'context' && (
-            <div className="space-y-4 animate-in fade-in duration-150">
-              <p className="text-xs text-zinc-400 leading-relaxed">
-                {t.contextInfo}
-              </p>
+                {profile.petProjects.length === 0 ? (
+                  <div className="text-center py-12 px-4 rounded-2xl bg-white/[0.02] border border-white/10">
+                    <FolderGit2 className="w-9 h-9 text-zinc-600 mx-auto mb-2" />
+                    <p className="text-xs text-zinc-400 mb-4">No pet projects added yet.</p>
+                    <button
+                      type="button"
+                      onClick={handleAddProject}
+                      className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-medium text-white border border-white/20 inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Create First Project</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {profile.petProjects.map((proj, idx) => {
+                      const isExpanded = expandedProjectId === proj.id;
+                      return (
+                        <div
+                          key={proj.id}
+                          className="rounded-xl bg-[#0a0a0f] border border-white/10 overflow-hidden transition-all"
+                        >
+                          {/* Accordion Summary Bar */}
+                          <div
+                            onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
+                            className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 overflow-hidden">
+                              <span className="text-xs font-mono text-zinc-500">#{idx + 1}</span>
+                              <div className="truncate">
+                                <span className="text-xs font-semibold text-zinc-200 mr-2">{proj.name || 'Untitled Project'}</span>
+                                {proj.keyHighlight && (
+                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5">
+                                    {proj.keyHighlight.slice(0, 45)}...
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => handleCloneProject(proj)}
+                                title="Duplicate project"
+                                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteProject(proj.id)}
+                                title="Delete project"
+                                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-white/10 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExpandedProjectId(isExpanded ? null : proj.id)}
+                                className="p-1.5 rounded-lg text-zinc-400 hover:text-white cursor-pointer"
+                              >
+                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          </div>
 
-              {/* Job Description */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300 block">
-                  {t.jobTitle}
-                </label>
-                <textarea
-                  rows={4}
-                  value={profile.jobDescription || ''}
-                  onChange={(e) => setProfile({ ...profile, jobDescription: e.target.value })}
-                  placeholder={pr.jobPlaceholder}
-                  className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
-                />
-              </div>
+                          {/* Accordion Expanded Fields */}
+                          <AnimatePresence>
+                            {isExpanded && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.15 }}
+                                className="px-4 pb-4 pt-1 border-t border-white/[0.06] space-y-3"
+                              >
+                                <div>
+                                  <label className="text-[11px] font-semibold text-zinc-400 block mb-1">
+                                    Project Name:
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={proj.name}
+                                    onChange={(e) => handleUpdateProject(proj.id, 'name', e.target.value)}
+                                    placeholder="e.g. Distributed Event-Driven Broker"
+                                    className="w-full bg-black/60 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-white/40"
+                                  />
+                                </div>
 
-              {/* CV Context */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300 block">
-                  {t.cvTitle}
-                </label>
-                <textarea
-                  rows={4}
-                  value={profile.cvContext || ''}
-                  onChange={(e) => setProfile({ ...profile, cvContext: e.target.value })}
-                  placeholder={pr.cvPlaceholder}
-                  className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
-                />
-              </div>
+                                <div>
+                                  <label className="text-[11px] font-semibold text-zinc-400 block mb-1">
+                                    Architecture & Problem Solved:
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={proj.description}
+                                    onChange={(e) => handleUpdateProject(proj.id, 'description', e.target.value)}
+                                    placeholder="What it does, core challenges, and technologies utilized"
+                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-zinc-300 focus:outline-none focus:border-white/40 leading-relaxed font-sans"
+                                  />
+                                </div>
 
-              {/* Custom Bio / Instructions */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-zinc-300 block">
-                  {t.bioTitle}
-                </label>
-                <textarea
-                  rows={3}
-                  value={profile.customContext}
-                  onChange={(e) => setProfile({ ...profile, customContext: e.target.value })}
-                  placeholder={pr.bioPlaceholder}
-                  className="w-full bg-[#131418] border border-zinc-800 hover:border-zinc-700 focus:border-zinc-500 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
-                />
-              </div>
-            </div>
-          )}
+                                <div>
+                                  <label className="text-[11px] font-semibold text-zinc-400 block mb-1">
+                                    Key Metric / Technical Achievement (What AI Highlights):
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={proj.keyHighlight}
+                                    onChange={(e) => handleUpdateProject(proj.id, 'keyHighlight', e.target.value)}
+                                    placeholder="e.g. Optimized DB query latency by 85% with Redis caching and composite B-tree indices"
+                                    className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-zinc-300 focus:outline-none focus:border-white/40 leading-relaxed font-sans"
+                                  />
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
+            )}
+
+            {/* TAB 3: RESUME & VACANCY CONTEXT */}
+            {activeTab === 'context' && (
+              <motion.div
+                key="tab-context"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-6"
+              >
+                {/* PDF Ingestion Dropzone Card with Laser Scanner */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  className={`relative overflow-hidden rounded-2xl border-2 border-dashed p-6 transition-all text-center ${
+                    isDragging
+                      ? 'border-white bg-white/[0.08]'
+                      : 'border-white/15 bg-white/[0.02] hover:border-white/30'
+                  }`}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        processPdfFile(e.target.files[0]);
+                      }
+                    }}
+                  />
+
+                  {/* Animated Laser Sweep Line during Upload */}
+                  {isUploadingPdf && (
+                    <motion.div
+                      className="absolute inset-x-0 h-[2px] bg-white shadow-[0_0_15px_rgba(255,255,255,1)] z-20"
+                      initial={{ top: '0%' }}
+                      animate={{ top: ['0%', '100%', '0%'] }}
+                      transition={{ duration: 1.8, repeat: Infinity, ease: 'linear' }}
+                    />
+                  )}
+
+                  <div className="flex flex-col items-center justify-center space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-white mb-1 shadow-inner">
+                      {isUploadingPdf ? (
+                        <Sparkles className="w-5 h-5 text-white animate-spin" />
+                      ) : (
+                        <UploadCloud className="w-5 h-5 text-white" />
+                      )}
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-white tracking-tight">
+                        {isUploadingPdf ? 'Scanning & Structuring Resume...' : 'Drop your PDF Resume here or click to browse'}
+                      </h4>
+                      <p className="text-xs text-zinc-400">
+                        {isUploadingPdf
+                          ? uploadScanStep || 'Analyzing CV structure...'
+                          : 'Supports PDF up to 15MB. Automatically populates target role, skills, pet projects & CV context.'}
+                      </p>
+                    </div>
+
+                    {!isUploadingPdf && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="mt-2 px-4 py-2 rounded-xl bg-white text-black font-semibold text-xs hover:bg-zinc-200 cursor-pointer transition-colors shadow-sm"
+                      >
+                        Select PDF File
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dual Context Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Job Description */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
+                      <span>Job Description / Requirements:</span>
+                      <span className="text-[10px] font-mono text-zinc-500">Optional</span>
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={profile.jobDescription || ''}
+                      onChange={(e) => setProfile({ ...profile, jobDescription: e.target.value })}
+                      placeholder="Paste vacancy requirements here. Copilot will directly target employer expectations."
+                      className="w-full bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/40 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
+                    />
+                  </div>
+
+                  {/* CV Context */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
+                      <span>CV Narrative & Background:</span>
+                      <span className="text-[10px] font-mono text-zinc-500">Auto-filled by PDF</span>
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={profile.cvContext || ''}
+                      onChange={(e) => setProfile({ ...profile, cvContext: e.target.value })}
+                      placeholder="Resume summary or career achievements. AI will quote real milestones from your biography."
+                      className="w-full bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/40 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* TAB 4: AI PERSONA & BEHAVIOR DIRECTIVES STUDIO */}
+            {activeTab === 'persona' && (
+              <motion.div
+                key="tab-persona"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                className="space-y-6"
+              >
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-center gap-3">
+                  <Sliders className="w-4 h-4 text-white shrink-0" />
+                  <p className="text-xs text-zinc-300 leading-relaxed">
+                    Tune Copilot response style with 1-click toggles. Directives are automatically compiled into real-time system prompts.
+                  </p>
+                </div>
+
+                {/* Behavioral Chips Grid */}
+                <div className="space-y-4">
+                  {/* Vector 1: Response Length */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 block">
+                      Response Length:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        { id: 'ultra-concise', label: 'Ultra-Concise', sub: '1-2 punchy sentences' },
+                        { id: 'structured', label: 'Structured & In-Depth', sub: 'Mechanics + Architecture' },
+                        { id: 'bullets', label: 'Bullet Points Only', sub: '3 bold keywords list' },
+                      ].map((item) => {
+                        const isSelected = (profile.aiDirectives?.responseLength || 'ultra-concise') === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setProfile({
+                              ...profile,
+                              aiDirectives: {
+                                ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
+                                responseLength: item.id as any,
+                              }
+                            })}
+                            className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-white/15 border-white text-white font-semibold shadow-sm'
+                                : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <div className="text-xs">{item.label}</div>
+                            <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{item.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Vector 2: Tone of Voice */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 block">
+                      Tone of Voice:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        { id: 'authoritative', label: 'Authoritative Architect', sub: 'Defends design decisions' },
+                        { id: 'pragmatic', label: 'Pragmatic & Direct', sub: 'No fluff or theory' },
+                        { id: 'star', label: 'Storyteller (STAR)', sub: 'Situation, Action, Result' },
+                      ].map((item) => {
+                        const isSelected = (profile.aiDirectives?.toneOfVoice || 'authoritative') === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setProfile({
+                              ...profile,
+                              aiDirectives: {
+                                ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
+                                toneOfVoice: item.id as any,
+                              }
+                            })}
+                            className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-white/15 border-white text-white font-semibold shadow-sm'
+                                : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <div className="text-xs">{item.label}</div>
+                            <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{item.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Vector 3: Engineering Focus */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 block">
+                      Engineering Focus:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {[
+                        { id: 'architecture', label: 'System Architecture', sub: 'Bottlenecks, Scale, DB IO' },
+                        { id: 'clean_code', label: 'Clean Code & Algorithms', sub: 'SOLID, Memory, Typing' },
+                        { id: 'business_impact', label: 'Product & Business Impact', sub: 'Velocity, ROI, Metrics' },
+                      ].map((item) => {
+                        const isSelected = (profile.aiDirectives?.engineeringFocus || 'architecture') === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setProfile({
+                              ...profile,
+                              aiDirectives: {
+                                ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
+                                engineeringFocus: item.id as any,
+                              }
+                            })}
+                            className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${
+                              isSelected
+                                ? 'bg-white/15 border-white text-white font-semibold shadow-sm'
+                                : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <div className="text-xs">{item.label}</div>
+                            <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{item.sub}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Vector 4: Anti-AI Guardrails (Multi-Select) */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-300 block">
+                      Anti-AI Guardrails:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[
+                        { id: 'no_fluff', label: 'No Fluff', desc: 'Ban "Sure!", "Great question!", "Under the hood"' },
+                        { id: 'challenge_weak', label: 'Challenge Weak Assumptions', desc: 'Clarify unstated edge cases' },
+                        { id: 'show_tradeoffs', label: 'Mandatory Production Trade-offs', desc: 'Always cite pros vs. cons' },
+                        { id: 'no_academic', label: 'No Textbook Definitions', desc: 'Skip Wikipedia-style intros' },
+                      ].map((item) => {
+                        const currentGuardrails = profile.aiDirectives?.guardrails || [];
+                        const isSelected = currentGuardrails.includes(item.id);
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              const next = isSelected
+                                ? currentGuardrails.filter((g) => g !== item.id)
+                                : [...currentGuardrails, item.id];
+                              setProfile({
+                                ...profile,
+                                aiDirectives: {
+                                  ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
+                                  guardrails: next,
+                                },
+                              });
+                            }}
+                            className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all flex items-start gap-2.5 ${
+                              isSelected
+                                ? 'bg-white/15 border-white text-white'
+                                : 'bg-white/[0.02] border-white/[0.06] text-zinc-400 hover:text-zinc-200'
+                            }`}
+                          >
+                            <div className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center border ${
+                              isSelected ? 'bg-white text-black border-white' : 'border-white/20'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                            </div>
+                            <div>
+                              <div className="text-xs font-semibold">{item.label}</div>
+                              <div className="text-[10px] text-zinc-400">{item.desc}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Custom Nuances Free-Form Textarea */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-zinc-300 block">
+                      Custom Free-Form Directives:
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={profile.aiDirectives?.customNuances || ''}
+                      onChange={(e) => setProfile({
+                        ...profile,
+                        aiDirectives: {
+                          ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
+                          customNuances: e.target.value,
+                        },
+                      })}
+                      placeholder="e.g. Always emphasize my Kafka partitioning & Kubernetes migration experience when scalability is asked."
+                      className="w-full bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/40 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
+                    />
+                  </div>
+
+                  {/* Expandable Live Prompt Preview */}
+                  <div className="rounded-xl border border-white/10 bg-[#07070a] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => setShowPromptPreview(!showPromptPreview)}
+                      className="w-full px-4 py-2.5 flex items-center justify-between text-xs text-zinc-300 hover:text-white cursor-pointer hover:bg-white/[0.02]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Terminal className="w-3.5 h-3.5 text-zinc-400" />
+                        <span className="font-mono">Live Copilot System Prompt Compiler</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-zinc-500">
+                        {showPromptPreview ? 'Collapse' : 'Inspect'}
+                      </span>
+                    </button>
+                    {showPromptPreview && (
+                      <div className="p-3.5 border-t border-white/[0.06] bg-black/80 font-mono text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                        {currentCompiledPrompt}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+          </AnimatePresence>
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-t border-zinc-800/80 bg-[#18191E] flex-shrink-0">
+        {/* Modal Footer Controls */}
+        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-t border-white/[0.08] bg-[#07070b]/90 backdrop-blur-xl flex-shrink-0">
           <button
             type="button"
             onClick={handleReset}
-            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer px-2 py-1 rounded-lg"
+            className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer px-2.5 py-1.5 rounded-lg font-mono border border-transparent hover:border-white/10 hover:bg-white/[0.04]"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>{pr.reset}</span>
+            <span>Reset Defaults</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-750 text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer border border-zinc-700/80"
+              className="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/10 transition-colors cursor-pointer"
             >
-              {pr.cancel}
+              Cancel
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-bold transition-all shadow-md shadow-emerald-500/10 active:scale-95 cursor-pointer flex items-center gap-1.5"
+              className="px-5 py-2 rounded-xl text-xs font-semibold bg-white text-black hover:bg-zinc-200 shadow-sm flex items-center gap-1.5 cursor-pointer transition-colors"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>{pr.save}</span>
+              <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>Save & Sync Profile</span>
             </button>
           </div>
         </div>

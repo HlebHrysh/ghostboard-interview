@@ -16,6 +16,7 @@ model User {
   trialQuestionsUsed Int      @default(0)
   stripeCustomerId   String?
   resumeContext      String?
+  passwordHash       String?  // scrypt hash; null for OAuth-only accounts
   createdAt          DateTime @default(now())
 
   sessions Session[]
@@ -23,11 +24,12 @@ model User {
 }
 
 model Session {
-  token     String   @id @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  createdAt DateTime @default(now())
-  expiresAt DateTime
+  token      String   @id @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  deviceType String   @default("web") // web | desktop | phone
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
 
   @@index([userId])
 }

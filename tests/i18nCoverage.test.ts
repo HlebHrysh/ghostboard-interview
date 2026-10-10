@@ -12,6 +12,9 @@ import { SIMULATOR_I18N } from '../src/lib/simulatorI18n';
 import { SETTINGS_I18N } from '../src/lib/settingsI18n';
 import { ARENA_I18N } from '../src/lib/arenaI18n';
 import { GUIDE_I18N } from '../src/lib/guideI18n';
+import { PROFILE_I18N } from '../src/lib/profileI18n';
+import { HOME_I18N } from '../src/lib/homeI18n';
+
 
 describe('i18n 10-Locale Exhaustive Coverage', () => {
   const expectedLocales: SupportedLocale[] = ['ua', 'en', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl'];
@@ -177,5 +180,29 @@ describe('i18n 10-Locale Exhaustive Coverage', () => {
       expect(g.ctaTitle.length).toBeGreaterThan(0);
     }
   });
+
+  it('contains valid translations for all 10 locales in PROFILE_I18N', () => {
+    for (const loc of expectedLocales) {
+      const p = PROFILE_I18N[loc];
+      expect(p, `Missing profile translation for ${loc}`).toBeDefined();
+      expect(p.devicesTitle.length).toBeGreaterThan(0);
+      expect(p.changePasswordTitle.length).toBeGreaterThan(0);
+      expect(p.revokeBtn.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('contains valid translations for all 10 locales in HOME_I18N', () => {
+    for (const loc of expectedLocales) {
+      const h = HOME_I18N[loc];
+      expect(h, `Missing home translation for ${loc}`).toBeDefined();
+      expect(h.title.length).toBeGreaterThan(0);
+      expect(h.stealthLens.title.length).toBeGreaterThan(0);
+      expect(h.tickerDemo.title.length).toBeGreaterThan(0);
+      expect(h.workflow.title.length).toBeGreaterThan(0);
+      expect(h.devices.title.length).toBeGreaterThan(0);
+      expect(h.faq.title.length).toBeGreaterThan(0);
+    }
+  });
 });
+
 

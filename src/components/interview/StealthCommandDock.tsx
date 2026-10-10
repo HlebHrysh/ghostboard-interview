@@ -86,7 +86,7 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
               <button
                 type="button"
                 onClick={() => onStartCapture(audioSource)}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#C8F135] hover:bg-white text-black font-extrabold text-xs font-mono transition-all cursor-pointer shadow-[0_0_20px_rgba(200,241,53,0.3)] active:scale-95"
+                className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white hover:bg-white text-black font-extrabold text-xs font-mono transition-all cursor-pointer shadow-[0_0_20px_rgba(196,181,253,0.3)] active:scale-95"
                 title={hud.startSession}
               >
                 <Play className="w-3.5 h-3.5 fill-black" />
@@ -160,7 +160,7 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
                   title={hud.answerNow}
                 >
                   <span>Answer</span>
-                  <CornerDownLeft className="w-3 h-3 text-[#C8F135]" />
+                  <CornerDownLeft className="w-3 h-3 text-white" />
                 </button>
               )}
 
@@ -248,6 +248,18 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
                   <History className="w-3 h-3 text-zinc-400" />
                   <span className="text-zinc-200">{questionCount}</span>
                 </button>
+
+                {onTogglePanic && (
+                  <button
+                    type="button"
+                    onClick={onTogglePanic}
+                    className="btn-resend-danger !py-1 !px-2.5 text-[11px] font-mono flex items-center gap-1.5 shadow-[0_0_15px_rgba(239,68,68,0.25)] active:scale-95"
+                    title="Panic Shield (Esc)"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                    <span>Shield</span>
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -255,11 +267,11 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
 
         {/* ── KEYCAPS LEGEND ROW ── */}
         <div className="text-[9px] font-mono text-zinc-500 flex items-center gap-2 select-none tracking-wider">
-          <span><kbd className="px-1 py-0.2 rounded bg-black/40 border border-white/10 text-zinc-400">Space</kbd> Freeze</span>
+          <span className="flex items-center gap-1"><kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Space</kbd> Freeze</span>
           <span>·</span>
-          <span><kbd className="px-1 py-0.2 rounded bg-black/40 border border-white/10 text-zinc-400">Q</kbd> Concise</span>
+          <span className="flex items-center gap-1"><kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Q</kbd> Concise</span>
           <span>·</span>
-          <span><kbd className="px-1 py-0.2 rounded bg-black/40 border border-white/10 text-zinc-400">F9</kbd> Screen OCR</span>
+          <span className="flex items-center gap-1"><kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">F9</kbd> Screen OCR</span>
           <span>·</span>
           {onTogglePanic ? (
             <button
@@ -268,10 +280,10 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
               className="hover:text-zinc-300 transition-colors cursor-pointer flex items-center gap-1 pointer-events-auto"
               title="Esc: Privacy Shield"
             >
-              <kbd className="px-1 py-0.2 rounded bg-black/40 border border-white/10 text-zinc-400">Esc</kbd> Privacy
+              <kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Esc</kbd> <span>Panic</span>
             </button>
           ) : (
-            <span><kbd className="px-1 py-0.2 rounded bg-black/40 border border-white/10 text-zinc-400">Esc</kbd> Privacy</span>
+            <span className="flex items-center gap-1"><kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Esc</kbd> <span>Privacy</span></span>
           )}
         </div>
       </div>

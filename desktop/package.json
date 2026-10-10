@@ -21,6 +21,41 @@
   "license": "MIT",
   "dependencies": {},
   "devDependencies": {
-    "electron": "^33.2.1"
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ai.ghostboard.desktop",
+    "productName": "Ghostboard",
+    "copyright": "Copyright © 2026 Ghostboard Team",
+    "protocols": {
+      "name": "ghostboard",
+      "schemes": [
+        "ghostboard"
+      ]
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
   }
 }

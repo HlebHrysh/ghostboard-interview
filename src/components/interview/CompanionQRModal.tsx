@@ -88,7 +88,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="relative w-full max-w-md overflow-hidden bg-[#111113] border border-[#C8F135]/30 rounded-3xl p-6 sm:p-7 shadow-[0_0_80px_rgba(200,241,53,0.12)] text-zinc-100"
+          className="relative w-full max-w-md overflow-hidden bento-card border border-white/[0.12] p-6 sm:p-7 shadow-[0_0_80px_rgba(196,181,253,0.12)] text-zinc-100"
         >
           {/* Close button */}
           <button
@@ -100,11 +100,11 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
 
           {/* Header */}
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-10 h-10 rounded-2xl bg-[#C8F135]/15 border border-[#C8F135]/30 flex items-center justify-center text-[#C8F135]">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white">
               <Tablet className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-mono text-[10px] text-[#C8F135] uppercase tracking-widest font-bold">
+              <div className="font-mono text-[10px] text-zinc-300 uppercase tracking-widest font-bold">
                 {c.badge}
               </div>
               <h3 className="text-xl font-bold font-sans text-white">
@@ -118,7 +118,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
           </p>
 
           {/* QR Code Container */}
-          <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/5 border border-white/10 mb-5">
+          <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] mb-5">
             {qrDataUrl ? (
               <div className="p-3 bg-white rounded-xl shadow-lg">
                 <img
@@ -134,7 +134,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
             )}
 
             <div className="flex items-center gap-1.5 mt-3 text-[11px] font-mono text-zinc-400">
-              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+              <Wifi className="w-3.5 h-3.5 text-white" />
               <span>{c.sseSync}</span>
             </div>
           </div>
@@ -145,16 +145,16 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-mono font-medium transition-all cursor-pointer flex items-center justify-center gap-2 text-zinc-200"
+                className="btn-resend-glass flex-1 !py-2.5 !px-4 text-xs font-mono font-medium flex items-center justify-center gap-2 text-zinc-200"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-[#C8F135]" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? c.copied : c.copyLink}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleOpenLocal}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-[#C8F135]/10 hover:bg-[#C8F135]/20 border border-[#C8F135]/30 text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-2 text-[#C8F135]"
+                className="btn-resend-primary flex-1 !py-2.5 !px-4 text-xs font-mono font-bold flex items-center justify-center gap-2"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>{c.popout}</span>

@@ -186,16 +186,16 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
         >
           <span className="relative flex h-2 w-2">
             {isSpeaking && (
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#C8F135] opacity-75" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
             )}
             <span
               className={`relative inline-flex rounded-full h-2 w-2 transition-colors ${
-                isSpeaking ? 'bg-[#C8F135] shadow-[0_0_6px_#c8f135]' : 'bg-zinc-600'
+                isSpeaking ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-zinc-600'
               }`}
             />
           </span>
 
-          <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-[#C8F135]' : 'text-zinc-500'}`} />
+          <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-white' : 'text-zinc-500'}`} />
 
           <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-400 group-hover:text-zinc-200">
             {txt.title}
@@ -218,7 +218,7 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
         <div className="w-[320px] rounded-2xl bg-[#0D0D10]/95 border border-white/[0.08] shadow-[0_16px_40px_rgba(0,0,0,0.8)] p-3.5 backdrop-blur-2xl animate-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-xs font-mono">
             <div className="flex items-center gap-2">
-              <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-[#C8F135]' : 'text-zinc-500'}`} />
+              <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-white' : 'text-zinc-500'}`} />
               <span className="font-bold text-white uppercase text-[11px]">{txt.title}</span>
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono">
                 {txt.badge}

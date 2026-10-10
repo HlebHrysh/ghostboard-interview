@@ -257,7 +257,7 @@ export default function AdminUsers() {
 
           <button
             onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#C8F135] text-black text-xs font-mono font-bold tracking-wider hover:shadow-[0_0_25px_rgba(200,241,53,0.35)] transition-all active:scale-95 cursor-pointer ml-auto sm:ml-0"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white text-black text-xs font-mono font-bold tracking-wider hover:shadow-[0_0_25px_rgba(196,181,253,0.35)] transition-all active:scale-95 cursor-pointer ml-auto sm:ml-0"
           >
             <Plus className="w-4 h-4" />
             <span>Додати юзера</span>
@@ -275,7 +275,7 @@ export default function AdminUsers() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Пошук за email, ім'ям або спеціалізацією..."
-            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/50 transition-all"
+            className="w-full bg-black/40 border border-white/10 rounded-2xl py-2.5 pl-10 pr-4 text-xs font-mono text-white placeholder-zinc-600 focus:outline-none focus:border-white/50 transition-all"
           />
         </div>
 
@@ -287,7 +287,7 @@ export default function AdminUsers() {
               onClick={() => setSelectedPlanFilter(plan)}
               className={`px-3 py-1.5 rounded-xl uppercase font-bold text-[10px] tracking-wider transition-all cursor-pointer ${
                 selectedPlanFilter === plan
-                  ? "bg-[#C8F135] text-black shadow-[0_0_12px_rgba(200,241,53,0.3)]"
+                  ? "bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.3)]"
                   : "bg-white/[0.03] text-zinc-400 hover:text-white hover:bg-white/[0.07]"
               }`}
             >
@@ -302,7 +302,7 @@ export default function AdminUsers() {
           <select
             value={sortBy}
             onChange={(e: any) => setSortBy(e.target.value)}
-            className="bg-black/40 border border-white/10 text-zinc-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-[#C8F135]/50 cursor-pointer"
+            className="bg-black/40 border border-white/10 text-zinc-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-white/50 cursor-pointer"
           >
             <option value="newest">Найновіші</option>
             <option value="sessions">Найбільше сесій</option>
@@ -314,7 +314,7 @@ export default function AdminUsers() {
       {/* ── Users Table ── */}
       {loading ? (
         <div className="flex justify-center py-24">
-          <Loader2 className="w-8 h-8 animate-spin text-[#C8F135]" />
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
         </div>
       ) : (
         <div className="bg-[#08080c] border border-white/[0.08] rounded-3xl overflow-hidden overflow-x-auto shadow-2xl">
@@ -371,7 +371,7 @@ export default function AdminUsers() {
                       <span
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 ${
                           u.plan === "pro"
-                            ? "bg-[#C8F135]/20 text-[#C8F135] border border-[#C8F135]/30"
+                            ? "bg-white/10 text-white border border-white/20"
                             : u.plan === "lifetime"
                             ? "bg-amber-400/20 text-amber-400 border border-amber-400/30"
                             : "bg-zinc-800 text-zinc-400"
@@ -415,7 +415,7 @@ export default function AdminUsers() {
                               toast.error("Помилка активації Pro");
                             }
                           }}
-                          className="px-2 py-1 rounded-lg bg-[#C8F135]/10 hover:bg-[#C8F135]/30 text-[#C8F135] transition-all cursor-pointer font-mono text-[10px] flex items-center gap-1 font-bold"
+                          className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all cursor-pointer font-mono text-[10px] flex items-center gap-1 font-bold"
                           title="Instant Pro Boost (Activate Pro & Reset Limits)"
                         >
                           <Zap className="w-3 h-3" />
@@ -424,7 +424,7 @@ export default function AdminUsers() {
 
                         <button
                           onClick={() => handleOpenEdit(u)}
-                          className="p-1.5 rounded-lg bg-white/5 hover:bg-[#C8F135]/20 hover:text-[#C8F135] text-zinc-400 transition-all cursor-pointer"
+                          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/20 hover:text-white text-zinc-400 transition-all cursor-pointer"
                           title="Редагувати профіль та план"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
@@ -460,7 +460,7 @@ export default function AdminUsers() {
           <div className="bg-[#08080c] border border-white/[0.1] rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl space-y-6 font-mono">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-white uppercase flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[#C8F135]" />
+                <Plus className="w-4 h-4 text-white" />
                 <span>Новий кандидат</span>
               </h3>
               <button
@@ -480,7 +480,7 @@ export default function AdminUsers() {
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="candidate@example.com"
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-white/50"
                 />
               </div>
 
@@ -491,7 +491,7 @@ export default function AdminUsers() {
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="Олександр Коваль"
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-white/50"
                 />
               </div>
 
@@ -502,7 +502,7 @@ export default function AdminUsers() {
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value)}
                   placeholder="Python Backend Developer"
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-zinc-600 focus:outline-none focus:border-white/50"
                 />
               </div>
 
@@ -511,7 +511,7 @@ export default function AdminUsers() {
                 <select
                   value={newPlan}
                   onChange={(e) => setNewPlan(e.target.value)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-white/50"
                 >
                   <option value="free">Free (Демо 15 хв)</option>
                   <option value="pro">Pro Pass ($15-25/mo)</option>
@@ -530,7 +530,7 @@ export default function AdminUsers() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="btn-lime px-5 py-2 rounded-xl text-black font-bold flex items-center gap-2"
+                  className="btn-resend-primary !px-5 !py-2.5 text-xs font-mono flex items-center gap-2"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Створити"}
                 </button>
@@ -547,7 +547,7 @@ export default function AdminUsers() {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white uppercase flex items-center gap-2">
-                  <Edit2 className="w-4 h-4 text-[#C8F135]" />
+                  <Edit2 className="w-4 h-4 text-white" />
                   <span>Редагувати користувача</span>
                 </h3>
                 <span className="text-[11px] text-zinc-500">{editingUser.email}</span>
@@ -563,7 +563,7 @@ export default function AdminUsers() {
                 <select
                   value={editPlan}
                   onChange={(e) => setEditPlan(e.target.value)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-white/50"
                 >
                   <option value="free">Free (Обмеження)</option>
                   <option value="pro">Pro Pass (Безліміт)</option>
@@ -577,7 +577,7 @@ export default function AdminUsers() {
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-white/50"
                 />
               </div>
 
@@ -587,7 +587,7 @@ export default function AdminUsers() {
                   type="text"
                   value={editRole}
                   onChange={(e) => setEditRole(e.target.value)}
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-[#C8F135]/60"
+                  className="w-full bg-black/60 border border-white/10 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-white/50"
                 />
               </div>
 
@@ -609,7 +609,7 @@ export default function AdminUsers() {
                   type="button"
                   onClick={handleSaveEdit}
                   disabled={isSubmitting}
-                  className="btn-lime px-5 py-2 rounded-xl text-black font-bold flex items-center gap-2"
+                  className="btn-resend-primary !px-5 !py-2.5 text-xs font-mono flex items-center gap-2"
                 >
                   {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "Зберегти зміни"}
                 </button>

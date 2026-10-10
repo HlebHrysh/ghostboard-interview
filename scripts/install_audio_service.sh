@@ -5,8 +5,8 @@
 set -e
 
 SERVICE_DIR="${HOME}/.config/systemd/user"
-SERVICE_FILE="${SERVICE_DIR}/ghostboard-stealth-audio.service"
-SCRIPT_PATH="/mnt/storage_d/ghostboard-interview/scripts/stealth_audio.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${SCRIPT_DIR}/stealth_audio.sh"
 
 echo "→ Налаштування автоматичного запуску Ghostboard Stealth Audio..."
 mkdir -p "${SERVICE_DIR}"

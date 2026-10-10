@@ -8,6 +8,7 @@ import {
   Users,
   Mic,
   DollarSign,
+  Laptop,
   Settings,
   LogOut,
   ExternalLink,
@@ -42,6 +43,12 @@ export function AdminSidebar({ mobileOpen, onMobileClose }: AdminSidebarProps) {
       badge: "LIVE",
     },
     {
+      name: "Desktop Fleet",
+      path: "/admin/desktop",
+      icon: Laptop,
+      badge: "FLEET",
+    },
+    {
       name: "Users",
       path: "/admin/users",
       icon: Users,
@@ -71,14 +78,14 @@ export function AdminSidebar({ mobileOpen, onMobileClose }: AdminSidebarProps) {
           <Link href="/" className="flex items-center gap-2.5 group">
             <GhostDetectiveLogo size="mini" className="group-hover:scale-105 transition-transform" />
             <div className="flex flex-col">
-              <span className="text-sm font-black font-mono tracking-widest text-white group-hover:text-[#C8F135] transition-colors">
+              <span className="text-sm font-black font-mono tracking-widest text-white group-hover:text-zinc-200 transition-colors">
                 GHOSTBOARD
               </span>
               <span className="text-[9px] font-mono text-zinc-500 tracking-wider">
                 CONTROL VAULT
               </span>
             </div>
-            <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-[#C8F135]/15 text-[#C8F135] font-mono border border-[#C8F135]/30 uppercase font-bold">
+            <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded bg-white/10 text-zinc-300 font-mono border border-white/20 uppercase font-bold">
               v2.5
             </span>
           </Link>
@@ -109,7 +116,7 @@ export function AdminSidebar({ mobileOpen, onMobileClose }: AdminSidebarProps) {
                 onClick={onMobileClose}
                 className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl font-mono text-xs tracking-wider transition-all group ${
                   isActive
-                    ? "bg-[#C8F135] text-black font-bold shadow-[0_0_20px_rgba(200,241,53,0.35)]"
+                    ? "bg-white text-black font-bold shadow-[0_0_20px_rgba(255,255,255,0.25)]"
                     : "text-zinc-400 hover:text-white hover:bg-white/[0.05]"
                 }`}
               >
@@ -122,7 +129,7 @@ export function AdminSidebar({ mobileOpen, onMobileClose }: AdminSidebarProps) {
                     className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
                       isActive
                         ? "bg-black/20 text-black"
-                        : "bg-[#C8F135]/15 text-[#C8F135] border border-[#C8F135]/30"
+                        : "bg-white/10 text-white border border-white/20"
                     }`}
                   >
                     {n.badge}
@@ -142,7 +149,7 @@ export function AdminSidebar({ mobileOpen, onMobileClose }: AdminSidebarProps) {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-zinc-400">Vault Secure</span>
           </div>
-          <span className="text-[9px] text-[#C8F135] uppercase font-bold">256-BIT</span>
+          <span className="text-[9px] text-zinc-300 uppercase font-bold">256-BIT</span>
         </div>
 
         {/* Public App Link */}

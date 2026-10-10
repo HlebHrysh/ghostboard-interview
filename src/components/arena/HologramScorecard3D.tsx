@@ -112,14 +112,14 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
         onMouseMove={handleMouseMove}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="group relative w-full rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-zinc-900/98 via-zinc-950/98 to-black border-2 border-white/15 hover:border-[#C8F135]/50 shadow-[0_32px_100px_rgba(0,0,0,0.95)] overflow-hidden select-none transition-transform duration-100 ease-out cursor-pointer"
+        className="group relative w-full rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-zinc-900/98 via-zinc-950/98 to-black border-2 border-white/15 hover:border-white/40 shadow-[0_32px_100px_rgba(0,0,0,0.95)] overflow-hidden select-none transition-transform duration-100 ease-out cursor-pointer"
       >
         {/* Dynamic Cursor Spotlight Effect */}
         <div
           className="pointer-events-none absolute -inset-px rounded-3xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
           style={{
             background:
-              'radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(200, 241, 53, 0.16), transparent 45%)',
+              'radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255,255,255, 0.12), transparent 45%)',
           }}
         />
 
@@ -129,8 +129,8 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
         {/* Top Header Row */}
         <div className="flex items-center justify-between pb-4 border-b border-white/10 relative z-10">
           <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#C8F135] shadow-[0_0_12px_#C8F135] animate-pulse" />
-            <span className="font-mono font-black text-xs sm:text-sm tracking-widest text-[#C8F135]">
+            <span className="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.6)] animate-pulse" />
+            <span className="font-mono font-black text-xs sm:text-sm tracking-widest text-zinc-100">
               GHOSTBOARD ARENA
             </span>
             <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10">
@@ -138,8 +138,8 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-white text-[10px] font-mono font-bold">
+            <ShieldCheck className="w-3.5 h-3.5 text-white" />
             <span>VERIFIED PROOF</span>
           </div>
         </div>
@@ -158,17 +158,17 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
                 {data.trackName}
               </span>
               <span>•</span>
-              <span className="text-[#C8F135] font-bold">Level: {data.level}</span>
+              <span className="text-zinc-200 font-bold">Level: {data.level}</span>
             </div>
           </div>
 
           {/* Big Score Orb */}
-          <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-zinc-900/90 border border-[#C8F135]/30 shadow-[0_0_30px_rgba(200,241,53,0.15)] shrink-0 w-24">
-            <span className="text-3xl font-black font-mono text-[#C8F135] leading-none">
+          <div className="flex flex-col items-center justify-center p-3 rounded-2xl bg-zinc-900/90 border border-white/20 shadow-[0_0_30px_rgba(255,255,255,0.1)] shrink-0 w-24">
+            <span className="text-3xl font-black font-mono text-white leading-none">
               {data.overallScore}
             </span>
             <span className="text-[10px] font-mono text-zinc-400 uppercase mt-0.5">/ 100</span>
-            <span className="text-[9px] font-mono text-emerald-400 font-bold mt-1">
+            <span className="text-[9px] font-mono text-white font-bold mt-1">
               Top {100 - (data.percentile || 92)}%
             </span>
           </div>
@@ -224,23 +224,22 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
 
         {/* Summary Feedback */}
         {data.summaryFeedback && (
-          <div className="p-3.5 rounded-xl bg-[#C8F135]/5 border border-[#C8F135]/20 text-xs font-sans text-zinc-300 relative z-10 mb-4 leading-relaxed">
-            <span className="font-mono text-[#C8F135] font-bold text-[10px] uppercase block mb-1">
+          <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 text-xs font-sans text-zinc-300 relative z-10 mb-4 leading-relaxed">
+            <span className="font-mono text-zinc-300 font-bold text-[10px] uppercase block mb-1">
               {sc.staffConclusion}
             </span>
             {data.summaryFeedback}
           </div>
         )}
 
-        {/* QR Code Expansion Modal/Area */}
         {showQr && (
           <div className="p-4 rounded-2xl bg-zinc-900 border border-white/10 relative z-20 flex flex-col items-center text-center my-3 animate-in fade-in zoom-in-95">
             <img
               src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
                 publicUrl
-              )}&color=c8f135&bgcolor=18181b`}
+              )}&color=ffffff&bgcolor=18181b`}
               alt="Scorecard QR Code"
-              className="w-36 h-36 rounded-xl border border-[#C8F135]/30 mb-2 shadow-lg"
+              className="w-36 h-36 rounded-xl border border-white/20 mb-2 shadow-lg"
             />
             <span className="text-[10px] font-mono text-zinc-400">
               {sc.qrScanHint}
@@ -254,7 +253,7 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
             <Calendar className="w-3 h-3 text-zinc-400" />
             <span>{data.dateStr}</span>
           </div>
-          <div className="flex items-center gap-1 text-[#C8F135]">
+          <div className="flex items-center gap-1 text-zinc-300">
             <Sparkles className="w-3 h-3" />
             <span>ID: GHOST-{data.slug.slice(0, 8).toUpperCase()}</span>
           </div>
@@ -267,9 +266,9 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
           <button
             type="button"
             onClick={handleShareLinkedIn}
-            className="py-3 px-5 rounded-2xl bg-[#0A66C2] hover:bg-[#004182] text-white font-mono text-xs font-bold transition-all shadow-[0_0_20px_rgba(10,102,194,0.3)] flex items-center gap-2 cursor-pointer active:scale-95"
+            className="py-3 px-5 rounded-2xl bg-white hover:bg-zinc-200 text-black font-mono text-xs font-bold transition-all shadow-[0_0_20px_rgba(255,255,255,0.25)] flex items-center gap-2 cursor-pointer active:scale-95"
           >
-            <Share2 className="w-4 h-4" />
+            <Share2 className="w-4 h-4 fill-black" />
             <span>{sc.shareLinkedIn}</span>
           </button>
 
@@ -297,7 +296,7 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
             className="py-3 px-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/10 font-mono text-xs transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             title={sc.qrScanHint}
           >
-            <QrCode className="w-4 h-4 text-[#C8F135]" />
+            <QrCode className="w-4 h-4 text-zinc-300" />
             <span className="hidden sm:inline">QR</span>
           </button>
         </div>

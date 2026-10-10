@@ -1,46 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { findOrCreateUser, createSession } from '@/lib/serverDb';
+import { getUserByEmail, createUser, createSession, setUserPassword, MIN_PASSWORD_LENGTH } from '@/lib/serverDb';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
 
+/**
+ * POST /api/auth/register
+ * Body: { email, password, name?, role? }
+ *
+ * Error codes: INVALID_EMAIL, WEAK_PASSWORD, EMAIL_TAKEN, RATE_LIMITED
+ *
+ * Previously this used findOrCreateUser, which meant "registering" with someone else's
+ * email silently logged you into their account. Now an existing email is rejected.
+ */
 export async function POST(req: NextRequest) {
   try {
     if (!validateOrigin(req)) {
-      return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });
+      return NextResponse.json({ error: 'Origin mismatch', code: 'ORIGIN_MISMATCH' }, { status: 403 });
     }
 
     // Anti-spam: max 5 registrations per minute per IP
     const rateLimit = await checkRateLimit(req, 5, 60000, 'auth_register');
     if (!rateLimit.allowed) {
       return NextResponse.json(
-        { error: `Занадто багато реєстрацій. Зачекайте ${rateLimit.retryAfterSec} сек.` },
+        { error: 'Too many attempts', code: 'RATE_LIMITED', retryAfterSec: rateLimit.retryAfterSec },
         { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
       );
     }
 
     const body = await req.json().catch(() => ({}));
-
-    const { email, name, role } = body;
+    const { email, password, name, role } = body;
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return NextResponse.json({ error: 'Введіть коректну електронну пошту' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid email', code: 'INVALID_EMAIL' }, { status: 400 });
+    }
+    if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json(
+        { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters`, code: 'WEAK_PASSWORD' },
+        { status: 400 }
+      );
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const cleanName = typeof name === 'string' && name.trim() ? name.trim() : cleanEmail.split('@')[0];
-    const cleanRole = typeof role === 'string' && role.trim() ? role.trim() : 'Python Backend Developer';
+    if (await getUserByEmail(cleanEmail)) {
+      return NextResponse.json({ error: 'Email already registered', code: 'EMAIL_TAKEN' }, { status: 409 });
+    }
 
-    const user = await findOrCreateUser(cleanEmail, cleanName, cleanRole);
-    const session = await createSession(user.id);
+    const cleanName = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : cleanEmail.split('@')[0];
+    const cleanRole = typeof role === 'string' && role.trim() ? role.trim().slice(0, 80) : 'Python Backend Developer';
+
+    const user = await createUser(cleanEmail, cleanName, 'free', cleanRole);
+    await setUserPassword(user.id, password);
+    const session = await createSession(user.id, 'web');
 
     const response = NextResponse.json({
       success: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        plan: user.plan,
-        role: user.role,
-      },
+      user: { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role },
     });
 
     response.cookies.set('ghostboard_session', session.token, {
@@ -54,6 +67,6 @@ export async function POST(req: NextRequest) {
     return response;
   } catch (err: any) {
     console.error('Error during register:', err);
-    return NextResponse.json({ error: err.message || 'Помилка реєстрації' }, { status: 500 });
+    return NextResponse.json({ error: 'Registration failed', code: 'SERVER_ERROR' }, { status: 500 });
   }
 }

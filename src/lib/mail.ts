@@ -8,9 +8,12 @@ export async function sendRetentionEmail(email: string, name: string = 'Канд
     return { success: true };
   }
 
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://ghostboard.pro';
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'hi@ghostboard.pro';
+
   try {
     const { data, error } = await resend.emails.send({
-      from: 'Ghostboard <hi@ghostboard.ai>',
+      from: `Ghostboard <${fromEmail}>`,
       to: [email],
       subject: '🔥 Твої конкуренти вже тренуються!',
       html: `
@@ -19,7 +22,7 @@ export async function sendRetentionEmail(email: string, name: string = 'Канд
           <p>Ми помітили, що ти не заходив на Ghostboard вже кілька днів.</p>
           <p>Сьогодні <strong>142 кандидати</strong> успішно пройшли AI-співбесіди на твою позицію і покращили свої навички. Конкуренція на ринку дуже висока, тому важливо тримати себе в тонусі!</p>
           <p>Повертайся та пройди хоча б одне швидке мок-інтерв'ю на 3 запитання, щоб освіжити знання.</p>
-          <a href="https://ghostboard.ai/interview" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 16px;">Почати тренування</a>
+          <a href="${baseUrl}/interview" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 16px;">Почати тренування</a>
           <p style="margin-top: 32px; font-size: 12px; color: #777;">Якщо ви не хочете отримувати ці листи, ви можете відписатися в налаштуваннях.</p>
         </div>
       `,

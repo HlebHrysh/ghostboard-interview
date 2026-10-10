@@ -179,7 +179,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
             onClick={() => setActiveTab('current')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'current'
-                ? 'bg-[#C8F135] text-black shadow-[0_0_15px_rgba(200,241,53,0.3)]'
+                ? 'bg-white text-black shadow-[0_0_15px_rgba(196,181,253,0.3)]'
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
@@ -193,7 +193,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
             onClick={() => setActiveTab('archive')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'archive'
-                ? 'bg-[#C8F135] text-black shadow-[0_0_15px_rgba(200,241,53,0.3)]'
+                ? 'bg-white text-black shadow-[0_0_15px_rgba(196,181,253,0.3)]'
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
@@ -294,7 +294,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                           <span>•</span>
                           <span>⏳ {Math.floor((sess.durationSec || 0) / 60)} {t.minutesShort}</span>
                           <span>•</span>
-                          <span className="text-[#C8F135]">
+                          <span className="text-zinc-200 font-bold">
                             {t.questionsCount(sess.items?.length || sess.questionsCount || 0)}
                           </span>
                         </div>

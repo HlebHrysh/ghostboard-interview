@@ -1,27 +1,109 @@
 {
-  "name": "Ghostboard",
+  "id": "ai.ghostboard.app",
+  "name": "Ghostboard — AI Real-Time Teleprompter",
   "short_name": "Ghostboard",
   "description": "AI-Powered Real-Time Teleprompter & Live Performance Coach for Technical Interviews & Daily Standups. Overcome language barriers, speech anxiety, and prepare with confidence.",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#10b981",
-  "categories": ["productivity", "utilities", "education"],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#040406",
+  "theme_color": "#040406",
+  "categories": [
+    "productivity",
+    "utilities",
+    "education",
+    "business"
+  ],
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "/favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
+      "sizes": "256x256 128x128 64x64 48x48 32x32 24x24 16x16",
       "type": "image/x-icon"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live Teleprompter HUD",
+      "short_name": "Live HUD",
+      "description": "Launch the real-time stealth teleprompter overlay",
+      "url": "/companion/live",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Mock Interview Simulator",
+      "short_name": "Simulator",
+      "description": "Start an interactive technical mock interview",
+      "url": "/mock-interview",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Audio & Mic Settings",
+      "short_name": "Soundcheck",
+      "description": "Calibrate audio input and Deepgram STT stream",
+      "url": "/settings",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/hero-ghost.jpg",
+      "sizes": "1920x1080",
+      "type": "image/jpeg",
+      "form_factor": "wide",
+      "label": "Ghostboard Autonomous AI Interview Copilot"
     }
   ]
 }

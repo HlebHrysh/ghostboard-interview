@@ -58,12 +58,12 @@ export const UserProfileHUD: React.FC<UserProfileHUDProps> = ({
       {/* ── HUD Trigger Pill Button (Navigates directly to /profile) ── */}
       <Link
         href="/profile"
-        className="px-2.5 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-[#C8F135]/60 text-zinc-300 hover:text-white transition-all cursor-pointer backdrop-blur-xl flex items-center gap-2 shadow-sm group active:scale-95"
+        className="px-2.5 py-1.5 rounded-full bg-zinc-900/90 border border-zinc-800 hover:border-white/40 text-zinc-300 hover:text-white transition-all cursor-pointer backdrop-blur-xl flex items-center gap-2 shadow-sm group active:scale-95"
         title={locale === 'ua' ? 'Профіль кандидата' : 'Candidate Profile'}
         aria-label={locale === 'ua' ? 'Профіль кандидата' : 'Candidate Profile'}
       >
         {/* User Avatar Circle */}
-        <div className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700/80 group-hover:border-[#C8F135]/60 flex items-center justify-center text-[10px] font-bold text-zinc-200 shrink-0 font-mono">
+        <div className="w-5 h-5 rounded-full bg-zinc-800 border border-zinc-700/80 group-hover:border-white/40 flex items-center justify-center text-[10px] font-bold text-zinc-200 shrink-0 font-mono">
           {userInitial}
         </div>
 
@@ -73,7 +73,7 @@ export const UserProfileHUD: React.FC<UserProfileHUDProps> = ({
             VIP
           </span>
         ) : activePlan === 'pro' ? (
-          <span className="text-[10px] font-sans px-1.5 py-0.2 rounded-full bg-[#C8F135]/15 text-[#C8F135] border border-[#C8F135]/30 font-semibold hidden xs:inline-block">
+          <span className="text-[10px] font-sans px-1.5 py-0.2 rounded-full bg-white/[0.12] text-white border border-white/20 shadow-[0_0_10px_rgba(255,255,255,0.15)] font-semibold hidden xs:inline-block">
             PRO
           </span>
         ) : (

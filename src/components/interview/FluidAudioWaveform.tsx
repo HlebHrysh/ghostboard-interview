@@ -54,14 +54,21 @@ export const FluidAudioWaveform: React.FC<FluidAudioWaveformProps> = ({
       const normalizedVol = currentVolRef.current / 100;
       const maxAmplitude = Math.min(height / 2 - 2, 4 + normalizedVol * (height / 2 - 4));
 
-      // Draw 2 harmonic organic sine waves
+      // Draw 2 harmonic organic sine waves with pure-white/titanium glow
+      if (isCapturing) {
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.45)';
+        ctx.shadowBlur = 6;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+
       const waves = [
         {
           color: isCapturing
             ? normalizedVol > 0.4
-              ? 'rgba(200, 241, 53, 0.9)'
-              : 'rgba(52, 211, 153, 0.85)'
-            : 'rgba(113, 113, 122, 0.3)',
+              ? 'rgba(255, 255, 255, 0.95)'
+              : 'rgba(228, 228, 231, 0.9)'
+            : 'rgba(113, 113, 122, 0.25)',
           freq: 0.045,
           speed: 1,
           phaseOffset: 0,
@@ -69,7 +76,7 @@ export const FluidAudioWaveform: React.FC<FluidAudioWaveformProps> = ({
         },
         {
           color: isCapturing
-            ? 'rgba(56, 189, 248, 0.45)'
+            ? 'rgba(212, 212, 216, 0.65)'
             : 'rgba(82, 82, 91, 0.15)',
           freq: 0.035,
           speed: 1.3,

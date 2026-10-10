@@ -60,7 +60,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
       {readLockProgress > 0 && (
         <div className="w-full bg-white/[0.04] rounded-full h-1 overflow-hidden">
           <div
-            className="bg-[#C8F135] h-full rounded-full transition-all duration-150 ease-linear shadow-[0_0_6px_#c8f135]"
+            className="bg-white h-full rounded-full transition-all duration-150 ease-linear shadow-[0_0_6px_rgba(255,255,255,0.8)]"
             style={{ width: `${Math.round(readLockProgress * 100)}%` }}
             title={`${hud.readLock} ${Math.ceil(readLockProgress * 15)}s`}
           />
@@ -102,15 +102,15 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
 
       {/* ── MAIN TELEPROMPTER CARD (Linear Noir) ── */}
       <div
-        className={`w-full rounded-2xl bg-[#0D0D10] border p-5 sm:p-6 transition-all duration-200 shadow-[0_16px_40px_rgba(0,0,0,0.7)] backdrop-blur-2xl ${
-          isFrozen ? 'border-cyan-500/40' : 'border-white/[0.08]'
+        className={`w-full rounded-2xl bg-black/80 backdrop-blur-3xl border p-5 sm:p-6 transition-all duration-200 shadow-[0_20px_50px_rgba(0,0,0,0.85)] ${
+          isFrozen ? 'border-cyan-500/40 ring-1 ring-cyan-500/30' : 'border-white/[0.08]'
         }`}
       >
         {/* Question Header */}
         <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-white/[0.06]">
           <div className="space-y-1.5 flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono text-zinc-400">
-              <span className="px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-zinc-300 font-semibold uppercase tracking-wider text-[10px]">
+              <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-semibold uppercase tracking-wider text-[10px]">
                 {activeQA.tag || 'Architecture'}
               </span>
               <span className="text-zinc-600">·</span>
@@ -135,7 +135,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
             title={copiedId === activeQA.id ? hud.copied : hud.copy}
           >
             {copiedId === activeQA.id ? (
-              <Check className="w-4 h-4 text-[#C8F135]" />
+              <Check className="w-4 h-4 text-white" />
             ) : (
               <Copy className="w-4 h-4" />
             )}
@@ -143,12 +143,12 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
         </div>
 
         {/* ── 1. LEAD HOOK (The "First 5 Seconds" Immediate Spoken Answer) ── */}
-        <div className="my-4 p-4 sm:p-5 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-[#C8F135] font-bold mb-2 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135]" />
+        <div className="my-4 p-4 sm:p-5 rounded-xl bg-white/[0.035] border border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-white font-bold mb-2 flex items-center gap-1.5">
+            <span className="status-dot !w-1.5 !h-1.5" />
             <span>{hud.directAnswerHeader} (Speak First)</span>
           </div>
-          <p className="text-base sm:text-lg font-bold text-[#EDEDED] leading-relaxed tracking-tight font-sans">
+          <p className="text-base sm:text-lg lg:text-[19px] font-semibold text-white leading-relaxed tracking-tight font-sans">
             <ScrambleText text={mainAnswer} speed={8} scrambleDuration={180} />
           </p>
         </div>
@@ -158,7 +158,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
           <div className="my-2 p-3 sm:p-3.5 rounded-xl bg-blue-950/20 border border-blue-500/25">
             <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold mb-1 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-              <span>Переклад / Суть (Родна мова)</span>
+              <span>{hud.nativeTranslationHeader}</span>
             </div>
             <p className="text-xs sm:text-sm font-medium text-blue-100/90 leading-relaxed font-sans">
               {activeQA.nativeTranslation}
@@ -180,7 +180,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
                   key={idx}
                   className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
                 >
-                  <span className="text-[#C8F135] font-mono text-sm leading-none mt-0.5 font-bold">•</span>
+                  <span className="text-white font-mono text-sm leading-none mt-0.5 font-bold">•</span>
                   <span className="leading-relaxed font-medium">{hint}</span>
                 </li>
               ))}
@@ -199,16 +199,16 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
                     </div>
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2 bg-gradient-to-t from-[#0D0D10] via-[#0D0D10]/80 to-transparent">
                       <span className="text-xs font-mono text-zinc-300 flex items-center gap-1.5 font-semibold">
-                        <Lock className="w-3.5 h-3.5 text-[#C8F135]" />
-                        <span>Senior Deep-Dive Points Locked</span>
+                        <Lock className="w-3.5 h-3.5 text-white" />
+                        <span>{hud.deepDiveLocked}</span>
                       </span>
                       {onUpgradeClick && (
                         <button
                           type="button"
                           onClick={onUpgradeClick}
-                          className="px-3.5 py-1.5 rounded-lg bg-[#C8F135] hover:bg-white text-black text-xs font-mono font-bold transition-all cursor-pointer shadow-md"
+                          className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-white text-black text-xs font-mono font-bold transition-all cursor-pointer shadow-md"
                         >
-                          Unlock Pro
+                          {hud.unlockProBtn}
                         </button>
                       )}
                     </div>
@@ -219,7 +219,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
                       key={idx + 1}
                       className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
                     >
-                      <span className="text-[#C8F135] font-mono text-sm leading-none mt-0.5 font-bold">•</span>
+                      <span className="text-white font-mono text-sm leading-none mt-0.5 font-bold">•</span>
                       <span className="leading-relaxed font-medium">{hint}</span>
                     </li>
                   ))

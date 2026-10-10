@@ -57,12 +57,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Ознайомчий допуск",
         "period": "/ демо 15 хвилин",
         "features": [
-          "✓ 15 хв живого демо-тесту",
-          "✓ Gemini 2.5 Flash відповіді",
-          "✓ Freeze Mode [Пробіл]",
+          "✓ 15 хв повнофункціональної сесії",
+          "✓ Розпізнавання мови в реальному часі",
+          "✓ Швидкі тези відповідей Senior-рівня",
+          "✓ Freeze Mode [Пробіл] для фіксації",
           "✓ Бліц-режим відповідей [Q]",
-          "✕ Screen OCR аналіз коду",
-          "✕ Сесія обмежується 15 хвилинами"
+          "✓ Без привʼязки банківської картки"
         ]
       },
       "pro": {
@@ -103,40 +103,40 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Час сесій розпізнавання",
-          "free": "15 хв",
+          "feat": "Тривалість сесії співбесіди",
+          "free": "15 хв (демо)",
           "pro": "Безлімітно",
-          "life": "Безлімітно"
+          "life": "Безлімітно (пожиттєво)"
         },
         {
-          "feat": "AI Модель",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Апаратний захист від запису (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Швидкість генерації",
-          "free": "1.5с",
-          "pro": "1.4с",
-          "life": "1.4с"
+          "feat": "Companion HUD на смартфон (2-й екран)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Пробіл]",
+          "feat": "Screen & Code OCR розпізнавання [F9]",
+          "free": "—",
+          "pro": "✓ Миттєво",
+          "life": "✓ Миттєво"
+        },
+        {
+          "feat": "Freeze Mode [Пробіл] & Бліц-режим [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "HUD Телесуфлер на 2-й екран",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
+          "feat": "AI Mock Interviewer тренажер",
+          "free": "Базовий",
+          "pro": "✓ Повний",
+          "life": "✓ Повний"
         },
         {
           "feat": "Експорт звіту співбесіди (.md)",
@@ -145,10 +145,10 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
           "life": "✓"
         },
         {
-          "feat": "Потрібні власні API-ключі",
-          "free": "Не потрібні",
-          "pro": "Не потрібні",
-          "life": "Не потрібні"
+          "feat": "Персональний аудит резюме та GitHub",
+          "free": "—",
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -191,12 +191,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Starter Pass",
         "period": "/ 15 min demo",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
+          "✓ 15-min full-featured live session",
+          "✓ Real-time speech transcription",
+          "✓ Structured Senior-level answers",
+          "✓ Freeze Mode [Space] text locking",
           "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ No credit card required to test"
         ]
       },
       "pro": {
@@ -237,52 +237,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Live Session Duration",
+          "free": "15 min (demo)",
           "pro": "Unlimited",
-          "life": "Unlimited"
+          "life": "Unlimited (Forever)"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Hardware Stealth Screen Shield",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Mobile Companion HUD (2nd Screen)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "Screen & Code OCR Solver [F9]",
+          "free": "—",
+          "pro": "✓ Instant",
+          "life": "✓ Instant"
+        },
+        {
+          "feat": "Freeze Mode [Space] & Blitz [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "AI Mock Interview Simulator",
+          "free": "Basic",
+          "pro": "✓ Full Access",
+          "life": "✓ Full Access"
+        },
+        {
+          "feat": "Interview Debrief Export (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Personal Resume & GitHub Audit",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "No",
-          "pro": "No",
-          "life": "No"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -325,12 +325,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Wstępny dostęp",
         "period": "/ 15 min demo",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15-minutowa pełna sesja próbna",
+          "✓ Transkrypcja mowy w czasie rzeczywistym",
+          "✓ Tezy odpowiedzi na poziomie Seniora",
+          "✓ Freeze Mode [Spacja] do blokady tekstu",
+          "✓ Tryb zwięzły [Q]",
+          "✓ Karta kredytowa nie jest wymagana"
         ]
       },
       "pro": {
@@ -371,52 +371,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Czas trwania sesji rozmowy",
+          "free": "15 min (demo)",
           "pro": "Bez limitu",
-          "life": "Bez limitu"
+          "life": "Bez limitu (dożywotnio)"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Sprzętowa ochrona ekranu (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD na telefon (2. ekran)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "Analiza ekranu i kodu OCR [F9]",
+          "free": "—",
+          "pro": "✓ Natychmiast",
+          "life": "✓ Natychmiast"
+        },
+        {
+          "feat": "Freeze Mode [Spacja] & Tryb szybki [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "Symulator rozmów AI Mock Interviewer",
+          "free": "Podstawowy",
+          "pro": "✓ Pełny dostęp",
+          "life": "✓ Pełny dostęp"
+        },
+        {
+          "feat": "Eksport raportu z rozmowy (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Osobisty audyt CV i profilu GitHub",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Nie są wymagane",
-          "pro": "Nie są wymagane",
-          "life": "Nie są wymagane"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -459,12 +459,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Einstiegszugang",
         "period": "/ 15 Min. Demo",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 Min. voll ausgestattete Testsitzung",
+          "✓ Echtzeit-Sprachtranskription",
+          "✓ Strukturierte Senior-Antworten",
+          "✓ Freeze Mode [Leertaste] zur Textfixierung",
+          "✓ Blitz-Antwortmodus [Q]",
+          "✓ Keine Kreditkarte erforderlich"
         ]
       },
       "pro": {
@@ -505,52 +505,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Sitzungsdauer im Interview",
+          "free": "15 Min. (Demo)",
           "pro": "Unbegrenzt",
-          "life": "Unbegrenzt"
+          "life": "Lebenslang unbegrenzt"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Hardware-Screenshare-Schutz (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Smartphone Companion HUD (2. Bildschirm)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "Screen- & Code-OCR Erkennung [F9]",
+          "free": "—",
+          "pro": "✓ Sofort",
+          "life": "✓ Sofort"
+        },
+        {
+          "feat": "Freeze Mode [Leertaste] & Blitzmodus [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "KI-Mock-Interview-Simulator",
+          "free": "Basis",
+          "pro": "✓ Vollzugriff",
+          "life": "✓ Vollzugriff"
+        },
+        {
+          "feat": "Interview-Berichtsexport (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Persönlicher Lebenslauf- & GitHub-Audit",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Nicht erforderlich",
-          "pro": "Nicht erforderlich",
-          "life": "Nicht erforderlich"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -593,12 +593,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Accès d'initiation",
         "period": "/ démo 15 min",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min de session d’essai complète",
+          "✓ Transcription vocale en temps réel",
+          "✓ Réponses structurées niveau Senior",
+          "✓ Mode Freeze [Espace] pour verrouiller",
+          "✓ Mode réponses concises [Q]",
+          "✓ Sans carte bancaire requise"
         ]
       },
       "pro": {
@@ -639,52 +639,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Durée de session d’entretien",
+          "free": "15 min (démo)",
           "pro": "Illimité",
-          "life": "Illimité"
+          "life": "Illimité à vie"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Protection d’écran matérielle (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD smartphone (2e écran)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "Analyse d’écran et code OCR [F9]",
+          "free": "—",
+          "pro": "✓ Immédiat",
+          "life": "✓ Immédiat"
+        },
+        {
+          "feat": "Mode Freeze [Espace] & Concis [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "Simulateur d’entretien AI Mock",
+          "free": "Basique",
+          "pro": "✓ Accès total",
+          "life": "✓ Accès total"
+        },
+        {
+          "feat": "Export du débriefing d’entretien (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Audit personnalisé du CV et de GitHub",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Non requis",
-          "pro": "Non requis",
-          "life": "Non requis"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -727,12 +727,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Acceso de prueba",
         "period": "/ demo 15 min",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min de sesión de prueba completa",
+          "✓ Transcripción de voz en tiempo real",
+          "✓ Respuestas estructuradas nivel Senior",
+          "✓ Freeze Mode [Espacio] para fijar texto",
+          "✓ Modo respuestas rápidas [Q]",
+          "✓ Sin tarjeta de crédito requerida"
         ]
       },
       "pro": {
@@ -773,52 +773,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Duración de la sesión de entrevista",
+          "free": "15 min (demo)",
           "pro": "Ilimitado",
-          "life": "Ilimitado"
+          "life": "Ilimitado de por vida"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Protección de pantalla hardware (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD móvil (2.ª pantalla)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "OCR de pantalla y código en vivo [F9]",
+          "free": "—",
+          "pro": "✓ Instantáneo",
+          "life": "✓ Instantáneo"
+        },
+        {
+          "feat": "Freeze Mode [Espacio] y Rápido [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "Simulador de entrevistas con IA",
+          "free": "Básico",
+          "pro": "✓ Acceso total",
+          "life": "✓ Acceso total"
+        },
+        {
+          "feat": "Exportación de informe (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Auditoría VIP de CV y GitHub",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "No requeridas",
-          "pro": "No requeridas",
-          "life": "No requeridas"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -861,12 +861,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Acesso inicial",
         "period": "/ demo 15 min",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min de sessão de teste completa",
+          "✓ Transcrição de voz em tempo real",
+          "✓ Respostas estruturadas nível Senior",
+          "✓ Modo Freeze [Espaço] para travar texto",
+          "✓ Modo respostas rápidas [Q]",
+          "✓ Cartão de crédito não obrigatório"
         ]
       },
       "pro": {
@@ -907,52 +907,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Duração da sessão de entrevista",
+          "free": "15 min (demo)",
           "pro": "Ilimitado",
-          "life": "Ilimitado"
+          "life": "Ilimitado vitalício"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Proteção de tela hardware (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD no smartphone (2ª tela)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "OCR de tela e código ao vivo [F9]",
+          "free": "—",
+          "pro": "✓ Instantâneo",
+          "life": "✓ Instantâneo"
+        },
+        {
+          "feat": "Modo Freeze [Espaço] e Rápido [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "Simulador de entrevistas com IA",
+          "free": "Básico",
+          "pro": "✓ Acesso total",
+          "life": "✓ Acesso total"
+        },
+        {
+          "feat": "Exportação do relatório da sessão (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Auditoria individual de currículo e GitHub",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Não necessárias",
-          "pro": "Não necessárias",
-          "life": "Não necessárias"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -995,12 +995,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Accesso di prova",
         "period": "/ demo 15 min",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min di sessione di prova completa",
+          "✓ Trascrizione vocale in tempo reale",
+          "✓ Risposte strutturate livello Senior",
+          "✓ Freeze Mode [Spazio] per bloccare testo",
+          "✓ Modalità risposte concise [Q]",
+          "✓ Nessuna carta di credito richiesta"
         ]
       },
       "pro": {
@@ -1041,52 +1041,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Durata della sessione di colloquio",
+          "free": "15 min (demo)",
           "pro": "Illimitato",
-          "life": "Illimitato"
+          "life": "Illimitato a vita"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Protezione hardware dello schermo (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD per smartphone (2° schermo)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "OCR schermo e codice live [F9]",
+          "free": "—",
+          "pro": "✓ Istantaneo",
+          "life": "✓ Istantaneo"
+        },
+        {
+          "feat": "Freeze Mode [Spazio] e Conciso [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "Simulatore di colloqui AI Mock",
+          "free": "Base",
+          "pro": "✓ Accesso completo",
+          "life": "✓ Accesso completo"
+        },
+        {
+          "feat": "Esportazione report colloquio (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Revisione personale CV e GitHub",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Non richieste",
-          "pro": "Non richieste",
-          "life": "Non richieste"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -1129,12 +1129,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Zkušební přístup",
         "period": "/ 15 min demo",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min plnohodnotné zkušební relace",
+          "✓ Přepis řeči v reálném čase",
+          "✓ Strukturované odpovědi úrovně Senior",
+          "✓ Freeze Mode [Mezerník] pro fixaci textu",
+          "✓ Režim stručných odpovědí [Q]",
+          "✓ Platební karta není vyžadována"
         ]
       },
       "pro": {
@@ -1175,52 +1175,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Délka relace pohovoru",
+          "free": "15 min (demo)",
           "pro": "Neomezeně",
-          "life": "Neomezeně"
+          "life": "Doživotně neomezeně"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Hardwarová ochrana obrazovky (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Companion HUD na mobil (2. obrazovka)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "OCR snímání obrazovky a kódu [F9]",
+          "free": "—",
+          "pro": "✓ Okamžitě",
+          "life": "✓ Okamžitě"
+        },
+        {
+          "feat": "Freeze Mode [Mezerník] & Stručný režim [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "AI trenažér technických pohovorů",
+          "free": "Základní",
+          "pro": "✓ Plný přístup",
+          "life": "✓ Plný přístup"
+        },
+        {
+          "feat": "Export reportu z pohovoru (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Osobní audit životopisu a GitHubu",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Není potřeba",
-          "pro": "Není potřeba",
-          "life": "Není potřeba"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -1263,12 +1263,12 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         "subtitle": "Starttoegang",
         "period": "/ 15 min demo",
         "features": [
-          "✓ 15-min live demo test",
-          "✓ Gemini 2.5 Flash answers",
-          "✓ Freeze Mode [Space]",
-          "✓ Concise blitz answers [Q]",
-          "✕ Screen OCR code analysis",
-          "✕ Capped at 15 minutes per session"
+          "✓ 15 min volledige testsessie",
+          "✓ Real-time spraaktranscriptie",
+          "✓ Gestructureerde antwoorden op Senior-niveau",
+          "✓ Freeze Mode [Spatie] om tekst vast te zetten",
+          "✓ Snelle beknopte antwoorden [Q]",
+          "✓ Geen creditcard vereist om te testen"
         ]
       },
       "pro": {
@@ -1309,52 +1309,52 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
       },
       "rows": [
         {
-          "feat": "Session Duration Limit",
-          "free": "15 min",
+          "feat": "Duur van de interviewsessie",
+          "free": "15 min (demo)",
           "pro": "Onbeperkt",
-          "life": "Onbeperkt"
+          "life": "Levenslang onbeperkt"
         },
         {
-          "feat": "AI Core Engine",
-          "free": "Gemini Flash",
-          "pro": "Gemini 2.5 Flash",
-          "life": "Gemini 2.5 Flash"
+          "feat": "Hardwarematige schermbeveiliging (Screen Shield)",
+          "free": "—",
+          "pro": "✓ Desktop App",
+          "life": "✓ Desktop App"
         },
         {
-          "feat": "Generation Latency",
-          "free": "1.5s",
-          "pro": "1.4s",
-          "life": "1.4s"
+          "feat": "Smartphone Companion HUD (2e scherm)",
+          "free": "—",
+          "pro": "✓ AMOLED",
+          "life": "✓ AMOLED"
         },
         {
-          "feat": "Freeze Mode [Space]",
+          "feat": "Live scherm- en code-OCR [F9]",
+          "free": "—",
+          "pro": "✓ Direct",
+          "life": "✓ Direct"
+        },
+        {
+          "feat": "Freeze Mode [Spatie] & Beknopt [Q]",
           "free": "✓",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Screen Code OCR [F9]",
+          "feat": "AI Mock Interview Simulator",
+          "free": "Basis",
+          "pro": "✓ Volledige toegang",
+          "life": "✓ Volledige toegang"
+        },
+        {
+          "feat": "Export van sessieverslag (.md)",
           "free": "—",
           "pro": "✓",
           "life": "✓"
         },
         {
-          "feat": "Dual-Screen HUD Teleprompter",
+          "feat": "Persoonlijke CV- en GitHub-audit",
           "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Markdown Debrief Export (.md)",
-          "free": "—",
-          "pro": "✓",
-          "life": "✓"
-        },
-        {
-          "feat": "Own API Keys Required",
-          "free": "Niet vereist",
-          "pro": "Niet vereist",
-          "life": "Niet vereist"
+          "pro": "—",
+          "life": "✓ Founder VIP"
         }
       ]
     },
@@ -1390,6 +1390,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
     }
   }
 };
+;
 
 export function getPricingTranslations(locale: SupportedLocale): PricingPageI18n {
   return PRICING_I18N[locale] || PRICING_I18N.en;

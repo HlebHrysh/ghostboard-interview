@@ -113,6 +113,9 @@ export interface HudTranslations {
     keyThesesHeader: string;
     unlockPaywall: string;
     getProUnlimited: string;
+    nativeTranslationHeader: string;
+    deepDiveLocked: string;
+    unlockProBtn: string;
   };
   toasts: {
     enterMode: string;
@@ -243,6 +246,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 КЛЮЧОВІ АРХІТЕКТУРНІ ТЕЗИ (3 факти):',
       unlockPaywall: 'Розблокуйте експертні інсайти та деталі архітектури',
       getProUnlimited: 'Отримати безліміт Pro →',
+      nativeTranslationHeader: 'Переклад / Суть (Рідна мова)',
+      deepDiveLocked: 'Senior-деталі заблоковано',
+      unlockProBtn: 'Розблокувати Pro',
     },
     toasts: {
       enterMode: '⌨️ Режим Enter увімкнено! ШІ відповідатиме ТІЛЬКИ після натискання [Enter].',
@@ -371,6 +377,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 KEY ARCHITECTURAL TAKEAWAYS (3 facts):',
       unlockPaywall: 'Unlock expert insights & deep architectural notes',
       getProUnlimited: 'Unlock Pro Unlimited →',
+      nativeTranslationHeader: 'Translation / Core Concept (Native)',
+      deepDiveLocked: 'Senior Deep-Dive Points Locked',
+      unlockProBtn: 'Unlock Pro',
     },
     toasts: {
       enterMode: '⌨️ Enter mode active! AI answers ONLY after pressing [Enter].',
@@ -499,6 +508,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 KLUCZOWE TEZY ARCHITEKTONICZNE (3 fakty):',
       unlockPaywall: 'Odblokuj eksperckie spostrzeżenia i architekturę',
       getProUnlimited: 'Odblokuj nielimitowane Pro →',
+      nativeTranslationHeader: 'Tłumaczenie / Istota (Język ojczysty)',
+      deepDiveLocked: 'Punkty Senior Deep-Dive zablokowane',
+      unlockProBtn: 'Odblokuj Pro',
     },
     toasts: {
       enterMode: '⌨️ Tryb Enter aktywny! AI odpowiada TYLKO po naciśnięciu [Enter].',
@@ -627,6 +639,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 ARCHITEKTUR-KERNPUNKTE (3 Fakten):',
       unlockPaywall: 'Experten-Insights & tiefe Architektur-Details freischalten',
       getProUnlimited: 'Pro Unlimited freischalten →',
+      nativeTranslationHeader: 'Übersetzung / Kernaussage (Muttersprache)',
+      deepDiveLocked: 'Senior Deep-Dive Punkte gesperrt',
+      unlockProBtn: 'Pro freischalten',
     },
     toasts: {
       enterMode: '⌨️ Enter-Modus aktiv! KI antwortet NUR nach Drücken von [Enter].',
@@ -755,6 +770,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: "📌 POINTS CLÉS D'ARCHITECTURE (3 faits):",
       unlockPaywall: "Débloquez les insights experts et l'architecture détaillée",
       getProUnlimited: 'Obtenir Pro Illimité →',
+      nativeTranslationHeader: 'Traduction / Synthèse (Langue maternelle)',
+      deepDiveLocked: "Points d'approfondissement Senior verrouillés",
+      unlockProBtn: 'Débloquer Pro',
     },
     toasts: {
       enterMode: "⌨️ Mode Entrée actif ! L'IA répond UNIQUEMENT après appui sur [Entrée].",
@@ -883,6 +901,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 PUNTOS CLAVE DE ARQUITECTURA (3 hechos):',
       unlockPaywall: 'Desbloquee información experta y notas de arquitectura',
       getProUnlimited: 'Obtener Pro Ilimitado →',
+      nativeTranslationHeader: 'Traducción / Clave (Idioma materno)',
+      deepDiveLocked: 'Puntos Senior Deep-Dive bloqueados',
+      unlockProBtn: 'Desbloquear Pro',
     },
     toasts: {
       enterMode: '⌨️ ¡Modo Enter activo! La IA responde SOLO tras presionar [Enter].',
@@ -1011,6 +1032,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 PRINCIPAIS PONTOS DE ARQUITETURA (3 fatos):',
       unlockPaywall: 'Desbloqueie insights de especialistas e detalhes arquiteturais',
       getProUnlimited: 'Desbloquear Pro Ilimitado →',
+      nativeTranslationHeader: 'Tradução / Essência (Língua materna)',
+      deepDiveLocked: 'Pontos Senior Deep-Dive bloqueados',
+      unlockProBtn: 'Desbloquear Pro',
     },
     toasts: {
       enterMode: '⌨️ Modo Enter ativo! A IA responde APENAS após pressionar [Enter].',
@@ -1139,6 +1163,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 PUNTI CHIAVE DI ARCHITETTURA (3 elementi):',
       unlockPaywall: 'Sblocca approfondimenti e dettagli architetturali',
       getProUnlimited: 'Sblocca Pro Illimitato →',
+      nativeTranslationHeader: 'Traduzione / Concetto chiave (Madrelingua)',
+      deepDiveLocked: 'Punti Senior Deep-Dive bloccati',
+      unlockProBtn: 'Sblocca Pro',
     },
     toasts: {
       enterMode: "⌨️ Modalità Invio attiva! L'IA risponde SOLO dopo aver premuto [Invio].",
@@ -1267,6 +1294,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 KLÍČOVÉ ARCHITEKTONICKÉ BODY (3 fakta):',
       unlockPaywall: 'Odemkněte expertní vhledy a architektonické detaily',
       getProUnlimited: 'Získat neomezené Pro →',
+      nativeTranslationHeader: 'Překlad / Podstata (Mateřský jazyk)',
+      deepDiveLocked: 'Body Senior Deep-Dive uzamčeny',
+      unlockProBtn: 'Odemknout Pro',
     },
     toasts: {
       enterMode: '⌨️ Režim Enter aktivní! AI odpovídá POUZE po stisknutí [Enter].',
@@ -1395,6 +1425,9 @@ export const HUD_I18N: Record<SupportedLocale, HudTranslations> = {
       keyThesesHeader: '📌 BELANGRIJKSTE ARCHITECTUURPUNTEN (3 feiten):',
       unlockPaywall: 'Ontgrendel expertinzichten en architectuurdetails',
       getProUnlimited: 'Ontgrendel Pro Onbeperkt →',
+      nativeTranslationHeader: 'Vertaling / Kernconcept (Moedertaal)',
+      deepDiveLocked: 'Senior Deep-Dive punten vergrendeld',
+      unlockProBtn: 'Ontgrendel Pro',
     },
     toasts: {
       enterMode: '⌨️ Enter-modus actief! AI antwoordt ALLEEN na indrukken van [Enter].',

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghostboard — Offline</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: #040406;
+      color: #e4e4e7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+    }
+    .container {
+      max-width: 440px;
+      padding: 2.5rem 2rem;
+      background: rgba(18, 18, 22, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      backdrop-filter: blur(24px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+    .icon {
+      width: 72px;
+      height: 72px;
+      margin-bottom: 1.5rem;
+      display: inline-block;
+      filter: drop-shadow(0 0 16px rgba(200, 241, 53, 0.25));
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+    p {
+      font-size: 0.875rem;
+      color: #a1a1aa;
+      line-height: 1.5;
+      margin-bottom: 2rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      background: #c8f135;
+      color: #040406;
+      font-weight: 600;
+      font-size: 0.875rem;
+      border-radius: 9999px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 0 20px rgba(200, 241, 53, 0.2);
+    }
+    .btn:hover {
+      background: #b5db2b;
+      transform: translateY(-1px);
+      box-shadow: 0 0 24px rgba(200, 241, 53, 0.35);
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+      color: #71717a;
+      margin-top: 1.5rem;
+      font-family: monospace;
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img src="/icon.svg" alt="Ghostboard" class="icon" />
+    <h1>Connection Lost</h1>
+    <p>You appear to be offline. Ghostboard requires an active connection for real-time speech transcription and AI copilot intelligence.</p>
+    <button class="btn" onclick="window.location.reload()">
+      Reconnect to Ghostboard
+    </button>
+    <div class="status">
+      <span class="dot"></span>
+      <span>Awaiting Network Stream...</span>
+    </div>
+  </div>
+
+  <script>
+    window.addEventListener('online', () => {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>

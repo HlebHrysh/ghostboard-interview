@@ -5,14 +5,23 @@ import { GET as getUsers, POST as createUser } from '../src/app/api/admin/users/
 import { PATCH as updateUser, DELETE as deleteUser } from '../src/app/api/admin/users/[id]/route';
 import { GET as getSessions, DELETE as deleteSession } from '../src/app/api/admin/sessions/route';
 import { GET as getSystem } from '../src/app/api/admin/system/route';
+import { createAdminToken } from '../src/lib/adminGuard';
 
 describe('Admin API Endpoints & Operations', () => {
   const adminHeaders = {
-    cookie: 'ghostboard_admin_session=authenticated',
+    cookie: `ghostboard_admin_session=${createAdminToken()}`,
   };
 
   it('rejects unauthenticated requests to admin stats', async () => {
     const req = new NextRequest('http://localhost:3000/api/admin/stats');
+    const res = await getStats(req);
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects forged plain string "authenticated" cookie', async () => {
+    const req = new NextRequest('http://localhost:3000/api/admin/stats', {
+      headers: { cookie: 'ghostboard_admin_session=authenticated' },
+    });
     const res = await getStats(req);
     expect(res.status).toBe(401);
   });
@@ -32,12 +41,13 @@ describe('Admin API Endpoints & Operations', () => {
   });
 
   it('creates and manages a candidate via admin user API', async () => {
+    const adminTestEmail = `admin_test_${Date.now()}@ghostboard.ai`;
     // 1. Create candidate
     const createReq = new NextRequest('http://localhost:3000/api/admin/users', {
       method: 'POST',
       headers: { ...adminHeaders, 'content-type': 'application/json' },
       body: JSON.stringify({
-        email: 'admin_test_user@ghostboard.ai',
+        email: adminTestEmail,
         name: 'Test Candidate',
         role: 'Fullstack Engineer',
         plan: 'pro',
@@ -47,7 +57,7 @@ describe('Admin API Endpoints & Operations', () => {
     const createRes = await createUser(createReq);
     expect(createRes.status).toBe(201);
     const createData = await createRes.json();
-    expect(createData.user.email).toBe('admin_test_user@ghostboard.ai');
+    expect(createData.user.email).toBe(adminTestEmail);
     expect(createData.user.plan).toBe('pro');
 
     const userId = createData.user.id;

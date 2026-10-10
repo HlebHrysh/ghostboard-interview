@@ -31,6 +31,7 @@ import { SoundCheckModal } from '@/components/interview/SoundCheckModal';
 import { EyeLineTeleprompter } from '@/components/interview/EyeLineTeleprompter';
 import { CompanionQRModal } from '@/components/interview/CompanionQRModal';
 import { AudioSetupWizard } from '@/components/onboarding/AudioSetupWizard';
+import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 
 import type { SupportedLocale } from '@/lib/geoLang';
 
@@ -439,12 +440,12 @@ export default function InterviewPage() {
 
   if (isAuthChecking) {
     return (
-      <div className="min-h-screen bg-[#040406] flex flex-col items-center justify-center font-mono text-zinc-400 gap-4 selection:bg-[#C8F135]/30">
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center font-mono text-zinc-400 gap-4 selection:bg-white/20 selection:text-white">
         <div className="relative flex items-center justify-center">
-          <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-[#C8F135] animate-spin" />
+          <div className="w-12 h-12 rounded-full border-2 border-white/10 border-t-white animate-spin" />
         </div>
         <div className="flex flex-col items-center gap-1">
-          <span className="text-xs tracking-widest text-[#C8F135] uppercase font-bold">GHOSTBOARD CLEARANCE</span>
+          <span className="text-xs tracking-widest text-white uppercase font-bold">GHOSTBOARD CLEARANCE</span>
           <span className="text-[11px] text-zinc-500 tracking-wider">
             {locale === 'ua' ? 'Перевірка авторизації...' : 'Verifying clearance...'}
           </span>
@@ -454,9 +455,7 @@ export default function InterviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#000000] text-zinc-100 font-sans relative selection:bg-[#C8F135]/30">
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900/40 via-black to-black pointer-events-none" />
-
+    <SubpageStripesContainer pattern="horizon" glowIntensity={0.05} className="font-sans relative selection:bg-white/20 selection:text-white">
       {isPanicShieldActive && (
         <StealthPanicShield
           isActive={isPanicShieldActive}
@@ -493,7 +492,7 @@ export default function InterviewPage() {
         formatTime={(secs) => `${Math.floor(secs / 60).toString().padStart(2, '0')}:${(secs % 60).toString().padStart(2, '0')}`}
       />
 
-      <div className="relative z-10 pt-8 sm:pt-10 pb-32 px-4 max-w-[700px] mx-auto min-h-screen flex flex-col justify-start">
+      <div className={`relative z-10 pt-6 sm:pt-8 pb-32 px-4 ${!isCapturing && interviewQAs.length === 0 ? 'max-w-[840px]' : 'max-w-[700px]'} mx-auto min-h-screen flex flex-col justify-start transition-all duration-300`}>
         {!isCapturing && interviewQAs.length === 0 && (
           <StealthWelcomeHero
             isCapturing={isCapturing}
@@ -518,7 +517,7 @@ export default function InterviewPage() {
           <div className="w-full max-w-[680px] mx-auto flex flex-col items-center text-center animate-in fade-in duration-200 py-6 sm:py-10 select-none">
             {/* Live Audio Status Badge */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-zinc-300 text-xs font-mono mb-4">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135] shadow-[0_0_6px_#c8f135]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_#ffffff]" />
               <span className="uppercase tracking-wider font-semibold">{hudT.runningCardSub}</span>
             </div>
 
@@ -526,7 +525,7 @@ export default function InterviewPage() {
             <div className="w-full p-6 sm:p-7 rounded-2xl bg-[#0D0D10] border border-white/[0.08] shadow-[0_16px_40px_rgba(0,0,0,0.7)] backdrop-blur-2xl text-left space-y-4">
               <div className="flex items-center justify-between text-xs font-mono text-zinc-400 pb-3 border-b border-white/[0.06]">
                 <div className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135] animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                   <span className="font-semibold text-zinc-300 uppercase tracking-wider text-[11px]">
                     {hudT.runningCardHeader}
                   </span>
@@ -551,12 +550,12 @@ export default function InterviewPage() {
                     <span className="text-[#EDEDED]">
                       «{liveTranscript}»
                     </span>
-                    <span className="inline-block w-1.5 h-4 bg-[#C8F135] ml-1.5 animate-pulse align-middle" />
+                    <span className="inline-block w-1.5 h-4 bg-white ml-1.5 animate-pulse align-middle" />
                   </p>
                 ) : (
                   <div className="flex flex-col items-center text-center gap-2 text-zinc-400 py-3">
                     <p className="text-sm font-mono text-zinc-300 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-[#C8F135] animate-pulse" />
+                      <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
                       <span>{hudT.listeningPlaceholder}</span>
                     </p>
                     <p className="text-xs font-sans text-zinc-500 max-w-md leading-relaxed">
@@ -596,7 +595,7 @@ export default function InterviewPage() {
                       className="py-1.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
                     >
                       <span>{hudT.answerNowBtn}</span>
-                      <CornerDownLeft className="w-3.5 h-3.5 text-[#C8F135]" />
+                      <CornerDownLeft className="w-3.5 h-3.5 text-white" />
                     </button>
                   )}
 
@@ -610,7 +609,7 @@ export default function InterviewPage() {
                     }
                     className="py-1.5 px-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white font-mono text-xs transition-all flex items-center gap-1.5 border border-white/[0.08] cursor-pointer"
                   >
-                    <Sparkles className="w-3 h-3 text-[#C8F135]" />
+                    <Sparkles className="w-3 h-3 text-white" />
                     <span>{hudT.sampleQuestionBtn}</span>
                   </button>
                 </div>
@@ -682,85 +681,87 @@ export default function InterviewPage() {
         onRepickTabAudio={repickTabAudio}
       />
 
-      <StealthCommandDock
-        isCapturing={isCapturing}
-        isAnalyzingScreenshot={isAnalyzingScreenshot}
-        questionCount={interviewQAs.length}
-        isFrozen={isFrozen}
-        pendingNewCount={pendingNewCount}
-        isConcise={isConcise}
-        triggerMode={triggerMode}
-        sessionMode={sessionMode}
-        audioSource={audioSource}
-        sessionDuration={sessionDuration}
-        onToggleAudioSource={() => {
-          const next = audioSource === 'tab' ? 'mic' : 'tab';
-          setAudioSource(next);
-          toast.info(next === 'tab' ? intvI18n.sourceTab : intvI18n.sourceMic);
-        }}
-        onToggleTriggerMode={handleToggleTriggerMode}
-        onToggleSessionMode={() => {
-          const next = sessionMode === 'interview' ? 'meeting' : 'interview';
-          setSessionMode(next);
-          sessionModeRef.current = next;
-          toast.success(next === 'meeting' ? hudToasts.meetingMode : hudToasts.interviewMode);
-        }}
-        onAnswerNow={() => handleManualEnterTriggerRef.current()}
-        onStartCapture={handleStartCaptureRequest}
-        onStopCapture={() => {
-          stopCapture();
-          if (interviewQAs.length > 0) {
-            const sessionTitle = `${intvI18n.sessionTitlePrefix} ${new Date().toLocaleDateString(intvI18n.dateLocale)} (${candidateProfileRef.current.role || 'Senior Engineer'})`;
-            const localEntry = {
-              id: 'sess_' + Date.now(),
-              title: sessionTitle,
-              timestamp: Date.now(),
-              durationSec: sessionDuration,
-              questionsCount: interviewQAs.length,
-              items: [...interviewQAs],
-            };
-            try {
-              const existing = JSON.parse(localStorage.getItem('ghostboard_saved_sessions') || '[]');
-              existing.unshift(localEntry);
-              localStorage.setItem('ghostboard_saved_sessions', JSON.stringify(existing.slice(0, 30)));
-            } catch {}
-
-            fetch('/api/sessions/history', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
+      {(isCapturing || interviewQAs.length > 0) && (
+        <StealthCommandDock
+          isCapturing={isCapturing}
+          isAnalyzingScreenshot={isAnalyzingScreenshot}
+          questionCount={interviewQAs.length}
+          isFrozen={isFrozen}
+          pendingNewCount={pendingNewCount}
+          isConcise={isConcise}
+          triggerMode={triggerMode}
+          sessionMode={sessionMode}
+          audioSource={audioSource}
+          sessionDuration={sessionDuration}
+          onToggleAudioSource={() => {
+            const next = audioSource === 'tab' ? 'mic' : 'tab';
+            setAudioSource(next);
+            toast.info(next === 'tab' ? intvI18n.sourceTab : intvI18n.sourceMic);
+          }}
+          onToggleTriggerMode={handleToggleTriggerMode}
+          onToggleSessionMode={() => {
+            const next = sessionMode === 'interview' ? 'meeting' : 'interview';
+            setSessionMode(next);
+            sessionModeRef.current = next;
+            toast.success(next === 'meeting' ? hudToasts.meetingMode : hudToasts.interviewMode);
+          }}
+          onAnswerNow={() => handleManualEnterTriggerRef.current()}
+          onStartCapture={handleStartCaptureRequest}
+          onStopCapture={() => {
+            stopCapture();
+            if (interviewQAs.length > 0) {
+              const sessionTitle = `${intvI18n.sessionTitlePrefix} ${new Date().toLocaleDateString(intvI18n.dateLocale)} (${candidateProfileRef.current.role || 'Senior Engineer'})`;
+              const localEntry = {
+                id: 'sess_' + Date.now(),
                 title: sessionTitle,
+                timestamp: Date.now(),
                 durationSec: sessionDuration,
-                items: interviewQAs
-              })
-            }).then(res => res.json()).then(data => {
-              const histId = data.session?.id || data.id;
-              if (histId) {
-                try { localStorage.setItem('ghostboard_last_history_id', histId); } catch {}
-              }
-            }).catch(console.error);
+                questionsCount: interviewQAs.length,
+                items: [...interviewQAs],
+              };
+              try {
+                const existing = JSON.parse(localStorage.getItem('ghostboard_saved_sessions') || '[]');
+                existing.unshift(localEntry);
+                localStorage.setItem('ghostboard_saved_sessions', JSON.stringify(existing.slice(0, 30)));
+              } catch {}
 
-            toast.success(hudToasts.audioStopped);
-          } else {
-            toast.info(hudToasts.audioStopped);
-          }
-        }}
-        onTriggerScreenshot={handleTriggerScreenshot}
-        onToggleHistory={() => setIsHistoryOpen(true)}
-        onToggleFreeze={() => {
-          const nextFrozen = !isFrozen;
-          setIsFrozen(nextFrozen);
-          isFrozenRef.current = nextFrozen;
-          if (!nextFrozen) {
-            setPendingNewCount(0);
-            pendingNewCountRef.current = 0;
-            if (interviewQAs.length > 0) setActiveQAId(interviewQAs[0].id);
-          }
-        }}
-        onToggleConcise={handleToggleConcise}
-        onTogglePanic={() => setIsPanicShieldActive((p) => !p)}
-        onOpenSoundCheck={() => setIsSoundCheckOpen(true)}
-      />
+              fetch('/api/sessions/history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  title: sessionTitle,
+                  durationSec: sessionDuration,
+                  items: interviewQAs
+                })
+              }).then(res => res.json()).then(data => {
+                const histId = data.session?.id || data.id;
+                if (histId) {
+                  try { localStorage.setItem('ghostboard_last_history_id', histId); } catch {}
+                }
+              }).catch(console.error);
+
+              toast.success(hudToasts.audioStopped);
+            } else {
+              toast.info(hudToasts.audioStopped);
+            }
+          }}
+          onTriggerScreenshot={handleTriggerScreenshot}
+          onToggleHistory={() => setIsHistoryOpen(true)}
+          onToggleFreeze={() => {
+            const nextFrozen = !isFrozen;
+            setIsFrozen(nextFrozen);
+            isFrozenRef.current = nextFrozen;
+            if (!nextFrozen) {
+              setPendingNewCount(0);
+              pendingNewCountRef.current = 0;
+              if (interviewQAs.length > 0) setActiveQAId(interviewQAs[0].id);
+            }
+          }}
+          onToggleConcise={handleToggleConcise}
+          onTogglePanic={() => setIsPanicShieldActive((p) => !p)}
+          onOpenSoundCheck={() => setIsSoundCheckOpen(true)}
+        />
+      )}
 
       {isHistoryOpen && (
         <StealthHistoryDrawer
@@ -839,6 +840,6 @@ export default function InterviewPage() {
         isOpen={isCompanionQROpen}
         onClose={() => setIsCompanionQROpen(false)}
       />
-    </div>
+    </SubpageStripesContainer>
   );
 }

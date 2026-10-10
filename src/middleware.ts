@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyAdminToken } from '@/lib/adminGuard';
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Protect /interview and /profile UI — require active ghostboard_session
+  // Protect /interview, /profile, /cabinet, and /dashboard UI — require active ghostboard_session
   if (
     pathname === '/interview' ||
     pathname.startsWith('/interview/') ||
     pathname === '/profile' ||
-    pathname.startsWith('/profile/')
+    pathname.startsWith('/profile/') ||
+    pathname === '/cabinet' ||
+    pathname.startsWith('/cabinet/') ||
+    pathname === '/dashboard' ||
+    pathname.startsWith('/dashboard/')
   ) {
     const sessionCookie = req.cookies.get('ghostboard_session')?.value;
     if (!sessionCookie || !sessionCookie.trim()) {
@@ -25,7 +30,7 @@ export function middleware(req: NextRequest) {
     
     const adminCookie = req.cookies.get('ghostboard_admin_session')?.value;
     
-    if (!adminCookie || adminCookie !== 'authenticated') {
+    if (!adminCookie || !verifyAdminToken(adminCookie)) {
       // If it's an API request, return 401 JSON
       if (pathname.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized Admin API Access' }, { status: 401 });
@@ -41,5 +46,16 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/api/admin/:path*', '/interview', '/interview/:path*', '/profile', '/profile/:path*'],
+  matcher: [
+    '/admin/:path*',
+    '/api/admin/:path*',
+    '/interview',
+    '/interview/:path*',
+    '/profile',
+    '/profile/:path*',
+    '/cabinet',
+    '/cabinet/:path*',
+    '/dashboard',
+    '/dashboard/:path*',
+  ],
 };

@@ -1,10 +1,21 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700;800&family=Kanit:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: var(--font-mono), 'JetBrains Mono', monospace;
   --font-display: var(--font-sans), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-kanit: var(--font-kanit), 'Kanit', sans-serif;
+}
+
+.font-kanit {
+  font-family: var(--font-kanit), 'Kanit', sans-serif;
+}
+
+.hero-heading {
+  background: linear-gradient(180deg, #646973 0%, #BBCCD7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 /* =========================================================================
@@ -14,24 +25,35 @@
 
 /* ── CSS Custom Properties ─────────────────────────────────────────── */
 :root {
-  /* Core palette */
-  --canvas:        #0A0A0B;
-  --surface:       #111113;
-  --elevated:      #18181C;
-  --border:        rgba(255, 255, 255, 0.07);
-  --border-hover:  rgba(255, 255, 255, 0.16);
+  /* ── Stealth Obsidian & Cold Chrome ── */
+  /* Canvas & Surfaces */
+  --canvas: #000000;
+  --surface: #050507;
+  --surface-raised: #0a0a0e;
+  --surface-glass: rgba(10, 10, 14, 0.65);
+  /* 1px Micro-borders */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-active: rgba(255, 255, 255, 0.16);
+  --border-rim: rgba(255, 255, 255, 0.25);
+  /* Typography */
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
+  /* Signature accents */
+  --accent-platinum: #f4f4f5;
+  --accent-spectral: #f4f4f5;
+  --spectral-glow: 0 0 25px rgba(255, 255, 255, 0.12);
 
-  /* Accent */
-  --lime:          #C8F135;
-  --lime-dim:      rgba(200, 241, 53, 0.12);
-  --lime-glow:     0 0 80px rgba(200, 241, 53, 0.15);
-  --violet:        #8B5CF6;
-  --violet-dim:    rgba(139, 92, 246, 0.12);
-
-  /* Text */
-  --text-primary:   #FAFAFA;
-  --text-secondary: #A0A0AB;
-  --text-tertiary:  #52525B;
+  /* Legacy aliases (mapped onto the new system) */
+  --elevated:      var(--surface-raised);
+  --border:        var(--border-subtle);
+  --border-hover:  var(--border-active);
+  --lime:          var(--accent-platinum);
+  --lime-dim:      rgba(255, 255, 255, 0.06);
+  --lime-glow:     0 0 60px rgba(255, 255, 255, 0.08);
+  --violet:        var(--accent-platinum);
+  --violet-dim:    rgba(255, 255, 255, 0.08);
+  --text-tertiary: var(--text-muted);
 
   /* Legacy (Copilot app keeps emerald) */
   --emerald:       #10B981;
@@ -165,7 +187,7 @@ html, body, button, a, input, select, textarea {
 .stealth-bg {
   background-color: #040508;
   background-image:
-    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(16, 185, 129, 0.08), transparent 70%),
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(168, 85, 247, 0.06), transparent 70%),
     radial-gradient(ellipse 60% 40% at 85% 90%, rgba(139, 92, 246, 0.06), transparent 60%),
     radial-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 32px 32px;
@@ -191,7 +213,7 @@ html, body, button, a, input, select, textarea {
   box-shadow:
     0 32px 80px -16px rgba(0, 0, 0, 0.95),
     0 12px 32px -4px rgba(0, 0, 0, 0.7),
-    0 0 40px -10px rgba(16, 185, 129, 0.12),
+    0 0 40px -10px rgba(168, 85, 247, 0.12),
     inset 0 1px 1px 0 rgba(255, 255, 255, 0.20),
     inset 0 -1px 1px 0 rgba(0, 0, 0, 0.8);
 }
@@ -241,7 +263,7 @@ html, body, button, a, input, select, textarea {
 /* Lime accent card */
 .gb-card-lime {
   background: var(--lime-dim);
-  border-color: rgba(200, 241, 53, 0.25);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 /* Elevated card (modals, popups) */
@@ -262,18 +284,18 @@ html, body, button, a, input, select, textarea {
   gap: 0.5rem;
   padding: 0.875rem 1.75rem;
   background: var(--lime);
-  color: #0A0A0B;
+  color: #000000;
   font-weight: 700;
   font-size: 0.9375rem;
   border-radius: 100vw;
   border: none;
   cursor: pointer;
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 0 35px rgba(200, 241, 53, 0.25);
+  box-shadow: 0 0 35px rgba(255, 255, 255, 0.18);
   white-space: nowrap;
 }
 
-.btn-lime:hover  { background: #D4F545; transform: translateY(-1px); box-shadow: 0 0 50px rgba(200, 241, 53, 0.35); }
+.btn-lime:hover  { background: #e4e4e7; transform: translateY(-1px); box-shadow: 0 0 50px rgba(255, 255, 255, 0.22); }
 .btn-lime:active { transform: translateY(0); }
 
 .btn-ghost {
@@ -323,6 +345,11 @@ html, body, button, a, input, select, textarea {
   to   { transform: translateX(-50%); }
 }
 
+@keyframes ticker-marquee {
+  0%   { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
 /* ── Ambient / Glow Effects ───────────────────────────────────────── */
 .glow-lime {
   box-shadow: var(--lime-glow);
@@ -342,6 +369,13 @@ html, body, button, a, input, select, textarea {
   66%       { transform: translateY(-4px) rotate(-1deg); }
 }
 
+@keyframes ghostFloatAlt {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25%       { transform: translateY(-4px) rotate(1.5deg); }
+  50%       { transform: translateY(-6px) rotate(0deg); }
+  75%       { transform: translateY(-4px) rotate(-1.5deg); }
+}
+
 @keyframes ghostGlowPulse {
   0%, 100% { filter: drop-shadow(0 0 16px rgba(16, 185, 129, 0.35)) drop-shadow(0 0 35px rgba(16, 185, 129, 0.15)); }
   50%       { filter: drop-shadow(0 0 28px rgba(16, 185, 129, 0.6)) drop-shadow(0 0 60px rgba(16, 185, 129, 0.3)); }
@@ -353,6 +387,7 @@ html, body, button, a, input, select, textarea {
 }
 
 .animate-ghost-float    { animation: ghostFloat 4s ease-in-out infinite; }
+.animate-ghost-float-alt { animation: ghostFloatAlt 3.5s ease-in-out infinite; }
 .animate-ghost-glow     { animation: ghostGlowPulse 3s ease-in-out infinite; }
 .animate-ghost-thinking { animation: ghostThinkingPulse 2s ease-in-out infinite; }
 
@@ -366,8 +401,8 @@ html, body, button, a, input, select, textarea {
 
 /* ── Pricing card featured (brutalist override) ──────────────────── */
 .pricing-card-featured {
-  border-color: rgba(200, 241, 53, 0.3);
-  box-shadow: 0 0 80px rgba(200, 241, 53, 0.06);
+  border-color: rgba(196, 181, 253, 0.3);
+  box-shadow: 0 0 80px rgba(168, 85, 247, 0.08);
 }
 
 /* ── Brutalist hairline grid ─────────────────────────────────────── */
@@ -378,7 +413,7 @@ html, body, button, a, input, select, textarea {
 }
 
 .brutalist-cell {
-  background: #0A0A0B;
+  background: #000000;
 }
 
 /* ── Typography — Hero title ───────────────────────────────────────── */
@@ -436,7 +471,7 @@ html, body, button, a, input, select, textarea {
   padding: 1px;
   background: radial-gradient(
     400px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
-    rgba(200, 241, 53, 0.45),
+    rgba(196, 181, 253, 0.45),
     transparent 65%
   );
   -webkit-mask:
@@ -498,7 +533,7 @@ html, body, button, a, input, select, textarea {
   background: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.12) 0%,
-    rgba(200, 241, 53, 0.08) 35%,
+    rgba(168, 85, 247, 0.08) 35%,
     rgba(6, 182, 212, 0.08) 70%,
     transparent 100%
   );
@@ -506,3 +541,122 @@ html, body, button, a, input, select, textarea {
   opacity: 0.6;
 }
 
+
+/* ── Resend-style shimmer border beam for pill badges ── */
+@property --beam-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes beamSpin {
+  to { --beam-angle: 360deg; }
+}
+.shimmer-pill {
+  position: relative;
+  isolation: isolate;
+}
+.shimmer-pill::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--beam-angle), transparent 0deg, rgba(168, 85, 247, 0.9) 50deg, rgba(226, 232, 240, 0.95) 90deg, transparent 140deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: beamSpin 4s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-pill::before { animation: none; }
+}
+
+/* =========================================================================
+   STEALTH OBSIDIAN — Resend Dark Luxury primitives
+   ========================================================================= */
+@layer components {
+  .btn-resend-primary {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap bg-white text-black font-medium rounded-full px-6 py-2.5 text-sm shadow-[0_1px_2px_rgba(0,0,0,0.4),0_0_20px_rgba(255,255,255,0.12)] hover:bg-zinc-200 active:scale-[0.98] transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+  .btn-resend-glass {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.1] hover:border-white/[0.22] text-zinc-200 hover:text-white font-medium rounded-full px-6 py-2.5 text-sm shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] active:scale-[0.98] backdrop-blur-md transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-resend-danger {
+    @apply inline-flex items-center justify-center gap-2 whitespace-nowrap bg-red-500/[0.08] hover:bg-red-500/[0.15] border border-red-500/20 hover:border-red-500/35 text-red-300 font-medium rounded-full px-5 py-2 text-sm active:scale-[0.98] transition-all duration-200 cursor-pointer;
+  }
+  .bento-card {
+    @apply rounded-2xl border border-white/[0.08] bg-gradient-to-b from-white/[0.035] to-transparent backdrop-blur-xl relative overflow-hidden transition-all duration-300 hover:border-white/[0.18] shadow-[0_20px_40px_rgba(0,0,0,0.6)];
+  }
+  .input-obsidian {
+    @apply w-full bg-zinc-900/60 border border-white/10 focus:border-white/30 focus:outline-none focus:ring-0 text-white placeholder-zinc-500 rounded-xl px-4 py-2.5 text-sm transition-all;
+  }
+  .input-obsidian:-webkit-autofill,
+  .input-obsidian:-webkit-autofill:hover,
+  .input-obsidian:-webkit-autofill:focus,
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill {
+    -webkit-text-fill-color: #f4f4f5 !important;
+    -webkit-box-shadow: 0 0 0px 1000px #0c0d12 inset !important;
+    transition: background-color 5000s ease-in-out 0s !important;
+  }
+  .text-chrome {
+    @apply bg-gradient-to-b from-white via-zinc-100 to-zinc-400 bg-clip-text text-transparent;
+  }
+  .kbd-obsidian {
+    @apply inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 rounded-md border border-white/10 bg-white/[0.04] font-mono text-[11px] text-zinc-300 shadow-[inset_0_-1px_0_rgba(255,255,255,0.06)];
+  }
+  .chrome-check {
+    @apply inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md bg-white/[0.06] border border-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)];
+  }
+  .hud-obsidian {
+    @apply bg-black/80 backdrop-blur-3xl border border-white/[0.08];
+  }
+}
+
+/* Running iridescent border beam (cards) */
+.shimmer-border { position: relative; isolation: isolate; }
+.shimmer-border::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px;
+  background: conic-gradient(from var(--beam-angle), transparent 0deg, rgba(255, 255, 255, 0.2) 60deg, rgba(255, 255, 255, 0.95) 110deg, rgba(212, 212, 216, 0.5) 150deg, transparent 200deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: beamSpin 5s linear infinite; pointer-events: none; z-index: 1;
+}
+
+/* Cursor spotlight (set --mx / --my on the element) */
+.spotlight { position: relative; }
+.spotlight::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.08), transparent 60%);
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.spotlight:hover::after { opacity: 1; }
+
+/* Chrome sheen sweep for logos */
+@keyframes chromeSheen { 0% { transform: translateX(-120%) skewX(-20deg); } 60%, 100% { transform: translateX(220%) skewX(-20deg); } }
+.chrome-sheen { position: relative; overflow: hidden; }
+.chrome-sheen::after {
+  content: ""; position: absolute; inset: 0; width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+  animation: chromeSheen 5s ease-in-out infinite; pointer-events: none;
+}
+
+@keyframes statusPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45); } 50% { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0); } }
+.status-dot { width: 6px; height: 6px; border-radius: 9999px; background: #ffffff; animation: statusPulse 2.2s ease-in-out infinite; }
+
+@keyframes border-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.animate-border-spin {
+  animation: border-spin 6s linear infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-border::before, .chrome-sheen::after, .status-dot, .animate-border-spin { animation: none; }
+}

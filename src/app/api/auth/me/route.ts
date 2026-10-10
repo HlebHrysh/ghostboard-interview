@@ -3,7 +3,14 @@ import { getSessionUser } from '@/lib/serverDb';
 
 export async function GET(req: NextRequest) {
   try {
-    const sessionToken = req.cookies.get('ghostboard_session')?.value;
+    let sessionToken = req.cookies.get('ghostboard_session')?.value;
+    
+    // Support Desktop App token via Authorization header
+    const authHeader = req.headers.get('Authorization');
+    if (!sessionToken && authHeader?.startsWith('Bearer ')) {
+      sessionToken = authHeader.substring(7);
+    }
+
     if (!sessionToken) {
       return NextResponse.json({ authenticated: false });
     }

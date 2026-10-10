@@ -136,10 +136,11 @@ export async function POST(req: NextRequest) {
     };
 
     const outputLangDesc = LANG_DESCRIPTIONS[effectiveLang] || LANG_DESCRIPTIONS['en'];
-    const candidateRole = candidateProfile?.role || 'Python Backend Developer (FastAPI / Django)';
+    const candidateRole = candidateProfile?.role?.trim() || 'Software Engineer';
+    const candidateLevel = candidateProfile?.level || (candidateProfile?.age ? (candidateProfile.age >= 28 ? 'Senior' : candidateProfile.age >= 23 ? 'Middle' : 'Junior') : 'Middle');
     const techStackStr = Array.isArray(candidateProfile?.techStack) && candidateProfile.techStack.length > 0
       ? candidateProfile.techStack.join(', ')
-      : 'Python, FastAPI, Django, PostgreSQL, SQLAlchemy, Pydantic, Celery, Redis, Docker, Linux, Git';
+      : 'Python, TypeScript, PostgreSQL, Docker, Git';
     
     const jobDescriptionStr = candidateProfile?.jobDescription || '';
     const cvContextStr = candidateProfile?.cvContext || '';
@@ -147,7 +148,7 @@ export async function POST(req: NextRequest) {
     const personaDefinition = sessionMode === 'meeting'
       ? `You are a world-class Senior Staff Software Engineer pairing with a colleague during a live coding session, standup, or architecture review.`
       : `You are a world-class Senior Staff Software Engineer and Technical Interview Copilot.
-The user is sitting in a live technical interview.`;
+The user is sitting in a live technical interview for the position: "${candidateRole}" (${candidateLevel}).`;
 
     const systemPrompt = `${personaDefinition} A screenshot of the PC screen has just been captured.
 The screen may display:
@@ -157,12 +158,14 @@ The screen may display:
 - A SQL query, database schema, or architectural diagram
 - Or simply a non-technical window (empty desktop, browser tab without code)
 
-CANDIDATE'S ROLE & STACK:
-- Target Role: ${candidateRole}
+CANDIDATE'S TARGET VACANCY & ACTIVE STACK:
+- Target Role: ${candidateRole} (${candidateLevel})
 - Stack: ${techStackStr}
 ${jobDescriptionStr ? `- JOB DESCRIPTION: ${jobDescriptionStr}` : ''}
 ${cvContextStr ? `- CV CONTEXT: ${cvContextStr}` : ''}
 
+TARGET ROLE ALIGNMENT:
+Formulate code solutions, bug analysis, and complexity tradeoffs tailored to the idioms, standard libraries, and architectural expectations of a ${candidateLevel} ${candidateRole}.
 ${jobDescriptionStr || cvContextStr ? 'CRITICAL MATCHING RULE: Align your code review and answers with the company requirements in the Job Description. Reference the candidate\'s CV Context to back up points where relevant.' : ''}
 
 YOUR MISSION:

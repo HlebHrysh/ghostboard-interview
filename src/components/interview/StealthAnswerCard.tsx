@@ -14,7 +14,7 @@ import {
   Sparkles,
   ExternalLink,
 } from 'lucide-react';
-import { InterviewQAItem } from '@/components/LiveInterviewHUD';
+import { InterviewQAItem } from '@/types/interview';
 import { ScrambleText } from '@/components/ui/ScrambleText';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
@@ -52,7 +52,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
   const hud = getHudTranslations(locale).answer;
   const [isCodeExpanded, setIsCodeExpanded] = useState(true);
 
-  const mainAnswer = activeQA.quickAnswer || activeQA.startHook || '';
+  const mainAnswer = activeQA.startHook || activeQA.quickAnswer || '';
 
   return (
     <div className="w-full max-w-[680px] mx-auto flex flex-col gap-3 animate-in fade-in duration-200 select-none">
@@ -148,8 +148,8 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
             <span className="status-dot !w-1.5 !h-1.5" />
             <span>{hud.directAnswerHeader} (Speak First)</span>
           </div>
-          <p className="text-base sm:text-lg lg:text-[19px] font-semibold text-white leading-relaxed tracking-tight font-sans">
-            <ScrambleText text={mainAnswer} speed={8} scrambleDuration={180} />
+          <p className="text-base sm:text-lg lg:text-[19px] font-semibold text-white leading-relaxed tracking-tight font-sans animate-in fade-in duration-200">
+            {mainAnswer}
           </p>
         </div>
 

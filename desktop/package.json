@@ -1,13 +1,21 @@
 {
   "name": "ghostboard-desktop",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Ghostboard Stealth Desktop HUD - Autonomous AI Interview Copilot with Screen Share Invisibility",
-  "main": "main.js",
+  "homepage": "https://ghostboard.ai",
+  "type": "module",
   "scripts": {
-    "start": "electron .",
-    "build:win": "electron-builder --win --x64",
-    "build:mac": "electron-builder --mac --universal",
-    "build:linux": "electron-builder --linux AppImage"
+    "dev": "tauri dev",
+    "desktop": "tauri dev",
+    "desktop:dev": "tauri dev",
+    "dev:vite": "vite",
+    "build:renderer": "vite build",
+    "build": "tauri build",
+    "build:debug": "tauri build --debug",
+    "build:win": "tauri build --target x86_64-pc-windows-msvc",
+    "build:mac": "tauri build --target universal-apple-darwin",
+    "build:linux": "tauri build --bundles appimage,deb",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "ghostboard",
@@ -15,47 +23,29 @@
     "interview-copilot",
     "screen-share-invisible",
     "tauri",
-    "electron"
+    "teleprompter",
+    "react19"
   ],
-  "author": "Ghostboard Team",
+  "author": "Ghostboard Team <team@ghostboard.ai>",
   "license": "MIT",
-  "dependencies": {},
-  "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8"
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "qrcode": "^1.5.4"
   },
-  "build": {
-    "appId": "ai.ghostboard.desktop",
-    "productName": "Ghostboard",
-    "copyright": "Copyright © 2026 Ghostboard Team",
-    "protocols": {
-      "name": "ghostboard",
-      "schemes": [
-        "ghostboard"
-      ]
-    },
-    "directories": {
-      "output": "dist"
-    },
-    "win": {
-      "target": [
-        "portable",
-        "nsis"
-      ]
-    },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "category": "public.app-category.productivity"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Utility"
-    }
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^5.2.0",
+    "framer-motion": "^13.4.0",
+    "lucide-react": "^1.41.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.0"
   }
 }

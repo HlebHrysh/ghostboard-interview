@@ -39,6 +39,31 @@ const desktopNodes = g.__desktopNodes || (g.__desktopNodes = new Map<string, Des
 
 // 45 seconds timeout before considering node offline
 const NODE_OFFLINE_THRESHOLD_MS = 45000;
+// Maximum nodes stored in memory to prevent memory exhaustion DoS
+export const MAX_DESKTOP_NODES = 2500;
+
+function enforceStoreCapacity(now: number) {
+  if (desktopNodes.size < MAX_DESKTOP_NODES) return;
+
+  // 1. Evict all offline nodes
+  for (const [id, node] of desktopNodes.entries()) {
+    if (now - node.lastSeen > NODE_OFFLINE_THRESHOLD_MS) {
+      desktopNodes.delete(id);
+    }
+  }
+
+  // 2. If still at or over capacity, evict the oldest nodes (LRU)
+  if (desktopNodes.size >= MAX_DESKTOP_NODES) {
+    const sorted = Array.from(desktopNodes.entries()).sort(
+      ([, a], [, b]) => a.lastSeen - b.lastSeen
+    );
+    // Remove the oldest 10% or at least 1 entry
+    const toRemove = Math.max(1, Math.floor(MAX_DESKTOP_NODES * 0.1));
+    for (let i = 0; i < toRemove && i < sorted.length; i++) {
+      desktopNodes.delete(sorted[i][0]);
+    }
+  }
+}
 
 export function registerOrUpdateDesktopNode(data: {
   nodeId?: string;
@@ -76,6 +101,10 @@ export function registerOrUpdateDesktopNode(data: {
     lastSeen: now,
     startedAt: existing?.startedAt || now,
   };
+
+  if (!existing) {
+    enforceStoreCapacity(now);
+  }
 
   desktopNodes.set(nodeId, node);
   return node;

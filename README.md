@@ -1,7 +1,7 @@
 # 👻 Ghostboard — AI Stealth Interview Copilot
 
 > **Next-generation, real-time autonomous AI copilot and teleprompter for technical software engineering interviews.**  
-> Powered by **Deepgram Nova-3 live STT**, **Google Gemini 2.5/2.0 Flash with automated fallback**, and a high-performance **Awwwards-grade Neo-Glassmorphism UI**.
+> Powered by **Deepgram Nova-3 live STT**, **Google Gemini 3.8/3.6 Flash with automated fallback**, and a high-performance **Awwwards-grade Neo-Glassmorphism UI**.
 
 ---
 
@@ -53,7 +53,7 @@
                                             │ Normalized Prompt + CV Context
                              ┌──────────────▼──────────────┐
                              │    Gemini Flash Fallback    │
-                             │ (3.5-flash-lite → 2.5/2.0)  │
+                             │ (3.8-flash → 3.6-flash)     │
                              └──────────────┬──────────────┘
                                             │ Structured JSON (~1.4s)
                       ┌─────────────────────┴─────────────────────┐

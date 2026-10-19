@@ -1,4 +1,4 @@
-import { getSessionUser, incrementUserTrialQuestions } from '@/lib/serverDb';
+import { getSessionUser, incrementUserTrialQuestions, createUser } from '@/lib/serverDb';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { callGeminiWithFallback, FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
@@ -6,12 +6,21 @@ import { normalizeTechnicalSpeech, detectQuestionLanguage, isolateTargetQuestion
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
 import { interviewSyncStore } from '@/lib/interviewSyncStore';
 
-const CopilotPayloadSchema = z.object({
+export const CopilotPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000, 'Question exceeds maximum length'),
   locale: z.string().optional().default('auto'),
   outputLanguage: z.enum(['uk', 'en', 'ru', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'auto']).optional().default('uk'),
   nativeLanguage: z.string().optional().default('auto'),
   candidateProfile: z.any().optional(),
+  history: z
+    .array(
+      z.object({
+        question: z.string(),
+        answer: z.string(),
+      })
+    )
+    .optional()
+    .default([]),
   refinement: z.string().optional(),
   existingQA: z.any().optional(),
   isConcise: z.boolean().optional().default(false),
@@ -38,14 +47,21 @@ export async function POST(req: NextRequest) {
 
     const token =
       req.cookies.get("ghostboard_session")?.value ||
-      req.headers.get("x-ghostboard-client") ||
       req.headers.get("authorization")?.replace(/^Bearer\s+/i, '');
 
     const user = token ? await getSessionUser(token) : null;
+
     if (!user) {
       return NextResponse.json(
-        { error: "Unauthorized. Please login to use Copilot." },
+        { error: "Unauthorized. Please login to use Copilot.", code: "AUTH_REQUIRED" },
         { status: 401 }
+      );
+    }
+
+    if (user.isBanned) {
+      return NextResponse.json(
+        { error: "Your account has been suspended.", code: "ACCOUNT_SUSPENDED" },
+        { status: 403 }
       );
     }
 
@@ -84,6 +100,7 @@ export async function POST(req: NextRequest) {
       outputLanguage,
       nativeLanguage,
       candidateProfile,
+      history,
       refinement,
       existingQA,
       isConcise,
@@ -153,12 +170,22 @@ export async function POST(req: NextRequest) {
       ? candidateProfile.techStack.join(', ')
       : 'TypeScript, JavaScript, React, Next.js, Node.js, Python, PostgreSQL, Docker, REST API, Git';
     const petProjectsStr = Array.isArray(candidateProfile?.petProjects) && candidateProfile.petProjects.length > 0
-      ? candidateProfile.petProjects.map((p: any) => `- ${p.name}: ${p.description} (Ключовий кейс: ${p.keyHighlight})`).join('\n')
+      ? candidateProfile.petProjects.map((p: any) => `- ${p.name}: ${p.description} (Key highlight: ${p.keyHighlight})`).join('\n')
       : '- Scalable Production Platform: Modern stack with automated CI/CD, database indexing, and clean service architecture';
-    const customContextStr = candidateProfile?.customContext || 'Software Engineer з глибоким розумінням CS фундаментів, архітектурних патернів, оптимізації продуктивності та надійності в продакшні.';
+    const customContextStr = candidateProfile?.customContext || 'Software Engineer with deep understanding of CS fundamentals, architecture patterns, performance optimization and production reliability.';
     
     const jobDescriptionStr = candidateProfile?.jobDescription || '';
     const cvContextStr = [candidateProfile?.cvContext, user?.resumeContext].filter(Boolean).join('\n\n');
+    const customNuancesStr = (
+      candidateProfile?.customNuances ||
+      candidateProfile?.aiDirectives?.customNuances ||
+      ''
+    ).trim();
+    const speakingStyleStr = (
+      candidateProfile?.speakingStyle ||
+      candidateProfile?.speakingStyleBrief ||
+      ''
+    ).trim();
 
     const aiDirectives = candidateProfile?.aiDirectives;
     let compiledAiDirectives = '';
@@ -181,13 +208,22 @@ export async function POST(req: NextRequest) {
         if (aiDirectives.guardrails.includes('challenge_weak')) dirParts.push('• GUARDRAIL: CHALLENGE WEAK ASSUMPTIONS.');
         if (aiDirectives.guardrails.includes('show_tradeoffs')) dirParts.push('• GUARDRAIL: ALWAYS MENTION PRODUCTION TRADE-OFFS.');
       }
-      if (aiDirectives.customNuances?.trim()) {
-        dirParts.push(`• SPECIAL INSTRUCTIONS: ${aiDirectives.customNuances.trim()}`);
-      }
       if (dirParts.length > 0) {
         compiledAiDirectives = `\nAI BEHAVIORAL DIRECTIVES & PERSONA TUNING:\n${dirParts.join('\n')}\n`;
       }
     }
+
+    const userWishesDirective = customNuancesStr ? `
+🚨 CRITICAL USER WISHES FOR ANSWER STYLE (TOP PRIORITY - STRICTLY FOLLOW WHAT THE USER WROTE):
+The candidate specifically instructed:
+"${customNuancesStr}"
+Honor this instruction with maximum fidelity while maintaining authentic first-person delivery.
+` : '';
+
+    const speakingStyleDirective = speakingStyleStr ? `
+CANDIDATE'S NATURAL SPEAKING STYLE & VOICE:
+"${speakingStyleStr}"
+` : '';
 
     let refinementDirective = '';
     if (refinement === 'under_the_hood') {
@@ -200,7 +236,7 @@ CRITICAL ADJUSTMENT - DEEP ARCHITECTURE & LOW-LEVEL MECHANICS:
 CRITICAL ADJUSTMENT - "GIVE CODE" (ДАЙ КОД):
 The interviewer asks for a practical code implementation!
 - "codeSnippet": Must provide an elegant, production-grade code snippet (5-12 lines) demonstrating the solution in the candidate's primary programming language/stack (${candidateRole} / ${techStackStr}) with clean typing, error handling, and realistic parameters.
-- "startHook": Introduce the implementation naturally in the requested language (e.g. "Ось як це лаконічно реалізується на практиці:").
+- "startHook": Introduce the implementation naturally in the OUTPUT LANGUAGE (a phrase meaning "Here is how this is implemented concisely in practice:").
 - "hints": Highlight 3 key patterns in this code snippet.`;
     } else if (refinement === 'shorter' || isConcise) {
       refinementDirective = `
@@ -214,7 +250,7 @@ The candidate needs an ultra-short, punchy response (1 punchline sentence + 3 cr
 CRITICAL ADJUSTMENT - "ALTERNATIVE ANGLE" (ІНШИЙ РАКУРС):
 Re-frame the question from an alternative perspective!
 - Focus on practical production trade-offs, architecture decisions, resilience, scaling, or another tool in candidate's stack (e.g. relational DB vs cache, sync vs async worker).
-- "startHook": "З точки зору продакшн-архітектури та надійності..."`;
+- "startHook": open with a phrase meaning "From a production-architecture and reliability standpoint..." in the OUTPUT LANGUAGE.`;
     }
 
     const previousQAContext = existingQA ? `
@@ -222,6 +258,21 @@ PREVIOUS ANSWER GIVEN (IMPROVE / ADJUST THIS):
 - Previous Answer: "${existingQA.quickAnswer || existingQA.startHook || ''}"
 - Previous Hints: ${JSON.stringify(existingQA.hints || [])}
 ` : '';
+
+    const historyContext = Array.isArray(history) && history.length > 0
+      ? `
+RECENT CONVERSATION HISTORY (ACTIVE INTERVIEW SESSION):
+${history
+  .slice(-3)
+  .map((h, i) => `Turn ${i + 1}:\n- Interviewer asked: "${h.question}"\n- Candidate answered: "${h.answer.slice(0, 300)}"`)
+  .join('\n\n')}
+
+CRITICAL DIRECTIVE ON FOLLOW-UP QUESTIONS:
+If the current question is a follow-up or refers to previous topics (e.g. "А чому саме так?", "Які мінуси цього підходу?", "Як би ти це тестував?", "А якщо навантаження зросте?"):
+- Directly contextualize your answer based on the tools, architectural decisions, and technologies discussed in the turns above.
+- Do NOT answer vaguely or ask for clarification; maintain seamless continuity with the preceding discussion.
+`
+      : '';
 
     const personaDefinition = sessionMode === 'meeting'
       ? `You are an elite, world-class real-time AI assistant for a software engineer during a live team meeting, sprint planning, or architectural review.
@@ -241,19 +292,39 @@ ${petProjectsStr}
 ${jobDescriptionStr ? `- JOB DESCRIPTION (TARGET ROLE REQUIREMENTS): ${jobDescriptionStr}` : ''}
 ${cvContextStr ? `- CANDIDATE'S EXTENDED CV CONTEXT: ${cvContextStr}` : ''}
 ${compiledAiDirectives}
+${userWishesDirective}
+${speakingStyleDirective}
 
 CRITICAL RULES FOR TARGET ROLE ALIGNMENT & AUTHENTICITY:
 0. EXACT VACANCY ALIGNMENT: The candidate wrote "${candidateRole}" as their target vacancy. Every explanation, code sample, performance optimization, and architectural consideration MUST strictly match this target vacancy and their active tech stack (${techStackStr}).
-1. SENIORITY CALIBRATION: Calibrate depth directly to a ${candidateLevel.toUpperCase()} level. Do not give generic textbook definitions; instead, immediately highlight real-world production trade-offs, internal runtime mechanics, memory management, scale bottlenecks, and resilience patterns expected from a ${candidateLevel.toUpperCase()} ${candidateRole}.
-${jobDescriptionStr || cvContextStr ? '2. MATCH JOB REQUIREMENTS: Explicitly align your answers with the provided Job Description. If the candidate\'s CV Context or Pet Projects match the requirements, seamlessly weave their past experience into the answer to prove they are the perfect fit.' : ''}
-3. ORGANIC EXPERIENCE INJECTION: Whenever relevant, naturally reference one of the candidate's real pet-projects or stack tools (e.g. "У моєму проєкті на ${candidateRole} я якраз вирішував схожу проблему...").
-3. ${languageDirective}
+1. SENIORITY CALIBRATION: Calibrate depth to a ${candidateLevel.toUpperCase()} level. Balance technical rigor with real production trade-offs, runtime mechanics, scale bottlenecks, and resilience patterns.
+2. QUESTION INTENT-BASED STRUCTURING:
+   - FOR THEORETICAL / CONCEPTUAL QUESTIONS ("що таке", "різниця між", "як працює", "what is", "difference between"):
+     * "startHook": 1 crystal-clear, punchy sentence delivering the direct technical definition or core distinction immediately (e.g. "The fundamental difference lies in memory isolation: processes have separate virtual address spaces, while threads share the process heap.").
+     * "quickAnswer": 1-2 authoritative sentences detailing runtime/engine mechanics and scale implications.
+     * "hints": Exactly 3 bullet points with **bold technical keywords** covering (1) internal runtime mechanism, (2) production trade-offs/edge cases, (3) real-world scenario from ${techStackStr}.
+   - FOR ARCHITECTURE / SYSTEM DESIGN QUESTIONS ("як спроектувати", "як масштабувати", "how to design", "how to scale"):
+     * "startHook": Direct architectural decision (e.g. "For this workload I would choose an event-driven decoupled architecture using a distributed log...").
+     * "hints": Focus on latency vs throughput, consistency models (CAP), partition resilience, and bottleneck mitigation.
+   - FOR BEHAVIORAL / RESUME QUESTIONS ("розкажи про себе", "досвід", "сильні сторони", "tell about yourself", "biggest challenge"):
+     * Natural, confident first-person narrative matching candidate role (${candidateRole}), background, and stack (STAR method: Situation, Task, Action, Result).
+   - FOR ALGORITHM / CODING QUESTIONS:
+     * Time & Space complexity ($O(N)$, $O(1)$) in "startHook", followed by idiomatic code in candidate's primary language.
+3. AUTHENTIC ENGINEERING VOICE & CV INTEGRATION:
+   - Weave the candidate's real tools (${techStackStr}), architectures, and CV context into the hints and trade-offs naturally without sounding like an AI assistant.
+   - Speak with confident senior authority, avoiding textbook clichés or evasive preambles.
+4. ZERO FILLER & INSTANT OPENING:
+   - STRICTLY FORBIDDEN: Conversational filler such as "Sure!", "Great question!", "Basically...", "Under the hood...", "In essence...", "As you know...".
+   - Start immediately with the core technical takeaway.
+5. ${languageDirective}
 ${translationDirective}
-4. NATURAL TECHNICAL CODE-SWITCHING:
-   - When formulating in Ukrainian, Russian, or other languages, KEEP standard developer terms in clean English or established developer parlance (e.g. "event loop", "connection pool", "deadlock", "middleware", "async/await", "hooks", "goroutines", "ORM", "indexes").
-   - NEVER awkwardly translate technical terms into unnatural literal phrases. Speak the way real modern software engineers talk in meetings.
+6. SPOKEN TELEPROMPTER CADENCE:
+   - Short, punchy, confident sentences that are easy to read aloud without stumbling.
+   - Keep standard developer terms in English (event loop, connection pool, deadlock, middleware, async/await, hooks, ORM, indexes).
+   - NEVER translate technical terms into awkward literal phrases.
 ${refinementDirective}
 ${previousQAContext}
+${historyContext}
 CONTINUOUS AUDIO TRANSCRIPT CAPTURED FROM INTERVIEWER:
 """${normalizedQuestion}"""
 ${heuristic.contextPreamble ? `\nPREVIOUS CONTEXT / REMARKS DETECTED (DO NOT ANSWER THIS PREVIOUS TOPIC):\n"${heuristic.contextPreamble}"` : ''}
@@ -262,31 +333,21 @@ ${triggerMode === 'enter' ? '\nNOTE: The candidate triggered this response on-de
 
 🚨 CRITICAL DIRECTIVE: TARGET QUESTION EXTRACTION & RELEVANCE ISOLATION:
 1. The transcript above represents continuous speech captured up to the candidate pressing [Enter] (or after an interviewer speech pause).
-2. It often contains:
-   - Remarks or feedback on the PREVIOUS answer (e.g. "Дякую за відповідь, зрозуміло...", "Great answer on that topic...").
-   - Conversational filler / transition phrases (e.g. "Так, добре...", "Moving on...", "Рухаємось далі", "Let's see...").
-   - Scenario context / preamble (e.g. "У нас високе навантаження на систему...").
-   - THE ACTUAL NEW QUESTION asked at the end of the thought!
-3. MANDATORY EXTRACTION RULES:
-   - ACCURATELY ISOLATE THE TARGET QUESTION: Distinguish the actual question from previous conversational context or feedback!
-   - STRICTLY FORBIDDEN: DO NOT answer the previous topic mentioned in passing!
-   - In the "question" output field: Return the CLEAN, PROFESSIONALLY FORMULATED, SPECIFIC TARGET QUESTION.
-   - "quickAnswer", "startHook", and "hints" MUST ANSWER THIS TARGET QUESTION DIRECTLY.
-   - For behavioral or self-introductory questions ("розкажи про себе", "досвід", "сильні сторони"): Formulate a strong, natural, authentic developer pitch matching the candidate's background, core role (${candidateRole}), stack (${techStackStr}), and competitive strengths.
-   - For technical questions: Give direct technical definition, mechanism, or architectural decision in their stack.
-   - STRICTLY FORBIDDEN CLICHÉS: NEVER start answers with "Під капотом...", "Якщо глянути під капот...", "Якщо заглянути під капот...", "Взагалі тут суть у тому...", "Тобто замість того щоб...", "Under the hood...", "Basically...", "In essence...".
-   - ANSWER DIRECTLY ON POINT (ТІЛЬКИ ПО ТЕМІ): The very first sentence must give the direct technical definition or pitch.
-   - High technical density: 2-3 tight, confident, concrete sentences (algorithms, data structures, complexity, concrete tools).
-   - Natural spoken tone of a senior developer explaining a concept to a peer, without academic stiffness and zero empty water.
-3. "startHook": Direct spoken opening sentence for the candidate to say aloud immediately.
-4. "hints": 3 realistic, practical bullet points with **bold technical keywords**, edge cases, and real-life production nuances.
-5. "codeSnippet":
-   - ONLY provide code if the question is an algorithmic problem, coding question, or explicitly asks for code/syntax implementation (e.g. "як реалізувати...", "напиши функцію", "як виглядає запит").
-   - For behavioral questions, self-introductions ("розкажи про себе"), architecture overviews, soft skills, or experience questions: STRICTLY SET "codeSnippet": null. DO NOT invent dummy code!
-6. "deliveryTip": Friendly, practical tip for delivering this answer smoothly.
-7. "tag": Domain tag matching the topic (e.g. "#Frontend", "#Backend", "#Go", "#DevOps", "#Architecture", "#Database").
-8. "confidenceScore": Calculate a score from 0-100 indicating your confidence. Give <80 if the question is ambiguous or requires subjective architectural trade-offs.
-9. "docReference": Optional short URL or documentation reference if citing specific API behavior.
+2. Distinguish the actual target question from previous remarks, filler, or preamble.
+3. In the "question" output field: Return the CLEAN, PROFESSIONALLY FORMULATED, SPECIFIC TARGET QUESTION.
+4. "quickAnswer", "startHook", and "hints" MUST ANSWER THIS TARGET QUESTION DIRECTLY.
+5. For behavioral or self-introductory questions ("розкажи про себе", "досвід", "сильні сторони"): Formulate a strong, natural, authentic developer pitch matching the candidate's background, core role (${candidateRole}), stack (${techStackStr}), and competitive strengths.
+6. For technical questions: Give personal lived experience, concrete architectural decisions, and trade-offs.
+7. "startHook": Direct, confident spoken opening sentence for the candidate to say aloud immediately (10-18 words maximum, zero conversational filler, straight into the core mechanism).
+8. "quickAnswer": 1-2 tight, authoritative sentences containing the direct answer and core architecture decision.
+9. "hints": Exactly 3 realistic, practical bullet points with **bold technical keywords**, edge cases, and real-life production trade-offs.
+10. "codeSnippet":
+   - ONLY provide code if the question is an algorithmic problem, coding question, or explicitly asks for code/syntax implementation.
+   - For behavioral questions, self-introductions, architecture overviews: STRICTLY SET "codeSnippet": null. DO NOT invent dummy code!
+11. "deliveryTip": Friendly, practical tip for delivering this answer smoothly.
+12. "tag": Domain tag matching the topic (e.g. "#Frontend", "#Backend", "#Go", "#DevOps", "#Architecture", "#Database").
+13. "confidenceScore": Calculate a score from 0-100 indicating your confidence. Give <80 if the question is ambiguous or requires subjective architectural trade-offs.
+14. "docReference": Optional short URL or documentation reference if citing specific API behavior.
 
 Return ONLY valid JSON matching this schema:
 {
@@ -306,31 +367,62 @@ Return ONLY valid JSON matching this schema:
 
     if (geminiApiKey) {
       try {
+        const wantsCode = refinement === 'code';
+        const responseSchema = {
+          type: 'OBJECT',
+          properties: {
+            question: { type: 'STRING' },
+            startHook: { type: 'STRING' },
+            quickAnswer: { type: 'STRING' },
+            nativeTranslation: { type: 'STRING' },
+            hints: {
+              type: 'ARRAY',
+              items: { type: 'STRING' },
+            },
+            codeSnippet: { type: 'STRING' },
+            deliveryTip: { type: 'STRING' },
+            tag: { type: 'STRING' },
+            confidenceScore: { type: 'NUMBER' },
+            docReference: { type: 'STRING' },
+          },
+          required: ['question', 'startHook', 'quickAnswer', 'hints', 'tag', 'confidenceScore'],
+        };
+
         const result = await callGeminiWithFallback({
           models: FLASH_MODELS,
           contents: [{ parts: [{ text: systemPrompt }] }],
+          timeoutMs: 8000,
           generationConfig: {
             responseMimeType: 'application/json',
-            temperature: 0.35,
+            responseSchema,
+            temperature: 0.2,
+            maxOutputTokens: wantsCode ? 950 : 520,
           },
         });
 
         if (result.ok && result.text) {
-          const parsed = JSON.parse(result.text);
+          // Tolerate ```json fences or stray text around the JSON object
+          const rawText = result.text.replace(/^\s*```(?:json)?\s*|\s*```\s*$/gi, '').trim();
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          const parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
+          if (!parsed?.quickAnswer && !parsed?.startHook) {
+            throw new Error('Gemini returned empty answer');
+          }
           // Never output code snippets for self-introduction / behavioral questions
           const effectiveCodeSnippet = isIntroQuestion ? undefined : (parsed.codeSnippet || undefined);
 
-          if (user) {
-            await incrementUserTrialQuestions(user.id);
-          }
+          // Do not block the response on the DB write
+          incrementUserTrialQuestions(user.id)?.catch?.((e: unknown) =>
+            console.warn('Trial counter update failed:', e)
+          );
 
           const resolvedQA = {
             id: `qa_${Date.now()}`,
             question: parsed.question || heuristic.isolatedQuestion || question,
             startHook: parsed.startHook || parsed.quickAnswer,
-            quickAnswer: parsed.quickAnswer,
+            quickAnswer: parsed.quickAnswer || parsed.startHook,
             nativeTranslation: parsed.nativeTranslation || undefined,
-            hints: parsed.hints || [],
+            hints: Array.isArray(parsed.hints) ? parsed.hints : [],
             codeSnippet: effectiveCodeSnippet,
             deliveryTip: parsed.deliveryTip || undefined,
             tag: parsed.tag || (isIntroQuestion ? '#Introduction' : '#TechnicalInterview'),
@@ -338,9 +430,11 @@ Return ONLY valid JSON matching this schema:
             docReference: parsed.docReference || undefined,
           };
 
-          // Synchronize immediately to the user's multi-device room (Web, Desktop, Phone)
-          if (user) {
+          // Synchronize to the user's multi-device room; a sync failure must never break the answer
+          try {
             interviewSyncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id);
+          } catch (syncErr) {
+            console.warn('Interview sync failed:', syncErr);
           }
 
           return NextResponse.json({

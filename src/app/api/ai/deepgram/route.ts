@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { requireAdmin } from '@/lib/adminGuard';
+import { getSessionUser } from '@/lib/serverDb';
 
 function getDeepgramKey(): string | null {
   const key = process.env.DEEPGRAM_API_KEY;
@@ -10,24 +12,28 @@ function getDeepgramKey(): string | null {
 }
 
 function updateEnvFile(keyName: string, value: string) {
-  const envPath = path.join(process.cwd(), '.env.local');
-  let currentContent = '';
-  if (fs.existsSync(envPath)) {
-    currentContent = fs.readFileSync(envPath, 'utf8');
-  }
-  const lines = currentContent.split('\n').filter((l) => l.trim().length > 0);
-  let updated = false;
-  const newLines = lines.map((line) => {
-    if (line.startsWith(`${keyName}=`) || line.startsWith(`${keyName} =`)) {
-      updated = true;
-      return `${keyName}=${value}`;
+  try {
+    const envPath = path.join(process.cwd(), '.env.local');
+    let currentContent = '';
+    if (fs.existsSync(envPath)) {
+      currentContent = fs.readFileSync(envPath, 'utf8');
     }
-    return line;
-  });
-  if (!updated) {
-    newLines.push(`${keyName}=${value}`);
+    const lines = currentContent.split('\n').filter((l) => l.trim().length > 0);
+    let updated = false;
+    const newLines = lines.map((line) => {
+      if (line.startsWith(`${keyName}=`) || line.startsWith(`${keyName} =`)) {
+        updated = true;
+        return `${keyName}=${value}`;
+      }
+      return line;
+    });
+    if (!updated) {
+      newLines.push(`${keyName}=${value}`);
+    }
+    fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
+  } catch (err: any) {
+    console.warn(`[updateEnvFile] Could not persist to .env.local (${err?.message}). Running in-memory.`);
   }
-  fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
   process.env[keyName] = value;
 }
 
@@ -47,9 +53,17 @@ export async function GET(req: NextRequest) {
   }
 
   // 3. Client session guard
-  const clientToken = req.headers.get('x-ghostboard-client');
-  if (!clientToken && process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ error: 'Необхідна активна сесія Ghostboard' }, { status: 401 });
+  const token =
+    req.cookies.get('ghostboard_session')?.value ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  if (!token) {
+    return NextResponse.json({ error: 'Необхідна активна сесія Ghostboard', code: 'AUTH_REQUIRED' }, { status: 401 });
+  }
+
+  const user = await getSessionUser(token);
+  if (!user) {
+    return NextResponse.json({ error: 'Недійсна сесія користувача', code: 'INVALID_SESSION' }, { status: 401 });
   }
 
   const currentKey = getDeepgramKey();
@@ -113,14 +127,26 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Safe authenticated session response
+      // Safe authenticated session response (ephemeral key preferred)
+      const isDev = process.env.NODE_ENV !== 'production';
+      if (!isDev) {
+        return NextResponse.json({
+          configured: true,
+          maskedKey: masked,
+          apiKey: null,
+          isEphemeral: false,
+          status: 'error',
+          message: 'Не вдалося створити тимчасовий токен Deepgram. Перевірте дозволи ключа.',
+        }, { status: 503 });
+      }
+
       return NextResponse.json({
         configured: true,
         maskedKey: masked,
         apiKey: currentKey,
         isEphemeral: false,
         status: 'valid',
-        message: 'Deepgram API ключ готовий до сесії',
+        message: 'Deepgram API ключ готовий до сесії (режим розробки)',
       });
     }
 
@@ -128,7 +154,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       configured: true,
       maskedKey: masked,
-      apiKey: currentKey,
+      apiKey: process.env.NODE_ENV !== 'production' ? currentKey : null,
       status: 'error',
       message: errText || 'Помилка валідації Deepgram ключа',
     });
@@ -136,7 +162,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       configured: true,
       maskedKey: masked,
-      apiKey: currentKey,
+      apiKey: process.env.NODE_ENV !== 'production' ? currentKey : null,
       status: 'valid',
       message: 'Ключ збережено',
     });
@@ -145,10 +171,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const adminCookie = req.cookies.get('ghostboard_admin_session')?.value;
-    if (adminCookie !== 'authenticated') {
-      return NextResponse.json({ error: 'Unauthorized. Admin only.' }, { status: 401 });
-    }
+    const authError = await requireAdmin(req);
+    if (authError) return authError;
 
     if (!validateOrigin(req)) {
       return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });

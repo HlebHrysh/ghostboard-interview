@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, Suspense } from 'react';
+import React, { useEffect, useState, useRef, Suspense, use } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Lock, Unlock, ChevronLeft, ChevronRight, ShieldAlert, Sparkles, Radio, Globe } from 'lucide-react';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
@@ -16,9 +16,14 @@ interface SyncQAItem {
   deliveryTip?: string;
 }
 
-function CompanionContent({ params }: { params: { sessionId: string } }) {
+interface PageProps {
+  params: Promise<{ sessionId: string }>;
+}
+
+function CompanionContent({ params }: PageProps) {
+  const { sessionId } = use(params);
   const searchParams = useSearchParams();
-  const token = searchParams.get('token') || params.sessionId;
+  const token = searchParams.get('token') || sessionId;
 
   const [activeQA, setActiveQA] = useState<SyncQAItem | null>(null);
   const [qas, setQas] = useState<SyncQAItem[]>([]);
@@ -66,7 +71,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
 
     let sse: EventSource | null = null;
     try {
-      const sseUrl = `/api/companion/stream?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(params.sessionId)}&device=phone`;
+      const sseUrl = `/api/companion/stream?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(sessionId)}&device=phone`;
       sse = new EventSource(sseUrl);
       eventSourceRef.current = sse;
 
@@ -139,7 +144,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
       if (sse) sse.close();
       clearInterval(pollInterval);
     };
-  }, [token, params.sessionId]);
+  }, [token, sessionId]);
 
   // Remote Action Dispatcher: sends commands from phone to desktop and web
   const sendAction = async (action: string, payload: Record<string, any> = {}) => {
@@ -384,7 +389,7 @@ function CompanionContent({ params }: { params: { sessionId: string } }) {
   );
 }
 
-export default function CompanionPage({ params }: { params: { sessionId: string } }) {
+export default function CompanionPage({ params }: PageProps) {
   return (
     <Suspense
       fallback={

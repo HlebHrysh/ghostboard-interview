@@ -14,7 +14,10 @@ export interface DbUser {
   trialQuestionsUsed?: number;
   stripeCustomerId?: string | null;
   resumeContext?: string | null;
+  candidateProfile?: any;
   passwordHash?: string | null;
+  isBanned?: boolean;
+  lastActiveAt?: Date | null;
   createdAt: Date;
 }
 
@@ -194,7 +197,14 @@ export async function updateUserPlan(userId: string, plan: string): Promise<void
 
 export async function updateUser(
   userId: string,
-  data: { plan?: string; name?: string; role?: string }
+  data: {
+    plan?: string;
+    name?: string;
+    role?: string;
+    isBanned?: boolean;
+    lastActiveAt?: Date | null;
+    trialQuestionsUsed?: number;
+  }
 ): Promise<DbUser | null> {
   if (process.env.DATABASE_URL) {
     try {
@@ -212,10 +222,73 @@ export async function updateUser(
     if (data.plan !== undefined) memUser.plan = data.plan;
     if (data.name !== undefined) memUser.name = data.name;
     if (data.role !== undefined) memUser.role = data.role;
+    if (data.isBanned !== undefined) memUser.isBanned = data.isBanned;
+    if (data.lastActiveAt !== undefined) memUser.lastActiveAt = data.lastActiveAt;
+    if (data.trialQuestionsUsed !== undefined) memUser.trialQuestionsUsed = data.trialQuestionsUsed;
     return memUser;
   }
   return null;
 }
+
+// In-memory throttle map to prevent write storms on PostgreSQL
+const userActivityThrottle = new Map<string, number>();
+const ACTIVITY_THROTTLE_MS = 15 * 60 * 1000; // 15 minutes
+
+export async function recordUserActivity(userId: string): Promise<void> {
+  if (!userId) return;
+  const now = Date.now();
+  const lastRecorded = userActivityThrottle.get(userId);
+  if (lastRecorded && now - lastRecorded < ACTIVITY_THROTTLE_MS) {
+    return; // Throttled
+  }
+
+  userActivityThrottle.set(userId, now);
+  const nowDate = new Date();
+
+  if (process.env.DATABASE_URL) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { lastActiveAt: nowDate },
+      });
+      return;
+    } catch {
+      // Fallback
+    }
+  }
+
+  const memUser = memUsersById.get(userId);
+  if (memUser) {
+    memUser.lastActiveAt = nowDate;
+  }
+}
+
+export async function banUser(userId: string, isBanned: boolean = true): Promise<boolean> {
+  const updated = await updateUser(userId, { isBanned });
+  if (isBanned) {
+    // Invalidate user sessions when banned
+    await resetUserSessions(userId);
+  }
+  return !!updated;
+}
+
+export async function resetUserSessions(userId: string): Promise<number> {
+  let count = 0;
+  if (process.env.DATABASE_URL) {
+    try {
+      const res = await prisma.session.deleteMany({ where: { userId } });
+      count = res.count;
+    } catch {}
+  }
+  for (const [token, session] of memSessions.entries()) {
+    if (session.userId === userId) {
+      memSessions.delete(token);
+      count++;
+    }
+  }
+  return count;
+}
+
 
 export async function deleteUser(userId: string): Promise<boolean> {
   if (process.env.DATABASE_URL) {
@@ -514,6 +587,8 @@ export async function getUserInterviewSessions(userId: string): Promise<DbSavedS
   return memHistory.get(userId) || [];
 }
 
+export const getUserSessions = getUserInterviewSessions;
+
 export async function deleteSavedSession(sessionId: string): Promise<boolean> {
   if (process.env.DATABASE_URL) {
     try {
@@ -572,17 +647,96 @@ export async function getAllSessions(): Promise<DbSavedSession[]> {
 }
 
 export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): Promise<DbPayment> {
+  const now = Date.now();
+  if (process.env.DATABASE_URL) {
+    try {
+      const created = await prisma.payment.create({
+        data: {
+          userId: payment.userId,
+          email: payment.email,
+          plan: payment.plan,
+          amountCents: payment.amountCents,
+          status: payment.status || 'succeeded',
+          timestamp: BigInt(now),
+        },
+      });
+      return {
+        id: created.id,
+        userId: created.userId,
+        email: created.email,
+        plan: created.plan,
+        amountCents: created.amountCents,
+        status: created.status,
+        timestamp: Number(created.timestamp),
+      };
+    } catch (err: any) {
+      console.warn('[serverDb.logPayment] Prisma payment save failed, using memory fallback:', err?.message);
+    }
+  }
+
   const entry: DbPayment = {
     ...payment,
     id: `pay_${crypto.randomBytes(12).toString('hex')}`,
-    timestamp: Date.now(),
+    timestamp: now,
   };
   memPayments.set(entry.id, entry);
   return entry;
 }
 
 export async function getAllPayments(): Promise<DbPayment[]> {
+  if (process.env.DATABASE_URL) {
+    try {
+      const payments = await prisma.payment.findMany({
+        orderBy: { createdAt: 'desc' },
+      });
+      return payments.map((p) => ({
+        id: p.id,
+        userId: p.userId,
+        email: p.email,
+        plan: p.plan,
+        amountCents: p.amountCents,
+        status: p.status,
+        timestamp: Number(p.timestamp),
+      }));
+    } catch (err: any) {
+      console.warn('[serverDb.getAllPayments] Prisma findMany failed, using memory fallback:', err?.message);
+    }
+  }
   return Array.from(memPayments.values()).sort((a: DbPayment, b: DbPayment) => b.timestamp - a.timestamp);
+}
+
+export async function updateUserCandidateProfile(userId: string, candidateProfile: any): Promise<void> {
+  if (process.env.DATABASE_URL) {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { candidateProfile },
+      });
+      return;
+    } catch (err: any) {
+      console.warn('[serverDb.updateUserCandidateProfile] Prisma update failed:', err?.message);
+    }
+  }
+  const memUser = memUsersById.get(userId);
+  if (memUser) {
+    memUser.candidateProfile = candidateProfile;
+  }
+}
+
+export async function getUserCandidateProfile(userId: string): Promise<any | null> {
+  if (process.env.DATABASE_URL) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { candidateProfile: true },
+      });
+      return user?.candidateProfile ?? null;
+    } catch (err: any) {
+      console.warn('[serverDb.getUserCandidateProfile] Prisma select failed:', err?.message);
+    }
+  }
+  const memUser = memUsersById.get(userId);
+  return memUser?.candidateProfile ?? null;
 }
 
 export async function incrementUserTrialQuestions(userId: string): Promise<number> {

@@ -94,9 +94,34 @@ export async function GET(req: NextRequest) {
     const user = await findOrCreateUser(email, name, assignedRole);
 
     // 4. Create persistent session
-    const session = await createSession(user.id);
+    const isDesktop = payload.client === 'desktop' && !!payload.redirectUri;
+    const session = await createSession(user.id, isDesktop ? 'desktop' : 'web');
 
-    // 5. Successful redirect to destination
+    // 5. Successful redirect (Desktop loopback or Web destination)
+    if (isDesktop && payload.redirectUri) {
+      try {
+        const u = new URL(payload.redirectUri);
+        if (['127.0.0.1', 'localhost'].includes(u.hostname)) {
+          u.searchParams.set('token', session.token);
+          if (payload.desktopState) {
+            u.searchParams.set('state', payload.desktopState);
+          }
+          const response = NextResponse.redirect(u.toString());
+          response.cookies.set('ghostboard_session', session.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 30 * 24 * 60 * 60, // 30 days
+            path: '/',
+          });
+          clearOAuthCookie(response);
+          return response;
+        }
+      } catch (e) {
+        console.warn('[Google OAuth Callback] Invalid desktop redirectUri:', payload.redirectUri);
+      }
+    }
+
     const destination = payload.destination || '/interview';
     const destinationUrl = new URL(destination, baseUrl);
 

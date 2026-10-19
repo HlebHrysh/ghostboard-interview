@@ -400,7 +400,7 @@ export function ScreenShareSplitSlider({ t }: Props) {
               ) : (
                 <div className="space-y-1.5 leading-relaxed font-mono opacity-85 text-xs sm:text-[13px]">
                   <div className="text-zinc-600">
-                    <span className="text-zinc-700 select-none mr-4">01</span>// Zero-Allocation High-Throughput Event Broker
+                    <span className="text-zinc-700 select-none mr-4">01</span>{"// Zero-Allocation High-Throughput Event Broker"}
                   </div>
                   <div>
                     <span className="text-zinc-700 select-none mr-4">02</span>
@@ -555,7 +555,7 @@ export function ScreenShareSplitSlider({ t }: Props) {
                 ) : (
                   <div className="space-y-1.5 leading-relaxed font-mono opacity-85 text-xs sm:text-[13px]">
                     <div className="text-zinc-600">
-                      <span className="text-zinc-700 select-none mr-4">01</span>// Zero-Allocation High-Throughput Event Broker
+                      <span className="text-zinc-700 select-none mr-4">01</span>{"// Zero-Allocation High-Throughput Event Broker"}
                     </div>
                     <div>
                       <span className="text-zinc-700 select-none mr-4">02</span>

@@ -7,6 +7,9 @@ export interface OAuthStatePayload {
   destination: string;
   role?: string;
   timestamp: number;
+  client?: 'web' | 'desktop';
+  redirectUri?: string;
+  desktopState?: string;
 }
 
 const OAUTH_COOKIE_NAME = 'ghostboard_oauth_session';
@@ -66,7 +69,10 @@ export function isOAuthProviderConfigured(provider: 'google' | 'github'): boolea
 export function createOAuthState(
   provider: 'google' | 'github',
   destination: string = '/interview',
-  role?: string
+  role?: string,
+  client?: 'web' | 'desktop',
+  redirectUri?: string,
+  desktopState?: string
 ): { state: string; setCookie: (res: NextResponse) => void } {
   const stateRandom = crypto.randomBytes(24).toString('hex');
   const payload: OAuthStatePayload = {
@@ -74,6 +80,9 @@ export function createOAuthState(
     provider,
     destination: destination.startsWith('/') ? destination : '/interview',
     role: role || undefined,
+    client: client || 'web',
+    redirectUri: redirectUri || undefined,
+    desktopState: desktopState || undefined,
     timestamp: Date.now(),
   };
 

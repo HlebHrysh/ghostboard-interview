@@ -17,6 +17,10 @@ import {
   ArrowRight,
   Sparkles,
   Lock,
+  Terminal,
+  ShieldCheck,
+  AlertCircle,
+  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UnifiedNavbar } from '@/components/ui/UnifiedNavbar';
@@ -25,6 +29,7 @@ import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer
 import { useLocale } from '@/contexts/LocaleContext';
 import type { SupportedLocale } from '@/lib/geoLang';
 import QRCode from 'qrcode';
+import { SmartDownloadButton } from '@/components/download/SmartDownloadButton';
 
 interface ComparisonRow {
   feature: string;
@@ -395,16 +400,177 @@ const COMPARISON_I18N: Record<SupportedLocale, ComparisonData> = {
   },
 };
 
+interface SecurityGuideData {
+  title: string;
+  subtitle: string;
+  badge: string;
+  tabs: {
+    win: string;
+    mac: string;
+    linux: string;
+  };
+  win: {
+    alertBadge: string;
+    alertTitle: string;
+    alertDesc: string;
+    steps: { step: string; desc: string }[];
+    tipTitle: string;
+    tipDesc: string;
+  };
+  mac: {
+    alertBadge: string;
+    alertTitle: string;
+    alertDesc: string;
+    opt1Title: string;
+    opt1Steps: string[];
+    opt2Title: string;
+    cmd: string;
+    cmdCopyToast: string;
+    tipTitle: string;
+    tipDesc: string;
+  };
+  linux: {
+    alertBadge: string;
+    alertTitle: string;
+    alertDesc: string;
+    step1Title: string;
+    step1Cmd: string;
+    step2Title: string;
+    step2Cmd: string;
+    tipTitle: string;
+    tipDesc: string;
+  };
+}
+
+const SECURITY_GUIDE_I18N: Record<string, SecurityGuideData> = {
+  ua: {
+    title: 'Помічник першого запуску & Захист ОС',
+    subtitle: 'Операційні системи іноді показують попередження для щойно завантажених утиліт без десятків тисяч завантажень. Ось як запустити Ghostboard за 5 секунд:',
+    badge: '100% БЕЗПЕЧНО • ВІДКРИТА АРХІТЕКТУРА • БЕЗ ВІРУСІВ',
+    tabs: {
+      win: 'Windows (SmartScreen)',
+      mac: 'macOS (Gatekeeper)',
+      linux: 'Linux (AppImage / .deb)',
+    },
+    win: {
+      alertBadge: 'Microsoft Defender SmartScreen',
+      alertTitle: '«Система Windows захистила ваш комп’ютер»',
+      alertDesc: 'Фільтр SmartScreen Defender попереджає про нерозпізнану програму, оскільки свіжий реліз щойно опубліковано.',
+      steps: [
+        {
+          step: '1',
+          desc: 'Натисніть на текстове посилання «Докладніше» (More info) у лівому верхньому кутку синього вікна попередження.',
+        },
+        {
+          step: '2',
+          desc: 'У правому нижньому кутку з’явиться нова кнопка «Виконати в будь-якому разі» (Run anyway) — натисніть її.',
+        },
+      ],
+      tipTitle: 'Чому це відбувається?',
+      tipDesc: 'Це стандартна реакція SmartScreen на кожен новий білд без купленого дорогого EV-сертифіката. Ghostboard не містить прихованих процесів, а вихідний код модулів захисту публічний.',
+    },
+    mac: {
+      alertBadge: 'Apple Gatekeeper & Quarantine',
+      alertTitle: '«Програму не вдається відкрити, оскільки розробника не перевірено»',
+      alertDesc: 'Apple поміщає файли з інтернету в локальний карантин до накопичення нотаріальних сертифікатів.',
+      opt1Title: 'Спосіб 1: Через Finder (без терміналу за 2 кліки)',
+      opt1Steps: [
+        'Перетягніть Ghostboard в системну папку «Програми» (Applications).',
+        'Затисніть клавішу Control (або правий клік миші) по іконці Ghostboard → натисніть «Відкрити» (Open) → підтвердіть «Відкрити».',
+      ],
+      opt2Title: 'Спосіб 2: В 1 клік через Термінал (зняття карантину)',
+      cmd: 'xattr -cr /Applications/Ghostboard.app',
+      cmdCopyToast: 'Команду для зняття карантину скопійовано! Вставте в Термінал і натисніть Enter.',
+      tipTitle: 'Доступ до мікрофона',
+      tipDesc: 'При першому старті macOS запитає дозвіл на використання мікрофона для розпізнавання мови співрозмовника. Натисніть «Дозволити».',
+    },
+    linux: {
+      alertBadge: 'Linux AppImage Execution',
+      alertTitle: 'Надання прав на запуск для AppImage',
+      alertDesc: 'Завантажені браузером файли в Linux за замовчуванням не мають позначки виконання (+x).',
+      step1Title: 'Крок 1: Дозволити запуск файлу в терміналі',
+      step1Cmd: 'chmod +x Ghostboard-*.AppImage && ./Ghostboard-*.AppImage',
+      step2Title: 'Крок 2: Для Ubuntu 22.04 / 24.04 (якщо потрібна бібліотека FUSE)',
+      step2Cmd: 'sudo apt update && sudo apt install -y libfuse2',
+      tipTitle: 'Debian / Ubuntu пакунок',
+      tipDesc: 'Ви також можете завантажити пакет .deb на цій сторінці — він автоматично встановить ярлик у ваше головне меню додатків.',
+    },
+  },
+  en: {
+    title: 'First-Launch OS Security Assistant',
+    subtitle: 'Operating systems often show security prompts for newly published desktop software. Here is how to launch Ghostboard cleanly in 5 seconds:',
+    badge: '100% SAFE • OPEN ARCHITECTURE • ZERO MALWARE',
+    tabs: {
+      win: 'Windows (SmartScreen)',
+      mac: 'macOS (Gatekeeper)',
+      linux: 'Linux (AppImage / .deb)',
+    },
+    win: {
+      alertBadge: 'Microsoft Defender SmartScreen',
+      alertTitle: '«Windows protected your PC»',
+      alertDesc: 'SmartScreen Defender warns about an unrecognized application because this build was recently released.',
+      steps: [
+        {
+          step: '1',
+          desc: 'Click the "More info" link located in the upper-left area of the blue warning dialog.',
+        },
+        {
+          step: '2',
+          desc: 'Click the "Run anyway" button that appears at the bottom right corner.',
+        },
+      ],
+      tipTitle: 'Why does this happen?',
+      tipDesc: 'This is standard SmartScreen behavior for new release binaries accumulating download reputation. Ghostboard is completely clean and never transmits screen pixels externally.',
+    },
+    mac: {
+      alertBadge: 'Apple Gatekeeper & Quarantine',
+      alertTitle: '«App cannot be opened because developer cannot be verified»',
+      alertDesc: 'Apple places internet downloads into a security quarantine until developer certificates are verified.',
+      opt1Title: 'Option 1: Via Finder (No terminal, 2 clicks)',
+      opt1Steps: [
+        'Drag Ghostboard into your Applications folder.',
+        'Hold the Control key (or right-click) on Ghostboard → select "Open" → click "Open" in the dialog.',
+      ],
+      opt2Title: 'Option 2: 1-Click Terminal Command (Strip Quarantine)',
+      cmd: 'xattr -cr /Applications/Ghostboard.app',
+      cmdCopyToast: 'Quarantine strip command copied! Paste into Terminal and press Enter.',
+      tipTitle: 'Microphone Access',
+      tipDesc: 'On first launch, macOS will request microphone permissions for real-time speech-to-text. Click "Allow".',
+    },
+    linux: {
+      alertBadge: 'Linux AppImage Execution',
+      alertTitle: 'Grant executable permission for AppImage',
+      alertDesc: 'Browser-downloaded files on Linux do not have executable (+x) permissions enabled by default.',
+      step1Title: 'Step 1: Make executable and launch',
+      step1Cmd: 'chmod +x Ghostboard-*.AppImage && ./Ghostboard-*.AppImage',
+      step2Title: 'Step 2: On Ubuntu 22.04 / 24.04 (if FUSE library is needed)',
+      step2Cmd: 'sudo apt update && sudo apt install -y libfuse2',
+      tipTitle: 'Debian / Ubuntu Package',
+      tipDesc: 'You can also download our native .deb package on this page — it automatically installs a desktop shortcut in your application launcher.',
+    },
+  },
+};
+
 export default function DownloadPage() {
   const { locale } = useLocale();
   const comp = COMPARISON_I18N[locale] || COMPARISON_I18N.ua;
+  const secGuide = SECURITY_GUIDE_I18N[locale] || SECURITY_GUIDE_I18N.ua;
   const [pairingToken, setPairingToken] = useState<string>('');
   const [companionUrl, setCompanionUrl] = useState<string>('');
   const [qrCodeDataUri, setQrCodeDataUri] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'win' | 'mac' | 'linux'>('win');
+  const [activeGuideTab, setActiveGuideTab] = useState<'win' | 'mac' | 'linux'>('win');
   const [detectedOs, setDetectedOs] = useState<'win' | 'mac' | 'linux'>('win');
   const [showHashes, setShowHashes] = useState<boolean>(false);
+  const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+
+  const handleCopyCommand = (cmd: string, successMsg: string) => {
+    navigator.clipboard.writeText(cmd);
+    setCopiedCmd(cmd);
+    toast.success(successMsg);
+    setTimeout(() => setCopiedCmd(null), 2500);
+  };
 
   // OS Auto-Detection
   useEffect(() => {
@@ -413,12 +579,15 @@ export default function DownloadPage() {
       const ua = navigator.userAgent.toLowerCase();
       if (ua.includes('mac')) {
         setActiveTab('mac');
+        setActiveGuideTab('mac');
         setDetectedOs('mac');
       } else if (ua.includes('linux')) {
         setActiveTab('linux');
+        setActiveGuideTab('linux');
         setDetectedOs('linux');
       } else {
         setActiveTab('win');
+        setActiveGuideTab('win');
         setDetectedOs('win');
       }
     }
@@ -503,6 +672,10 @@ export default function DownloadPage() {
             <p className="text-base sm:text-lg text-zinc-400 leading-relaxed">
               Скачайте міні-додаток (~10 МБ), який працює прямо з коробки: автоматично виключається із захоплення екрана на рівні драйверів ОС, чує співрозмовника з динаміків без віртуальних кабелів і синхронізується з вашим акаунтом і смартфоном.
             </p>
+
+            <div className="pt-2 flex justify-center">
+              <SmartDownloadButton />
+            </div>
           </section>
 
         {/* Download Buttons Matrix — Hardware Specs Modules */}
@@ -510,7 +683,10 @@ export default function DownloadPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Windows */}
             <div
-              onClick={() => setActiveTab('win')}
+              onClick={() => {
+                setActiveTab('win');
+                setActiveGuideTab('win');
+              }}
               className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
                 activeTab === 'win'
                   ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
@@ -570,23 +746,25 @@ export default function DownloadPage() {
 
               <div className="pt-6">
                 <a
-                  href="#download-win"
-                  onClick={(e) => {
-                    e.preventDefault();
+                  href="/api/download?os=win"
+                  onClick={() => {
                     toast.success('Завантаження інсталятора Ghostboard для Windows...');
                   }}
                   className={`${activeTab === 'win' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download for Windows</span>
+                  <span>Download for Windows (.exe)</span>
                 </a>
-                <p className="text-[11px] text-center text-zinc-500 mt-2 font-mono">Build 1.0.0 • 11.2 MB</p>
+                <p className="text-[11px] text-center text-zinc-500 mt-2 font-mono">Build 1.2.0 • NSIS Installer • 64-bit</p>
               </div>
             </div>
 
             {/* macOS */}
             <div
-              onClick={() => setActiveTab('mac')}
+              onClick={() => {
+                setActiveTab('mac');
+                setActiveGuideTab('mac');
+              }}
               className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
                 activeTab === 'mac'
                   ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
@@ -620,7 +798,7 @@ export default function DownloadPage() {
                 <div className="py-3 border-y border-white/[0.06] font-mono text-[11px] space-y-1.5 text-zinc-400">
                   <div className="flex justify-between">
                     <span className="text-zinc-500">BINARY</span>
-                    <span className="text-zinc-300">Universal .dmg</span>
+                    <span className="text-zinc-300">Apple Silicon &amp; Intel</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-zinc-500">SILICON</span>
@@ -644,25 +822,38 @@ export default function DownloadPage() {
                 </ul>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-6 space-y-2">
                 <a
-                  href="#download-mac"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    toast.success('Завантаження Ghostboard Universal .dmg для macOS...');
+                  href="/api/download?os=mac-arm64"
+                  onClick={() => {
+                    toast.success('Завантаження Ghostboard для Apple Silicon (M1-M4)...');
                   }}
                   className={`${activeTab === 'mac' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download for macOS</span>
+                  <span>Download Apple Silicon (M1-M4)</span>
                 </a>
-                <p className="text-[11px] text-center text-zinc-500 mt-2 font-mono">Universal Binary • 12.8 MB</p>
+                <div className="text-center">
+                  <a
+                    href="/api/download?os=mac-intel"
+                    onClick={() => {
+                      toast.success('Завантаження Ghostboard для Intel Mac...');
+                    }}
+                    className="text-[11px] text-zinc-400 hover:text-white underline font-mono transition-colors"
+                  >
+                    Download Intel Core (x64) .dmg
+                  </a>
+                </div>
+                <p className="text-[11px] text-center text-zinc-500 font-mono">Build 1.2.0 • Notarized .dmg</p>
               </div>
             </div>
 
             {/* Linux */}
             <div
-              onClick={() => setActiveTab('linux')}
+              onClick={() => {
+                setActiveTab('linux');
+                setActiveGuideTab('linux');
+              }}
               className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
                 activeTab === 'linux'
                   ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
@@ -720,19 +911,29 @@ export default function DownloadPage() {
                 </ul>
               </div>
 
-              <div className="pt-6">
+              <div className="pt-6 space-y-2">
                 <a
-                  href="#download-linux"
-                  onClick={(e) => {
-                    e.preventDefault();
+                  href="/api/download?os=linux"
+                  onClick={() => {
                     toast.success('Завантаження Ghostboard AppImage для Linux...');
                   }}
                   className={`${activeTab === 'linux' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
                 >
                   <Download className="w-4 h-4" />
-                  <span>Download AppImage</span>
+                  <span>Download AppImage (.AppImage)</span>
                 </a>
-                <p className="text-[11px] text-center text-zinc-500 mt-2 font-mono">Linux x64 • 9.8 MB</p>
+                <div className="text-center">
+                  <a
+                    href="/api/download?os=linux-deb"
+                    onClick={() => {
+                      toast.success('Завантаження Ghostboard .deb для Ubuntu/Debian...');
+                    }}
+                    className="text-[11px] text-zinc-400 hover:text-white underline font-mono transition-colors"
+                  >
+                    Download Debian / Ubuntu (.deb)
+                  </a>
+                </div>
+                <p className="text-[11px] text-center text-zinc-500 font-mono">Build 1.2.0 • Standalone Linux x64</p>
               </div>
             </div>
           </div>
@@ -757,7 +958,7 @@ export default function DownloadPage() {
               <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3 font-mono text-xs text-zinc-400">
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>Windows (Ghostboard-Setup-1.0.0.exe)</span>
+                    <span>Windows (Ghostboard-Setup-1.2.0.exe)</span>
                     <span>SHA-256</span>
                   </div>
                   <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
@@ -767,7 +968,7 @@ export default function DownloadPage() {
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>macOS Universal (Ghostboard-1.0.0-Universal.dmg)</span>
+                    <span>macOS Apple Silicon (Ghostboard-1.2.0-arm64.dmg)</span>
                     <span>SHA-256</span>
                   </div>
                   <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
@@ -777,7 +978,7 @@ export default function DownloadPage() {
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>Linux AppImage (Ghostboard-1.0.0.AppImage)</span>
+                    <span>Linux AppImage (Ghostboard-1.2.0-x64.AppImage)</span>
                     <span>SHA-256</span>
                   </div>
                   <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
@@ -787,6 +988,239 @@ export default function DownloadPage() {
               </div>
             )}
           </div>
+        </section>
+
+        {/* First-Launch OS Security Assistant */}
+        <section className="bento-card p-6 sm:p-8 space-y-6 relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.08]">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-300 font-bold uppercase">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>{secGuide.badge}</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                {secGuide.title}
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-400 max-w-2xl leading-relaxed">
+                {secGuide.subtitle}
+              </p>
+            </div>
+
+            {/* Platform Selector Buttons */}
+            <div className="flex items-center p-1 rounded-xl bg-white/[0.04] border border-white/10 shrink-0 self-stretch sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setActiveGuideTab('win')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                  activeGuideTab === 'win'
+                    ? 'bg-white text-black font-semibold shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Laptop className="w-3.5 h-3.5" />
+                <span>Windows</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveGuideTab('mac')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                  activeGuideTab === 'mac'
+                    ? 'bg-white text-black font-semibold shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Monitor className="w-3.5 h-3.5" />
+                <span>macOS</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveGuideTab('linux')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+                  activeGuideTab === 'linux'
+                    ? 'bg-white text-black font-semibold shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5" />
+                <span>Linux</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Active Guide Content */}
+          {activeGuideTab === 'win' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-blue-950/20 border border-blue-500/20 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-mono text-blue-400 font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{secGuide.win.alertBadge}: {secGuide.win.alertTitle}</span>
+                </div>
+                <p className="text-zinc-300 leading-relaxed pl-6">
+                  {secGuide.win.alertDesc}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {secGuide.win.steps.map((s, idx) => (
+                  <div key={idx} className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] flex items-start gap-3">
+                    <span className="w-6 h-6 rounded-full bg-white/10 text-white font-mono text-xs flex items-center justify-center shrink-0 font-bold">
+                      {s.step}
+                    </span>
+                    <p className="text-xs text-zinc-200 leading-relaxed">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-zinc-400 font-mono flex items-start gap-2">
+                <span className="text-zinc-500 uppercase font-bold shrink-0">{secGuide.win.tipTitle}:</span>
+                <span>{secGuide.win.tipDesc}</span>
+              </div>
+            </div>
+          )}
+
+          {activeGuideTab === 'mac' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/20 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-mono text-amber-400 font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{secGuide.mac.alertBadge}: {secGuide.mac.alertTitle}</span>
+                </div>
+                <p className="text-zinc-300 leading-relaxed pl-6">
+                  {secGuide.mac.alertDesc}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Option 1: Finder */}
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+                  <span className="text-xs font-mono font-bold text-white block">
+                    {secGuide.mac.opt1Title}
+                  </span>
+                  <ol className="space-y-2 text-xs text-zinc-300 list-decimal pl-4 leading-relaxed font-sans">
+                    {secGuide.mac.opt1Steps.map((st, i) => (
+                      <li key={i}>{st}</li>
+                    ))}
+                  </ol>
+                </div>
+
+                {/* Option 2: 1-Click Terminal */}
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-white">
+                      {secGuide.mac.opt2Title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCommand(secGuide.mac.cmd, secGuide.mac.cmdCopyToast)}
+                      className="btn-resend-glass !py-1 !px-2.5 text-[11px] font-mono gap-1.5 cursor-pointer"
+                    >
+                      {copiedCmd === secGuide.mac.cmd ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy command</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/60 border border-white/10 font-mono text-xs text-emerald-400 select-all overflow-x-auto">
+                    <code>{secGuide.mac.cmd}</code>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 font-sans">
+                    Знімає атрибут карантину безпеки macOS для безперешкодного запуску.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-zinc-400 font-mono flex items-start gap-2">
+                <span className="text-zinc-500 uppercase font-bold shrink-0">{secGuide.mac.tipTitle}:</span>
+                <span>{secGuide.mac.tipDesc}</span>
+              </div>
+            </div>
+          )}
+
+          {activeGuideTab === 'linux' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/20 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-mono text-emerald-400 font-semibold">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{secGuide.linux.alertBadge}: {secGuide.linux.alertTitle}</span>
+                </div>
+                <p className="text-zinc-300 leading-relaxed pl-6">
+                  {secGuide.linux.alertDesc}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Step 1 */}
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-white">
+                      {secGuide.linux.step1Title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCommand(secGuide.linux.step1Cmd, 'Команду chmod скопійовано!')}
+                      className="btn-resend-glass !py-1 !px-2.5 text-[11px] font-mono gap-1.5 cursor-pointer"
+                    >
+                      {copiedCmd === secGuide.linux.step1Cmd ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy command</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/60 border border-white/10 font-mono text-xs text-emerald-400 select-all overflow-x-auto">
+                    <code>{secGuide.linux.step1Cmd}</code>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.08] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-white">
+                      {secGuide.linux.step2Title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCommand(secGuide.linux.step2Cmd, 'Команду libfuse2 скопійовано!')}
+                      className="btn-resend-glass !py-1 !px-2.5 text-[11px] font-mono gap-1.5 cursor-pointer"
+                    >
+                      {copiedCmd === secGuide.linux.step2Cmd ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy command</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/60 border border-white/10 font-mono text-xs text-emerald-400 select-all overflow-x-auto">
+                    <code>{secGuide.linux.step2Cmd}</code>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-[11px] text-zinc-400 font-mono flex items-start gap-2">
+                <span className="text-zinc-500 uppercase font-bold shrink-0">{secGuide.linux.tipTitle}:</span>
+                <span>{secGuide.linux.tipDesc}</span>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 1-Click Pairing & Phone Companion Hub */}

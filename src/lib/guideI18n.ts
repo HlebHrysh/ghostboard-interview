@@ -16,6 +16,13 @@ export interface GuideI18n {
   tabAudio: string;
   tabPsychology: string;
   tabChecklist: string;
+  // Zero-Install & Acoustic Highlights
+  zeroInstallHeroBadge?: string;
+  zeroInstallHeroTitle?: string;
+  zeroInstallHeroDesc?: string;
+  zeroInstallPill1?: string;
+  zeroInstallPill2?: string;
+  zeroInstallPill3?: string;
   // Section 1: Stealth
   eyeSecretBadge: string;
   eyeSecretTitle: string;
@@ -43,7 +50,22 @@ export interface GuideI18n {
   eyelineDesc: string;
   panicTitle: string;
   panicDesc: string;
+  pipFeatureBadge?: string;
+  pipFeatureTitle?: string;
+  pipFeatureDesc?: string;
+  pipFeatureSteps?: string[];
   // Section 2: Audio Routing
+  tabAcoustic?: string;
+  acousticBadge?: string;
+  acousticTitle?: string;
+  acousticDesc?: string;
+  acousticStep1Title?: string;
+  acousticStep1Desc?: string;
+  acousticStep2Title?: string;
+  acousticStep2Desc?: string;
+  acousticStep3Title?: string;
+  acousticStep3Desc?: string;
+  acousticTip?: string;
   tabUniversal: string;
   universalBadge: string;
   universalTitle: string;
@@ -80,6 +102,9 @@ export interface GuideI18n {
   psychRule3Desc: string;
   psychRule4Title: string;
   psychRule4Desc: string;
+  bridgeFeatureBadge?: string;
+  bridgeFeatureTitle?: string;
+  bridgeFeatureDesc?: string;
   // Section 4: Checklist
   checklistTitle: string;
   checklistReadyLabel: (checked: number, total: number) => string;
@@ -103,6 +128,12 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     tabAudio: '🎧 Захоплення звуку',
     tabPsychology: '🧠 Поведінка Senior',
     tabChecklist: '📋 Чек-лист (5 хв)',
+    zeroInstallHeroBadge: '⚡ 100% В БРАУЗЕРІ · 0 ЗАВАНТАЖЕНЬ',
+    zeroInstallHeroTitle: 'Запуск за 30 секунд на будь-якій ОС (macOS, Windows, Linux, ChromeOS)',
+    zeroInstallHeroDesc: 'Вам більше не потрібно завантажувати сторонні десктопні програми чи налаштовувати складні віртуальні аудіокабелі. Оберіть один із трьох швидких способів запуску:',
+    zeroInstallPill1: '🔊 Динаміки + Мікрофон (для будь-якого Zoom/Teams)',
+    zeroInstallPill2: '⚡ Захоплення вкладки Chrome (Google Meet / Zoom Web)',
+    zeroInstallPill3: '🪟 Always-on-Top PiP суфлер над дзвінком',
     eyeSecretBadge: 'Секрет №1: Куди спрямований погляд (Чому паляться 90% людей)',
     eyeSecretTitle: 'Телефон або другий екран має бути строго на рівні веб-камери',
     eyeSecretDesc: 'Коли суфлер розташований незручно, очі опускаються вниз, втрачаючи зоровий контакт із співрозмовником. Правильне розташування телесуфлера безпосередньо під веб-камерою допомагає зберігати природний погляд і впевнену подачу.',
@@ -140,8 +171,28 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     eyelineDesc: 'Згортає Ghostboard у тонку напівпрозору смужку вгорі екрана — прямо під вічком камери. Ви бачите обличчя інтервʼюера у вікні дзвінка, а текст підказки читається прямо біля камери.',
     panicTitle: 'Panic Shield [Esc Key]',
     panicDesc: 'Якщо інтервʼюер раптово каже: «А увімкни-но екран на хвилинку» — одне натискання [Esc] миттєво перетворює екран на звичайний консольний термінал Linux/Bash за 0.05 сек.',
-    tabUniversal: '⚡ Без програм (1 Клік)',
-    universalBadge: 'Рекомендований метод для 95% дзвінків',
+    pipFeatureBadge: 'Always-on-Top Суфлер [Новинка]',
+    pipFeatureTitle: 'Document Picture-in-Picture: плаваюче вікно над Zoom і Teams',
+    pipFeatureDesc: 'Працює у Chrome та Edge на будь-якій системі без стороннього десктопного софту. Натисніть кнопку [PiP] або відкрийте плаваючий Always-on-Top телесуфлер — він залишається поверх вікон Zoom, Teams чи CoderPad навіть тоді, коли ви клікаєте в редакторі.',
+    pipFeatureSteps: [
+      'У верхній панелі суфлера Ghostboard натисніть кнопку [PiP].',
+      'Браузер відкриє компактне плаваюче вікно Always-on-Top поверх усіх інших програм.',
+      'Перетягніть вікно суфлера безпосередньо під вічко вашої веб-камери.',
+      'Ви дивитесь прямо в очі інтервʼюеру та комфортно читаєте готові тези під час розмови.',
+    ],
+    tabAcoustic: '🔊 Динаміки (0 Програм)',
+    acousticBadge: 'Найпростіший запуск для будь-якої ОС',
+    acousticTitle: 'Акустичний режим: Звук інтервʼюера з динаміків ноутбука',
+    acousticDesc: 'Працює з абсолютно БУДЬ-ЯКИМ додатком для дзвінків (Zoom Desktop, Microsoft Teams, Slack, Telegram, Skype). Жодних віртуальних аудіокабелів (VB-Cable / BlackHole) чи драйверів встановлювати НЕ потрібно!',
+    acousticStep1Title: '1. Увімкніть звук через динаміки',
+    acousticStep1Desc: 'Зніміть навушники та налаштуйте гучність дзвінка в Zoom або Teams так, щоб ви добре чули співрозмовника з динаміків ноутбука.',
+    acousticStep2Title: '2. У Ghostboard оберіть «Мікрофон»',
+    acousticStep2Desc: 'Натисніть «ПОЧАТИ СПІВБЕСІДУ» та оберіть джерело «Мікрофон». Ghostboard захоплює звук співрозмовника прямо з динаміків через ваш вбудований мікрофон.',
+    acousticStep3Title: '3. ШІ миттєво підказує тези',
+    acousticStep3Desc: 'Deepgram Nova-3 розпізнає мову інтервʼюера за 0.3 сек, фільтрує шум, а Gemini за 1 секунду видає структуру відповіді та перший хук.',
+    acousticTip: 'Порада: Встановіть помірну гучність динаміків (50–70%), щоб мікрофон чисто чув інтервʼюера. Система автоматично відсікає луну та оптимізує розпізнавання.',
+    tabUniversal: '⚡ Вкладка (1 Клік)',
+    universalBadge: 'Рекомендований метод для Google Meet & Zoom Web',
     universalTitle: 'Пряме захоплення аудіо вкладки у браузері (Chrome / Brave / Edge)',
     universalDesc: 'Якщо дзвінок відбувається у Google Meet, Zoom Web або Teams Web, вам взагалі не потрібно встановлювати жодних сторонніх програм. Браузер перехоплює аудіопотік усередині вкладки в цифровому форматі 16kHz PCM.',
     universalStep1Title: 'Відкрийте дзвінок у вкладці',
@@ -184,6 +235,9 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     psychRule3Desc: 'Коли інтервʼюер довго пояснює або ставить додаткове запитання, натисніть [Пробіл]. Екран фіксується, відповідь не зникає і не переписується, а ви спокійно дочитуєте думку.',
     psychRule4Title: '4. Прийом «Уточнююче запитання»',
     psychRule4Desc: '«Ми оптимізуємо під Read-heavy чи Write-heavy навантаження?» — це дає вам 5 додаткових секунд, а інтервʼюер одразу ставить вам найвищий бал за архітектурний підхід.',
+    bridgeFeatureBadge: 'Гаряча клавіша [B]',
+    bridgeFeatureTitle: 'Рятівна фраза-міст (Emergency Bridge Phrase)',
+    bridgeFeatureDesc: 'Якщо інтервʼюер поставив складне чи неочікуване запитання — натисніть клавішу [B]. На екрані миттєво зʼявиться готова природна фраза-вступ (наприклад: «Цікаве архітектурне запитання, давайте розібʼємо це на ключові компроміси...»). Проговоріть її спокійним темпом — це виграє 5–8 секунд спокою, доки ШІ формує бездоганну відповідь.',
     checklistTitle: '5-хвилинний перевірочний чек-лист перед дзвінком',
     checklistReadyLabel: (checked, total) => `${checked} / ${total} виконано`,
     checklistItems: [
@@ -199,8 +253,8 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
       },
       {
         id: 3,
-        title: '3. Навушники підключені (звук дзвінка йде у вуха)',
-        desc: 'Звук інтервʼюера не грає з динаміків ноутбука, щоб уникнути луни у ваш мікрофон.',
+        title: '3. Навушники або Акустичний режим динаміків',
+        desc: 'Для захоплення вкладки Meet/Zoom використовуйте навушники. Для швидкого дзвінка в Zoom Desktop без встановлення програм — звук через динаміки та режим «Мікрофон».',
       },
       {
         id: 4,
@@ -235,6 +289,12 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     tabAudio: '🎧 Audio Routing',
     tabPsychology: '🧠 Senior Delivery',
     tabChecklist: '📋 Pre-Flight (5m)',
+    zeroInstallHeroBadge: '⚡ 100% IN-BROWSER · ZERO INSTALLATION',
+    zeroInstallHeroTitle: 'Instant 30-Second Launch on Any OS (macOS, Windows, Linux, ChromeOS)',
+    zeroInstallHeroDesc: 'No desktop apps to download, no virtual audio cables or drivers to configure. Pick the method that best fits your call setup:',
+    zeroInstallPill1: '🔊 Speakers + Mic (Any Zoom/Teams call, zero software)',
+    zeroInstallPill2: '⚡ Chrome Tab Audio (Google Meet / Zoom Web in 1 click)',
+    zeroInstallPill3: '🪟 Always-on-Top PiP Prompter above Zoom/Teams',
     eyeSecretBadge: 'Secret #1: Eye Tracking (Where 90% of Candidates Get Caught)',
     eyeSecretTitle: 'Position your smartphone or companion screen strictly at webcam level',
     eyeSecretDesc: 'When a prompter is placed awkwardly off to the side, you lose natural eye contact with the interviewer. Positioning your teleprompter directly beneath your webcam maintains direct, confident eye contact while speaking.',
@@ -272,8 +332,28 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     eyelineDesc: 'Shrinks Ghostboard into a transparent HUD bar pinned directly below your physical camera. You look at the interviewer while effortlessly reading the generated bullet points.',
     panicTitle: 'Panic Shield [Esc Key]',
     panicDesc: 'If the interviewer suddenly asks "Could you share your screen for a sec?" — pressing [Esc] instantly swaps the viewport into a real-looking Linux bash terminal within 0.05s.',
-    tabUniversal: '⚡ Zero Software (1-Click)',
-    universalBadge: 'Recommended zero-driver method for 95% of calls',
+    pipFeatureBadge: 'Always-on-Top Prompter [New]',
+    pipFeatureTitle: 'Document Picture-in-Picture: Floating Prompter over Zoom & Teams',
+    pipFeatureDesc: 'Runs natively in Chrome and Edge across macOS, Windows, and Linux. Click [PiP] to pop out an Always-on-Top floating teleprompter that stays pinned above Zoom, Teams, or VS Code even when typing.',
+    pipFeatureSteps: [
+      'Click the [PiP] button in the Ghostboard teleprompter header or press the shortcut.',
+      'A compact Always-on-Top floating window opens above all desktop applications.',
+      'Position the PiP window directly under your webcam lens.',
+      'Maintain 100% natural eye contact with the interviewer while reading AI bullet points.',
+    ],
+    tabAcoustic: '🔊 Speakers (0 Downloads)',
+    acousticBadge: 'Easiest Zero-Download Setup for Any OS',
+    acousticTitle: 'Acoustic Mode: Capture Interviewer from Laptop Speakers',
+    acousticDesc: 'Works with ANY desktop calling app (Zoom Desktop Client, Microsoft Teams, Slack, Telegram, Webex). No VB-Audio Virtual Cable, no BlackHole, no drivers required!',
+    acousticStep1Title: '1. Play Meeting Audio via Laptop Speakers',
+    acousticStep1Desc: 'Unplug headphones and set meeting volume to comfortable room level (50–70%) so you clearly hear the interviewer from your speakers.',
+    acousticStep2Title: '2. Select Microphone in Ghostboard',
+    acousticStep2Desc: 'Hit «START INTERVIEW» and choose «Microphone». Ghostboard captures the interviewer voice from speakers via your laptop mic.',
+    acousticStep3Title: '3. Instant Talking Points via AI',
+    acousticStep3Desc: 'Deepgram Nova-3 transcribes speaker audio with 98% accuracy, and Gemini generates your thesis points and verbal hooks in under 1 second.',
+    acousticTip: 'Pro Tip: Keep speaker volume moderate to prevent room echo. The system automatically normalizes audio streams.',
+    tabUniversal: '⚡ Browser Tab (1-Click)',
+    universalBadge: 'Recommended zero-driver method for Google Meet & Zoom Web',
     universalTitle: 'Direct In-Browser Tab Audio Capture (Chrome / Brave / Edge)',
     universalDesc: 'If your call is running in Google Meet, Zoom Web, or Teams Web, you do not need any third-party drivers or software. Chrome extracts crystal-clear 16kHz PCM stream directly from the audio tab.',
     universalStep1Title: 'Open Call in Browser Tab',
@@ -316,6 +396,9 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
     psychRule3Desc: 'When the interviewer speaks at length or provides caveats, press [Space]. The answer card freezes in place while Deepgram continues listening silently in the background.',
     psychRule4Title: '4. The Clarifying Question Trick',
     psychRule4Desc: '"Are we optimizing for a read-heavy or write-heavy workload?" — this grants 5 extra seconds while demonstrating proactive Senior-level requirements gathering.',
+    bridgeFeatureBadge: 'HotKey [B]',
+    bridgeFeatureTitle: 'Emergency Bridge Phrase',
+    bridgeFeatureDesc: 'Hit [B] at any moment to display an immediate, natural Senior conversational bridge ("That is a solid architectural challenge, let me break that down into core trade-offs..."). Buy yourself 5–8 seconds of composure while the copilot finishes the detailed response.',
     checklistTitle: '5-Minute Pre-Flight Readiness Checklist',
     checklistReadyLabel: (checked, total) => `${checked} / ${total} ready`,
     checklistItems: [
@@ -331,8 +414,8 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
       },
       {
         id: 3,
-        title: '3. Headphones plugged in (call audio in ears)',
-        desc: 'Interviewer audio routes to headphones to prevent acoustic echo back into mic.',
+        title: '3. Headphones or Acoustic Speaker Mode',
+        desc: 'For Google Meet tab capture, headphones are ideal. For zero-install Zoom/Teams desktop calls, use laptop speakers and microphone mode.',
       },
       {
         id: 4,
@@ -1415,5 +1498,9 @@ export const GUIDE_I18N: Record<SupportedLocale, GuideI18n> = {
 };
 
 export function getGuideTranslations(locale: SupportedLocale): GuideI18n {
-  return GUIDE_I18N[locale] || GUIDE_I18N.en;
+  const current = GUIDE_I18N[locale] || GUIDE_I18N.en;
+  return {
+    ...GUIDE_I18N.en,
+    ...current,
+  };
 }

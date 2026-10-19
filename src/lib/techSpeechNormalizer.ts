@@ -1,15 +1,16 @@
 /**
  * Comprehensive Python & Backend Technical Speech Normalizer.
  * Maps phonetic transcriptions, Cyrillic developer slang, and misheard audio
- * to exact industry-standard technical terms.
+ * to exact industry-standard technical terms without recursive regex cascade corruption.
  */
 
 const PHONETIC_RULES: Array<[RegExp, string]> = [
   // ── Core Python Internals & Concepts ────────────────────────────────
   [/(?<![\p{L}\p{N}])(джил|гил|глобал[\s-]*интерпретер[\s-]*лок|г[\s.]*и[\s.]*л)(?![\p{L}\p{N}])/giu, 'GIL (Global Interpreter Lock)'],
   [/(?<![\p{L}\p{N}])(эм[\s-]*эр[\s-]*о|мро|м[\s.]*р[\s.]*о)(?![\p{L}\p{N}])/giu, 'MRO (Method Resolution Order / C3 Linearization)'],
-  [/(?<![\p{L}\p{N}])(дандер[\s-]*методи|дандер[\s-]*методы|магические[\s-]*методы|магічні[\s-]*методи)(?![\p{L}\p{N}])/giu, 'Dunder methods (__init__, __call__, __repr__)'],
   [/(?<![\p{L}\p{N}])(дандер[\s-]*слотс|слотс|__slots__)(?![\p{L}\p{N}])/giu, '__slots__ (Memory Optimization)'],
+  [/(?<![\p{L}\p{N}])(дандер(?:[а-яіїєґ]{0,3})?(?:[\s-]*(?:методи|методы|метод[а-яіїєґ]*))?|магические[\s-]*методы|магічні[\s-]*методи)(?![\p{L}\p{N}])/giu, 'Dunder methods (__init__, __call__, __repr__)'],
+  [/(?<![\p{L}\p{N}])(пайтон[а-яіїєґ]*|пітон[а-яіїєґ]*|python)(?![\p{L}\p{N}])/giu, 'Python'],
   [/(?<![\p{L}\p{N}])(гарбидж[\s-]*коллектор|збирач[\s-]*сміття|сборщик[\s-]*мусора|референс[\s-]*каунтинг|підрахунок[\s-]*посилань)(?![\p{L}\p{N}])/giu, 'Garbage Collector & Reference Counting'],
   [/(?<![\p{L}\p{N}])(генератор[иів]*|генераторы|итератор[ыов]*|ітератор[иів]*|йілд|елд|yield)(?![\p{L}\p{N}])/giu, 'Generators & Iterators (yield)'],
   [/(?<![\p{L}\p{N}])(декоратор[иів]*|декораторы)(?![\p{L}\p{N}])/giu, 'Decorators (functools.wraps)'],
@@ -19,25 +20,25 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
   [/(?<![\p{L}\p{N}])(датаклас[иів]*|датаклассы|dataclass)(?![\p{L}\p{N}])/giu, 'dataclass'],
   [/(?<![\p{L}\p{N}])(мультипроцесінг|мультипроцессинг)(?![\p{L}\p{N}])/giu, 'Multiprocessing (ProcessPoolExecutor)'],
   [/(?<![\p{L}\p{N}])(тредінг|трединг|многопоточность|багатопотоковість)(?![\p{L}\p{N}])/giu, 'Threading (ThreadPoolExecutor)'],
-  [/(?<![\p{L}\p{N}])(пайтест|пайтесті|pytest)(?![\p{L}\p{N}])/giu, 'pytest'],
+  [/(?<![\p{L}\p{N}])(пайтесті|пайтест|pytest)(?![\p{L}\p{N}])/giu, 'pytest'],
   [/(?<![\p{L}\p{N}])(фікстур[иа]|фикстур[ыа])(?![\p{L}\p{N}])/giu, 'pytest fixtures'],
   [/(?<![\p{L}\p{N}])(мокі|моки|манкіпатч|манкипатч|mock|monkeypatch)(?![\p{L}\p{N}])/giu, 'unittest.mock & monkeypatch'],
   [/(?<![\p{L}\p{N}])(профайлінг|профайлинг|сіпрофайл|cProfile)(?![\p{L}\p{N}])/giu, 'cProfile (Profiling)'],
   [/(?<![\p{L}\p{N}])(поетрі|поэтри|poetry|uv|рафф|ruff)(?![\p{L}\p{N}])/giu, 'Poetry / uv (Package Manager)'],
 
-  // ── Asyncio & Concurrency ───────────────────────────────────────────
-  [/(?<![\p{L}\p{N}])(асінк[\s-]*авейт|асинк[\s-]*авейт|асинк|асінк)(?![\p{L}\p{N}])/giu, 'Asyncio (async/await)'],
+  // ── Asyncio & Concurrency (Specific / Compounds FIRST) ──────────────
+  [/(?<![\p{L}\p{N}])(газер|гезер|асинк[\s-]*газер|asyncio\.gather)(?![\p{L}\p{N}])/giu, 'asyncio.gather'],
+  [/(?<![\p{L}\p{N}])(таск[\s-]*груп|asyncio\.TaskGroup)(?![\p{L}\p{N}])/giu, 'asyncio.TaskGroup'],
+  [/(?<![\p{L}\p{N}])(асінк[\s-]*авейт|асинк[\s-]*авейт|(?:асін[кц]|асин[кц])[а-яіїєґ]*)(?![\p{L}\p{N}])/giu, 'Asyncio (async/await)'],
   [/(?<![\p{L}\p{N}])(івент[\s-]*луп|івентлуп|евент[\s-]*луп|эвент[\s-]*луп)(?![\p{L}\p{N}])/giu, 'Event Loop (asyncio)'],
   [/(?<![\p{L}\p{N}])(корутин[иаы]|таск[иаы]|фьючерс[иы]?|future)(?![\p{L}\p{N}])/giu, 'Coroutine / Task / Future'],
   [/(?<![\p{L}\p{N}])(семафор[иы]?|мютекс[иы]?|лок[иы]?|lock)(?![\p{L}\p{N}])/giu, 'asyncio.Semaphore / Lock'],
-  [/(?<![\p{L}\p{N}])(газер|гезер|асинк[\s-]*газер|asyncio\.gather)(?![\p{L}\p{N}])/giu, 'asyncio.gather'],
-  [/(?<![\p{L}\p{N}])(таск[\s-]*груп|asyncio\.TaskGroup)(?![\p{L}\p{N}])/giu, 'asyncio.TaskGroup'],
 
-  // ── Web Frameworks & API ────────────────────────────────────────────
+  // ── Web Frameworks & API (DRF BEFORE Django) ────────────────────────
+  [/(?<![\p{L}\p{N}])(д[\s.]*р[\s.]*ф|дрф|джанго[\s-]*рест[а-яіїєґ]*|джанґо[\s-]*рест[а-яіїєґ]*)(?![\p{L}\p{N}])/giu, 'DRF (Django REST Framework)'],
+  [/(?<![\p{L}\p{N}])(джанго|джанґо|джангі)[а-яіїєґ]*(?![\p{L}\p{N}])/giu, 'Django'],
   [/(?<![\p{L}\p{N}])(фаст[\s-]*апі|фастапі|фаст[\s-]*апи|фастапи|fast[\s-]*api)(?![\p{L}\p{N}])/giu, 'FastAPI'],
-  [/(?<![\p{L}\p{N}])(старлет|старлетт|starlette)(?![\p{L}\p{N}])/giu, 'Starlette'],
-  [/(?<![\p{L}\p{N}])(джанго|джанґо|джангі)(?![\p{L}\p{N}])/giu, 'Django'],
-  [/([\s-]|^)(д[\s.]*р[\s.]*ф|дрф|джанго[\s-]*рест)([\s-]|$)/giu, ' DRF (Django REST Framework) '],
+  [/(?<![\p{L}\p{N}])(старлетт|старлет|starlette)(?![\p{L}\p{N}])/giu, 'Starlette'],
   [/(?<![\p{L}\p{N}])(підантік|пайдантік|пайдантик|пудантик|пайдентик|пайдантек)(?![\p{L}\p{N}])/giu, 'Pydantic v2'],
   [/(?<![\p{L}\p{N}])(ювікорн|ювикорн|увикорн|uvicorn)(?![\p{L}\p{N}])/giu, 'Uvicorn'],
   [/(?<![\p{L}\p{N}])(гунікорн|гуникорн|gunicorn)(?![\p{L}\p{N}])/giu, 'Gunicorn'],
@@ -47,12 +48,13 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
   [/(?<![\p{L}\p{N}])(мідлвара|мідлварі|мидлварь|мидлвары|миддлвар)(?![\p{L}\p{N}])/giu, 'Middleware'],
   [/(?<![\p{L}\p{N}])(лайфспен|лайфспан|lifespan)(?![\p{L}\p{N}])/giu, 'Lifespan context manager'],
 
-  // ── Databases, SQL & ORM ────────────────────────────────────────────
+  // ── Databases, SQL & ORM (SQLAlchemy BEFORE generic SQL) ────────────
+  [/(?<![\p{L}\p{N}])(склалхімі[яї]|склалхимия|алхімія|алхимия|ескуель[\s-]*алхімія)(?![\p{L}\p{N}])/giu, 'SQLAlchemy 2.0'],
   [/(?<![\p{L}\p{N}])(но[\s-]*ес[\s-]*ку[\s-]*ель|ноу[\s-]*ес[\s-]*ку[\s-]*ель|ноу[\s-]*сиквел|но[\s-]*сиквел|ноускл|носкл|nosql)(?![\p{L}\p{N}])/giu, 'NoSQL'],
   [/(?<![\p{L}\p{N}])(ес[\s-]*ку[\s-]*ель|эс[\s-]*кью[\s-]*эль|сіквел|сиквел|скуэль|ескуель|sq[\s-]*l)(?![\p{L}\p{N}])/giu, 'SQL'],
-  [/(?<![\p{L}\p{N}])(постгрес(кюель)?|посгрес|постгре|постгрі|постгріс)(?![\p{L}\p{N}])/giu, 'PostgreSQL'],
-  [/(?<![\p{L}\p{N}])(склалхімі[яї]|склалхимия|алхімія|алхимия|ескуель[\s-]*алхімія)(?![\p{L}\p{N}])/giu, 'SQLAlchemy 2.0'],
-  [/(?<![\p{L}\p{N}])(алембік|алембик|міграці[їя]|миграци[ия])(?![\p{L}\p{N}])/giu, 'Alembic (Migrations)'],
+  [/(?<![\p{L}\p{N}])(postgres(?:ql)?|постгрес(?:кюель)?|посгрес|постгріс|постгрі|постгре)[а-яіїєґa-z]*(?![\p{L}\p{N}])/giu, 'PostgreSQL'],
+  [/(?<![\p{L}\p{N}])(мвцц|м[\s.]*в[\s.]*ц[\s.]*ц|mvcc)(?![\p{L}\p{N}])/giu, 'MVCC (Multi-Version Concurrency Control)'],
+  [/(?<![\p{L}\p{N}])(алембік[а-яіїєґ]*|алембик[а-яіїєґ]*|міграці[а-яіїєґ]*|миграци[а-яіїєґ]*)(?![\p{L}\p{N}])/giu, 'Alembic (Migrations)'],
   [/(?<![\p{L}\p{N}])(б[\s-]*трі|бі[\s-]*трі|б[\s-]*дерево|б[\s-]*три|би[\s-]*три)(?![\p{L}\p{N}])/giu, 'B-Tree Index'],
   [/(?<![\p{L}\p{N}])(джін[\s-]*індекс|гин[\s-]*индекс|gin[\s-]*index)(?![\p{L}\p{N}])/giu, 'GIN Index'],
   [/(?<![\p{L}\p{N}])(гіст[\s-]*індекс|гист[\s-]*индекс|gist[\s-]*index)(?![\p{L}\p{N}])/giu, 'GiST Index'],
@@ -75,11 +77,13 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
   [/(?<![\p{L}\p{N}])(джоін[иів]*|джойн[ыов]*)(?![\p{L}\p{N}])/giu, 'SQL JOIN (INNER, LEFT, FULL)'],
   [/(?<![\p{L}\p{N}])(о[\s.]*р[\s.]*м|орм)(?![\p{L}\p{N}])/giu, 'ORM'],
 
-  // ── Queues, Caching & Events ────────────────────────────────────────
-  [/(?<![\p{L}\p{N}])(селері|селери|селлери|целери)(?![\p{L}\p{N}])/giu, 'Celery'],
-  [/(?<![\p{L}\p{N}])(редіс|редис)(?![\p{L}\p{N}])/giu, 'Redis (In-memory Data Store & Cache)'],
-  [/(?<![\p{L}\p{N}])(раббіт|ребіт|реббіт[\s-]*емкю|rabbitmq)(?![\p{L}\p{N}])/giu, 'RabbitMQ'],
-  [/(?<![\p{L}\p{N}])(кафка|kafka)(?![\p{L}\p{N}])/giu, 'Kafka'],
+  // ── Queues, Caching & Events (Palatalization on Kafka) ────────────────
+  [/(?<![\p{L}\p{N}])(селері|селери|селлери|целери|celery|seleri)[а-яіїєґa-z]*(?![\p{L}\p{N}])/giu, 'Celery'],
+  [/(?<![\p{L}\p{N}])(редіс|редис|redis)[а-яіїєґa-z]*(?![\p{L}\p{N}])/giu, 'Redis (In-memory Data Store & Cache)'],
+  [/(?<![\p{L}\p{N}])(реббіт[\s-]*емкю|раббіт[а-яіїєґ]*|ребіт[а-яіїєґ]*|rabbitmq)(?![\p{L}\p{N}])/giu, 'RabbitMQ'],
+  [/(?<![\p{L}\p{N}])(кафк[а-яіїєґ]*|кафц[іе][а-яіїєґ]*|kafka)(?![\p{L}\p{N}])/giu, 'Kafka'],
+  [/(?<![\p{L}\p{N}])(лру[\s-]*кеш[а-яіїєґ]*|лру|lru[\s-]*cache|lru)(?![\p{L}\p{N}])/giu, 'LRU Cache'],
+  [/(?<![\p{L}\p{N}])(ордерд[\s-]*дікт[а-яіїєґ]*|ордерд[\s-]*дикт[а-яіїєґ]*|ordereddict|ordered[\s-]*dict)(?![\p{L}\p{N}])/giu, 'OrderedDict'],
   [/(?<![\p{L}\p{N}])(брокер[\s-]*повідомлень|message[\s-]*broker)(?![\p{L}\p{N}])/giu, 'Message Broker (RabbitMQ / Redis)'],
   [/(?<![\p{L}\p{N}])(дед[\s-]*леттер[\s-]*кью|длк|dlq)(?![\p{L}\p{N}])/giu, 'DLQ (Dead Letter Queue)'],
   [/(?<![\p{L}\p{N}])(інвалідація[\s-]*кешу|инвалидация[\s-]*кеша|cache[\s-]*invalidation)(?![\p{L}\p{N}])/giu, 'Cache Invalidation'],
@@ -105,16 +109,16 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
   [/(?<![\p{L}\p{N}])(корс[иы]?|cors)(?![\p{L}\p{N}])/giu, 'CORS (Cross-Origin Resource Sharing)'],
   [/(?<![\p{L}\p{N}])(ксрф|csrf)(?![\p{L}\p{N}])/giu, 'CSRF Protection'],
 
-  // ── DevOps, Linux & Deploy ──────────────────────────────────────────
-  [/(?<![\p{L}\p{N}])(докер|докер[\s-]*компоуз|докер[\s-]*композ)(?![\p{L}\p{N}])/giu, 'Docker & Docker Compose'],
+  // ── DevOps, Linux & Deploy (Multi-stage BEFORE Docker, Inflections on Docker/Terraform/Helm) ──
   [/(?<![\p{L}\p{N}])(мультистейдж[\s-]*білд|multi[\s-]*stage)(?![\p{L}\p{N}])/giu, 'Multi-stage Docker Build'],
-  [/(?<![\p{L}\p{N}])(кубернетіс|кубернетес|кубер|k8s)(?![\p{L}\p{N}])/giu, 'Kubernetes (k8s)'],
-  [/(?<![\p{L}\p{N}])(енджінікс|енджінкс|нжінкс|энджинкс|нгинкс|nginx)(?![\p{L}\p{N}])/giu, 'Nginx (Reverse Proxy)'],
+  [/(?<![\p{L}\p{N}])(докер[\s-]*компоуз[а-яіїєґ]*|докер[\s-]*композ[а-яіїєґ]*|докер[а-яіїєґ]*)(?![\p{L}\p{N}])/giu, 'Docker & Docker Compose'],
+  [/(?<![\p{L}\p{N}])(кубернетіс[а-яіїєґ]*|кубернетес[а-яіїєґ]*|кубер[а-яіїєґ]*|k8s)(?![\p{L}\p{N}])/giu, 'Kubernetes (k8s)'],
+  [/(?<![\p{L}\p{N}])(енджінікс[а-яіїєґ]*|енджінкс[а-яіїєґ]*|нжінкс[а-яіїєґ]*|энджинкс[а-яіїєґ]*|нгинкс[а-яіїєґ]*|nginx)(?![\p{L}\p{N}])/giu, 'Nginx (Reverse Proxy)'],
   [/(?<![\p{L}\p{N}])(сіай[\s/]*сіді|сиай[\s/]*сиди|генерація[\s-]*екшенів)(?![\p{L}\p{N}])/giu, 'CI/CD (GitHub Actions)'],
-  [/(?<![\p{L}\p{N}])(терраформ|тераформ|terraform)(?![\p{L}\p{N}])/giu, 'Terraform'],
-  [/(?<![\p{L}\p{N}])(хельм|хелм|helm)(?![\p{L}\p{N}])/giu, 'Helm'],
-  [/(?<![\p{L}\p{N}])(прометеус|прометей|графана|prometheus|grafana)(?![\p{L}\p{N}])/giu, 'Prometheus & Grafana'],
-  [/(?<![\p{L}\p{N}])(сентрі|сентри|sentry)(?![\p{L}\p{N}])/giu, 'Sentry (Error Tracking)'],
+  [/(?<![\p{L}\p{N}])(терраформ[а-яіїєґ]*|тераформ[а-яіїєґ]*|terraform)(?![\p{L}\p{N}])/giu, 'Terraform'],
+  [/(?<![\p{L}\p{N}])(хельм[а-яіїєґ]*|хелм[а-яіїєґ]*|helm)(?![\p{L}\p{N}])/giu, 'Helm'],
+  [/(?<![\p{L}\p{N}])(прометеус[а-яіїєґ]*|промете[йяеє][а-яіїєґ]*|графан[а-яіїєґ]*|prometheus|grafana)(?![\p{L}\p{N}])/giu, 'Prometheus & Grafana'],
+  [/(?<![\p{L}\p{N}])(сентрі[а-яіїєґ]*|сентри[а-яіїєґ]*|sentry)(?![\p{L}\p{N}])/giu, 'Sentry (Error Tracking)'],
 
   // ── Frontend & Fullstack (React, Vue, Angular, TS) ───────────────────
   [/(?<![\p{L}\p{N}])(реакт|ріект|react)(?![\p{L}\p{N}])/giu, 'React'],
@@ -143,9 +147,9 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
   [/(?<![\p{L}\p{N}])(лінк|линку|linq)(?![\p{L}\p{N}])/giu, 'LINQ'],
   [/(?<![\p{L}\p{N}])(ентіті[\s-]*фреймворк|ef[\s-]*core)(?![\p{L}\p{N}])/giu, 'Entity Framework Core'],
 
-  // ── Mobile (iOS, Android, Flutter) ───────────────────────────────────
-  [/(?<![\p{L}\p{N}])(свіфт|свифт|swift)(?![\p{L}\p{N}])/giu, 'Swift'],
+  // ── Mobile (SwiftUI BEFORE Swift, Jetpack Compose BEFORE Compose) ────
   [/(?<![\p{L}\p{N}])(свіфтюай|свифтюи|swiftui)(?![\p{L}\p{N}])/giu, 'SwiftUI'],
+  [/(?<![\p{L}\p{N}])(свіфт[а-яіїєґ]*|свифт[а-яіїєґ]*|swift)(?![\p{L}\p{N}])/giu, 'Swift'],
   [/(?<![\p{L}\p{N}])(котлін|котлин|kotlin)(?![\p{L}\p{N}])/giu, 'Kotlin'],
   [/(?<![\p{L}\p{N}])(джетпак[\s-]*компоуз|компоуз|jetpack[\s-]*compose)(?![\p{L}\p{N}])/giu, 'Jetpack Compose'],
   [/(?<![\p{L}\p{N}])(флаттер|флатер|flutter)(?![\p{L}\p{N}])/giu, 'Flutter (Dart)'],
@@ -164,24 +168,43 @@ const PHONETIC_RULES: Array<[RegExp, string]> = [
 ];
 
 function cleanForeignDiacritics(str: string): string {
-  // Strip stray Polish / Scandinavian / Czech diacritics hallucinated by multi-language STT
+  // Strip stray Polish / Scandinavian / Czech / French diacritics on Latin letters
+  // while strictly preserving Cyrillic letters (e.g. й, ї, є, ё)
   return str
-    .replace(/[ęë]/gi, 'e')
-    .replace(/[ąàá]/gi, 'a')
-    .replace(/[øöòóô]/gi, 'o')
+    .replace(/[a-zA-Z\u00C0-\u024F]+/g, (word) =>
+      word.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    )
     .replace(/[ł]/gi, 'l')
-    .replace(/[żź]/gi, 'z')
-    .replace(/[ś]/gi, 's')
-    .replace(/[ć]/gi, 'c')
-    .replace(/[ń]/gi, 'n');
+    .replace(/[ø]/gi, 'o')
+    .replace(/[ß]/gi, 'ss');
 }
 
+/**
+ * Normalizes technical speech and spoken developer slang into canonical technical terminology.
+ * Uses an opaque sentinel placeholder substitution model to eliminate recursive regex cascade
+ * collisions where expanded replacement terms (e.g. "Lock" in "GIL (Global Interpreter Lock)")
+ * are inadvertently re-matched by subsequent phonetic rules.
+ */
 export function normalizeTechnicalSpeech(text: string): string {
   if (!text || typeof text !== 'string') return text;
-  let normalized = cleanForeignDiacritics(text);
+  // Clean diacritics and strip any raw sentinel tokens
+  let normalized = cleanForeignDiacritics(text).replace(/[\uE000\uE001]/g, '');
+  const sentinels: string[] = [];
+
   for (const [pattern, replacement] of PHONETIC_RULES) {
-    normalized = normalized.replace(pattern, replacement);
+    pattern.lastIndex = 0;
+    normalized = normalized.replace(pattern, () => {
+      const idx = sentinels.length;
+      sentinels.push(replacement);
+      return `\uE000${idx}\uE001`;
+    });
   }
+
+  // Restore sentinels in a single non-recursive terminal substitution
+  if (sentinels.length > 0) {
+    normalized = normalized.replace(/\uE000(\d+)\uE001/g, (_, idx) => sentinels[Number(idx)]);
+  }
+
   return normalized;
 }
 
@@ -216,13 +239,13 @@ export function hasTechnicalKeyword(text: string): boolean {
     'alembic', 'алембік', 'алембик', 'міграц', 'миграц', 'orm', 'sqlalchemy', 'алхімі', 'алхими',
     'python', 'пайтон', 'пітон', 'питон', 'fastapi', 'фастапі', 'фастапи', 'django', 'джанго', 'drf',
     'pydantic', 'пайдантік', 'пайдантик', 'uvicorn', 'gunicorn', 'asgi', 'wsgi', 'lifespan',
-    'asyncio', 'async', 'await', 'асинк', 'асінк', 'event loop', 'івент луп', 'евент луп', 'корутин',
+    'asyncio', 'async', 'await', 'асинк', 'асінк', 'асінц', 'асинц', 'event loop', 'івент луп', 'евент луп', 'корутин',
     'gil', 'джил', 'гил', 'mro', 'dunder', 'дандер', 'slots', 'слотс', 'garbage collector', 'збирач сміття',
     'yield', 'генератор', 'ітератор', 'итератор', 'декоратор', 'context manager', 'контекстний',
-    'celery', 'селері', 'селери', 'redis', 'редіс', 'редис', 'rabbitmq', 'раббіт', 'ребіт', 'kafka', 'кафка',
-    'брокер', 'черг', 'очеред', 'кеш', 'cache', 'rate limit', 'рейт ліміт',
+    'celery', 'селері', 'селери', 'redis', 'редіс', 'редис', 'rabbitmq', 'раббіт', 'ребіт', 'kafka', 'кафка', 'кафц',
+    'брокер', 'черг', 'очеред', 'кеш', 'cache', 'rate limit', 'рейт ліміт', 'mvcc', 'мвцц', 'lru', 'лру', 'ordereddict', 'ордерд дікт',
     'docker', 'докер', 'compose', 'компоуз', 'kubernetes', 'кубер', 'k8s', 'nginx', 'енджінікс',
-    'terraform', 'терраформ', 'helm', 'хельм',
+    'terraform', 'терраформ', 'тераформ', 'helm', 'хельм',
     'react', 'реакт', 'next', 'некст', 'vue', 'angular', 'ангуляр', 'typescript', 'тайпскрипт',
     'hook', 'хук', 'useeffect', 'usestate', 'virtual dom', 'redux', 'редакс', 'zustand', 'tailwind',
     'node', 'нода', 'nestjs', 'нест', 'prisma', 'прізма',
@@ -385,4 +408,3 @@ export function isolateTargetQuestionHeuristics(rawText: string): ExtractedQuest
     hasTransitionMarker: false,
   };
 }
-

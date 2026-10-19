@@ -1,5 +1,6 @@
 'use client';
 
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -37,15 +38,14 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
 
   const navLinks = [
     { href: '/#features', label: t.nav.features },
-    { href: '/download', label: '⚡ Desktop App' },
-    { href: '/mock-interview', label: t.nav.mockSimulator },
-    { href: '/sandbox', label: t.nav.arena },
+    { href: '/download', label: 'Desktop App' },
+    { href: '/mock-interview', label: t.nav.arena },
     { href: '/pricing', label: t.nav.pricing },
     { href: '/guide', label: t.nav.guide },
   ];
 
   return (
-    <nav className="sticky top-0 left-0 right-0 z-50 px-3 sm:px-8 py-2.5 sm:py-3 bg-black/40 backdrop-blur-2xl select-none">
+    <nav className="sticky top-0 left-0 right-0 z-50 px-3 sm:px-8 py-2.5 sm:py-3 bg-black/90 backdrop-blur-xl border-b border-white/[0.08] select-none">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-2 sm:gap-2.5 group cursor-pointer flex-shrink-0">
@@ -88,6 +88,8 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
             <Sliders className="w-3.5 h-3.5 text-zinc-400" />
             <span>{t.nav.settings}</span>
           </Link>
+
+          <ThemeToggle />
 
           {/* Account / Profile */}
           {currentUser ? (

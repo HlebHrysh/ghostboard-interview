@@ -13,7 +13,7 @@ export const SpotlightCard: React.FC<SpotlightCardProps> = ({
   children,
   className = '',
   glowColor = 'rgba(196,181,253, 0.35)',
-  enableTilt = false,
+  enableTilt = true,
   ...props
 }) => {
   const cardRef = useRef<HTMLDivElement>(null);

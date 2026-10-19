@@ -42,16 +42,12 @@ export function GhostDetective3D({ className }: { className?: string } = {}) {
         className="relative w-full h-full flex items-center justify-center"
       >
         <Image
-          src="/hero-ghost.jpg"
+          src="/hero-ghost.png"
           alt="Ghostboard Cowboy Ghost"
           width={800}
           height={800}
           priority
-          className="w-auto h-full object-contain max-h-[110%] mix-blend-screen drop-shadow-2xl"
-          style={{
-            maskImage: 'radial-gradient(circle at center, black 50%, transparent 80%)',
-            WebkitMaskImage: 'radial-gradient(circle at center, black 50%, transparent 80%)'
-          }}
+          className="w-auto h-full object-contain max-h-[110%] drop-shadow-[0_20px_50px_rgba(255,255,255,0.12)] filter"
         />
       </motion.div>
     </div>

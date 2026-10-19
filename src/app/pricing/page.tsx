@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { UnifiedNavbar } from "@/components/ui/UnifiedNavbar";
 import { UnifiedFooter } from "@/components/ui/UnifiedFooter";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
-import { SpotlightCard } from "@/components/ui/SpotlightCard";
+import { GravitationalCard } from "@/components/singularity/GravitationalCard";
 import { MonochromeStripesCanvas } from "@/components/ui/MonochromeStripesCanvas";
 import { LuminousBorderCard } from "@/components/ui/LuminousBorderCard";
 import { detectInitialLang, detectGeoCountryLang, type SupportedLocale } from "@/lib/geoLang";
@@ -51,6 +51,7 @@ export default function PricingPage() {
 
   React.useEffect(() => {
     const initial = detectInitialLang();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setRegion(initial === "ua" ? "ua" : "global");
 
     detectGeoCountryLang((lang) => {
@@ -186,7 +187,7 @@ export default function PricingPage() {
           {/* 3 Tier Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-24 items-stretch">
             {/* Card 1: Free Trial */}
-            <div className="bento-card p-6 sm:p-8 flex flex-col justify-between">
+            <GravitationalCard className="p-6 sm:p-8" contentClassName="flex h-full flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-mono text-zinc-500 uppercase tracking-wider font-semibold">{p.plans.free.subtitle}</span>
@@ -215,7 +216,7 @@ export default function PricingPage() {
                   {locale === 'ua' ? '(Без картки)' : '(No Card)'}
                 </span>
               </Link>
-            </div>
+            </GravitationalCard>
 
             {/* Card 2: Pro Pass with Luminous Border Card */}
             <LuminousBorderCard animated={true} badge={t.pricing.proBadge} className="h-full">
@@ -269,7 +270,7 @@ export default function PricingPage() {
             </LuminousBorderCard>
 
             {/* Card 3: Lifetime Founder Pass */}
-            <div className="bento-card p-6 sm:p-8 flex flex-col justify-between relative border-white/20">
+            <GravitationalCard className="p-6 sm:p-8 !overflow-visible" ignited={true} contentClassName="flex h-full flex-col justify-between">
               <div className="absolute -top-3.5 right-6 bg-white text-black text-[10px] font-mono font-bold px-3 py-1 rounded-full uppercase tracking-wider shadow-[0_0_15px_rgba(255,255,255,0.3)]">
                 {p.plans.life.popular || "Founder Pass"}
               </div>
@@ -300,11 +301,11 @@ export default function PricingPage() {
               <button
                 onClick={() => handleCheckout(region === "ua" ? "lifetime_ua" : "lifetime_global")}
                 disabled={loadingPlan?.startsWith("lifetime")}
-                className="btn-resend-glass text-xs font-mono py-3 w-full justify-center !text-white border-white/20 hover:border-white/40 hover:bg-white/10"
+                className="btn-resend-glass text-xs font-mono py-3 w-full justify-center border-white/20 hover:border-white/40 hover:bg-white/10 cursor-pointer"
               >
                 {loadingPlan?.startsWith("lifetime") ? "..." : t.pricing.lifeCta}
               </button>
-            </div>
+            </GravitationalCard>
           </div>
 
           {/* Feature Matrix */}

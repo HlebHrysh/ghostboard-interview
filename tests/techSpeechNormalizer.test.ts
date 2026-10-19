@@ -52,6 +52,26 @@ describe("techSpeechNormalizer", () => {
       expect(normalizeTechnicalSpeech("фастапі")).toContain("FastAPI");
       expect(normalizeTechnicalSpeech("джанго")).toContain("Django");
     });
+
+    it("handles standalone 'дандер' and case inflections without requiring 'методи'", () => {
+      expect(normalizeTechnicalSpeech("Що таке дандер?")).toContain("Dunder methods");
+      expect(normalizeTechnicalSpeech("розкажи про дандери")).toContain("Dunder methods");
+      expect(normalizeTechnicalSpeech("дандер init")).toContain("Dunder methods");
+    });
+
+    it("handles common Slavic noun declensions and inflections", () => {
+      expect(normalizeTechnicalSpeech("ми підключаємо кафку")).toContain("Kafka");
+      expect(normalizeTechnicalSpeech("з постгресом працюємо через orm")).toContain("PostgreSQL");
+      expect(normalizeTechnicalSpeech("наскільки швидка асінка в python")).toContain("Asyncio");
+      expect(normalizeTechnicalSpeech("розгорнуто в кубері")).toContain("Kubernetes");
+    });
+
+    it("normalizes previously missing developer terms: MVCC, LRU Cache, OrderedDict, Python", () => {
+      expect(normalizeTechnicalSpeech("розкажи про мвцц")).toContain("MVCC");
+      expect(normalizeTechnicalSpeech("реалізуй лру кеш")).toContain("LRU Cache");
+      expect(normalizeTechnicalSpeech("використовуй ордерд дікт")).toContain("OrderedDict");
+      expect(normalizeTechnicalSpeech("написано на пайтон")).toContain("Python");
+    });
   });
 
   describe("detectQuestionLanguage", () => {

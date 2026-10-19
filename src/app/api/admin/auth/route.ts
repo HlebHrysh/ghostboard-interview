@@ -1,6 +1,13 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { createAdminToken } from '@/lib/adminGuard';
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
 
 export async function POST(req: NextRequest) {
   // Brute-force protection: max 5 admin login attempts per minute per IP
@@ -25,11 +32,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Сервер не налаштований' }, { status: 503 });
   }
 
-  if (password !== expected) {
+  if (!timingSafeEqualStrings(password, expected)) {
     return NextResponse.json({ error: 'Невірний пароль' }, { status: 401 });
   }
 
-  const token = createAdminToken();
+  const token = await createAdminToken();
   const res = NextResponse.json({ success: true });
   res.cookies.set('ghostboard_admin_session', token, {
     httpOnly: true,

@@ -1,59 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callGeminiWithFallback, FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
-import { execSync } from 'child_process';
-import fs from 'fs';
 import { interviewSyncStore } from '@/lib/interviewSyncStore';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { getSessionUser } from '@/lib/serverDb';
 
 // Global cache for latest screenshot analysis (shared across client sessions)
 let latestScreenshotQA: any = null;
 let latestScreenshotTimestamp = 0;
 
-function captureHostScreen(): Buffer | null {
-  const waylandDisplay = process.env.WAYLAND_DISPLAY || 'wayland-1';
-  const xdgRuntimeDir = process.env.XDG_RUNTIME_DIR || '/run/user/1000';
-  const display = process.env.DISPLAY || ':1';
-  const tmpFile = '/tmp/ghostboard_screen_capture.png';
-
-  // 1. Try Wayland with grim, scale 35% for fast capture and instant AI processing (~150-300 KB)
-  try {
-    execSync(`grim -s 0.35 ${tmpFile}`, {
-      env: {
-        ...process.env,
-        WAYLAND_DISPLAY: waylandDisplay,
-        XDG_RUNTIME_DIR: xdgRuntimeDir,
-      },
-      timeout: 6000,
-    });
-    if (fs.existsSync(tmpFile)) {
-      const buf = fs.readFileSync(tmpFile);
-      try { fs.unlinkSync(tmpFile); } catch {}
-      if (buf && buf.length > 1000) return buf;
-    }
-  } catch (e: any) {
-    console.warn('[HostScreen] grim capture failed, trying X11 import:', e.message);
-  }
-
-  // 2. Fallback X11 with import (ImageMagick) at 50% scale
-  try {
-    const buf = execSync("import -window root -resize 50% png:-", {
-      env: { ...process.env, DISPLAY: display },
-      maxBuffer: 25 * 1024 * 1024,
-      timeout: 8000,
-    });
-    if (buf && buf.length > 1000) return buf;
-  } catch (e: any) {
-    console.warn('[HostScreen] import capture failed:', e.message);
-  }
-
-  return null;
-}
-
 export async function GET(req: NextRequest) {
   // Auth guard: only authenticated sessions can poll screenshot cache
-  const token = req.cookies.get('ghostboard_session')?.value;
-  const clientToken = req.headers.get('x-ghostboard-client');
-  if (!token && !clientToken) {
+  const token =
+    req.cookies.get('ghostboard_session')?.value ||
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const user = await getSessionUser(token);
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -77,6 +43,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });
     }
 
+    const token =
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized: Authentication required.' }, { status: 401 });
+    }
+
+    const user = await getSessionUser(token);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized: Invalid session.' }, { status: 401 });
+    }
+
     const rateLimit = await checkRateLimit(req, 10, 60000, 'screenshot_ai');
     if (!rateLimit.allowed) {
       return NextResponse.json(
@@ -86,7 +65,16 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    let { imageBase64, mimeType = 'image/png', locale = 'uk', outputLanguage, candidateProfile, captureHost = false, sessionMode = 'interview' } = body;
+    const { locale = 'uk', outputLanguage, candidateProfile, sessionMode = 'interview' } = body;
+    const imageBase64: string | undefined = body.imageBase64;
+    const mimeType: string = body.mimeType || 'image/png';
+
+    if (!imageBase64 || typeof imageBase64 !== 'string') {
+      return NextResponse.json(
+        { error: 'imageBase64 parameter is required. Capture must be performed on the client.' },
+        { status: 400 }
+      );
+    }
 
     const cleanKey = getCleanGeminiKey();
     if (!cleanKey) {
@@ -94,26 +82,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Security & OOM prevention: enforce max 14MB base64 (~10MB raw image)
-    if (imageBase64 && typeof imageBase64 === 'string') {
-      if (imageBase64.length > 14 * 1024 * 1024) {
-        return NextResponse.json(
-          { error: 'Розмір зображення завеликий (максимум 10 МБ).' },
-          { status: 413 }
-        );
-      }
-    }
-
-    // If captureHost requested or no image provided, grab the PC's actual screen via grim/import
-    if (captureHost || !imageBase64) {
-      const hostBuf = captureHostScreen();
-      if (!hostBuf) {
-        return NextResponse.json(
-          { error: 'Не вдалося зробити знімок екрана на ПК через grim/import. Перевірте Wayland/X11 сесію.' },
-          { status: 500 }
-        );
-      }
-      imageBase64 = hostBuf.toString('base64');
-      mimeType = 'image/png';
+    if (imageBase64.length > 14 * 1024 * 1024) {
+      return NextResponse.json(
+        { error: 'Розмір зображення завеликий (максимум 10 МБ).' },
+        { status: 413 }
+      );
     }
 
     // Strip data URL prefix if present
@@ -230,9 +203,10 @@ Language for output: ${outputLangDesc}.
 Do not wrap JSON in backticks or markdown fences. Output pure JSON only.`;
 
     const preferredModels = [
+      'gemini-3.8-flash',
+      'gemini-3.6-flash',
       'gemini-3.5-flash-lite',
       'gemini-flash-latest',
-      'gemini-3.8-flash',
     ];
 
     const result = await callGeminiWithFallback({

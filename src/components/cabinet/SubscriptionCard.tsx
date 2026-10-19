@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Award, Zap, CheckCircle2, CreditCard, Shield, Sparkles, ExternalLink, ArrowRight } from "lucide-react";
+import { GravitationalCard } from "@/components/singularity/GravitationalCard";
 
 interface SubscriptionCardProps {
   plan: "free" | "pro" | "lifetime";
@@ -31,7 +32,11 @@ export function SubscriptionCard({
   const isFree = plan === "free";
 
   return (
-    <div className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-zinc-950/70 p-6 sm:p-8 backdrop-blur-2xl shadow-[0_24px_48px_-12px_rgba(0,0,0,0.8)]">
+    <GravitationalCard
+      ignited={isLifetime}
+      tilt={3}
+      className="p-6 sm:p-8 !overflow-visible"
+    >
       {/* Decorative ambient lighting */}
       <div
         className={`pointer-events-none absolute -right-20 -top-20 h-80 w-80 rounded-full blur-3xl ${
@@ -151,6 +156,6 @@ export function SubscriptionCard({
           </div>
         </div>
       </div>
-    </div>
+    </GravitationalCard>
   );
 }

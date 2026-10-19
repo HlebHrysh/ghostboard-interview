@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- CRITICAL: JIT Engine enablement for V8 & WebAssembly in Electron 33 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!-- CRITICAL: Allows executable memory allocation for Node.js modules -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Prevents dyld loading violations during production runtime -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!-- CRITICAL: Hardware Microphone Access for Interview Audio Transcription -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Camera Access for Vision Models & Soundcheck -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
+    <!-- Outgoing Network Sockets for Deepgram STT, Gemini LLM, & Ghostboard Cloud -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- CRITICAL: Localhost TCP Server for PKCE 127.0.0.1 OAuth Loopback Handshake -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+</dict>
+</plist>

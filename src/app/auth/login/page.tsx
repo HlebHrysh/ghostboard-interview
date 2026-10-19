@@ -89,7 +89,19 @@ export default function LoginPage() {
     setLoading(true);
     toast.success(provider === "google" ? t.authorizingGoogle : t.authorizingGithub);
     const destination = getDestination();
-    window.location.href = `/api/auth/oauth/${provider}?from=${encodeURIComponent(destination)}`;
+    const search = new URLSearchParams(window.location.search);
+    const client = search.get("client");
+    const redirectUri = search.get("redirect_uri");
+    const stateParam = search.get("state");
+
+    const oauthUrl = new URL(`/api/auth/oauth/${provider}`, window.location.origin);
+    oauthUrl.searchParams.set("from", destination);
+    if (client === "desktop") {
+      oauthUrl.searchParams.set("client", "desktop");
+      if (redirectUri) oauthUrl.searchParams.set("redirect_uri", redirectUri);
+      if (stateParam) oauthUrl.searchParams.set("state", stateParam);
+    }
+    window.location.href = oauthUrl.toString();
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {

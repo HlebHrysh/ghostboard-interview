@@ -25,6 +25,7 @@ export const ScrambleText: React.FC<ScrambleTextProps> = ({
   useEffect(() => {
     // Check for reduced motion preference
     if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDisplayText(text);
       return;
     }

@@ -201,6 +201,27 @@ describe('i18n 10-Locale Exhaustive Coverage', () => {
       expect(h.workflow.title.length).toBeGreaterThan(0);
       expect(h.devices.title.length).toBeGreaterThan(0);
       expect(h.faq.title.length).toBeGreaterThan(0);
+
+      // Verify new Dark Tech Luxury landing schema parity across all 10 locales
+      expect(h.hero.title.length).toBeGreaterThan(0);
+      expect(h.hero.ctaPrimary.length).toBeGreaterThan(0);
+      expect(h.simulator.title.length).toBeGreaterThan(0);
+      expect(h.simulator.viewToggle.candidateLabel.length).toBeGreaterThan(0);
+      expect(h.simulator.viewToggle.recruiterLabel.length).toBeGreaterThan(0);
+      expect(h.simulator.scenarios.behavioral.question.length).toBeGreaterThan(0);
+      expect(h.simulator.scenarios.systemDesign.question.length).toBeGreaterThan(0);
+      expect(h.simulator.scenarios.bilingual.question.length).toBeGreaterThan(0);
+      expect(h.bento.title.length).toBeGreaterThan(0);
+      expect(h.bento.cardKernel.title.length).toBeGreaterThan(0);
+      expect(h.bento.cardEyeline.title.length).toBeGreaterThan(0);
+      expect(h.setup.title.length).toBeGreaterThan(0);
+      expect(h.setup.step1.title.length).toBeGreaterThan(0);
+      expect(h.pricing.title.length).toBeGreaterThan(0);
+      expect(h.pricing.sandbox.name.length).toBeGreaterThan(0);
+      expect(h.pricing.offerPack.name.length).toBeGreaterThan(0);
+      expect(h.pricing.unlimited.name.length).toBeGreaterThan(0);
+      expect(h.downloadCta.title.length).toBeGreaterThan(0);
+      expect(h.footerCta.title.length).toBeGreaterThan(0);
     }
   });
 });

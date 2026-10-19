@@ -4,11 +4,17 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
-    "build": "next build",
+    "build": "NODE_OPTIONS='--max-old-space-size=2048' next build",
     "start": "next start -p 3001",
     "lint": "eslint",
-    "test": "vitest run",
-    "postinstall": "prisma skills sync || exit 0"
+    "test": "NODE_OPTIONS='--max-old-space-size=2048' vitest run",
+    "postinstall": "prisma skills sync || exit 0",
+    "desktop": "npm --prefix desktop run dev",
+    "desktop:dev": "npm --prefix desktop run dev",
+    "desktop:build": "npm --prefix desktop run build",
+    "desktop:build:linux": "npm --prefix desktop run build:linux",
+    "desktop:build:win": "npm --prefix desktop run build:win",
+    "desktop:build:mac": "npm --prefix desktop run build:mac"
   },
   "dependencies": {
     "@types/pdf-parse": "^1.1.5",

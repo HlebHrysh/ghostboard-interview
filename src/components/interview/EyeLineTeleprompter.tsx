@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, ChevronRight, ChevronLeft, X, Sparkles, Move } from 'lucide-react';
-import { InterviewQAItem } from '@/components/LiveInterviewHUD';
+import { InterviewQAItem } from '@/types/interview';
 
 interface EyeLineTeleprompterProps {
   activeQA: InterviewQAItem | null;
@@ -18,22 +18,31 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
 }) => {
   const [hintIndex, setHintIndex] = useState(0);
 
+  useEffect(() => {
+    setHintIndex(0);
+  }, [activeQA?.id]);
+
   if (!activeQA) return null;
 
-  const hints = activeQA.hints && activeQA.hints.length > 0 ? activeQA.hints : [];
-  const currentHint = hints[hintIndex] || activeQA.startHook || activeQA.quickAnswer;
+  const leadAnswer = activeQA.startHook || activeQA.quickAnswer || '';
+  const slides = [
+    leadAnswer,
+    ...(activeQA.hints && activeQA.hints.length > 0 ? activeQA.hints : [])
+  ].filter(Boolean);
+
+  const currentSlide = slides[hintIndex] || leadAnswer;
 
   const handleNext = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (hints.length > 0) {
-      setHintIndex((prev) => (prev + 1) % hints.length);
+    if (slides.length > 0) {
+      setHintIndex((prev) => (prev + 1) % slides.length);
     }
   };
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (hints.length > 0) {
-      setHintIndex((prev) => (prev - 1 + hints.length) % hints.length);
+    if (slides.length > 0) {
+      setHintIndex((prev) => (prev - 1 + slides.length) % slides.length);
     }
   };
 
@@ -67,9 +76,9 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5">
-            {hints.length > 1 && (
+            {slides.length > 1 && (
               <span className="text-[10px] font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
-                {hintIndex + 1}/{hints.length}
+                {hintIndex + 1}/{slides.length}
               </span>
             )}
             <button
@@ -85,12 +94,12 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
         {/* Core Thesis Formulation — large, high-contrast, effortless to read with peripheral eye */}
         <div className="px-1 py-1">
           <p className="text-[15px] leading-snug font-semibold text-white tracking-tight line-clamp-2">
-            {currentHint}
+            {currentSlide}
           </p>
         </div>
 
         {/* Action Controls / Next hint */}
-        {hints.length > 1 && (
+        {slides.length > 1 && (
           <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-white/5 px-1">
             <span className="text-[10px] font-mono text-zinc-500">
               Webcam Eyeline · [Space]

@@ -56,3 +56,12 @@ next-env.d.ts
 data/
 *.db
 *.sqlite
+
+# rust & tauri build artifacts
+target/
+**/target/
+desktop/src-tauri/target/
+rust_out
+tests/empirical_*_stress
+tests/empirical_rms_stress
+tests/empirical_window_stress

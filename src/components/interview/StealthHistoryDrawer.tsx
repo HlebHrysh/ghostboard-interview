@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Trash2, Clock, Download } from 'lucide-react';
 import { toast } from 'sonner';
-import { InterviewQAItem } from '@/components/LiveInterviewHUD';
+import { InterviewQAItem } from '@/types/interview';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHistoryTranslations } from '@/lib/historyI18n';
 

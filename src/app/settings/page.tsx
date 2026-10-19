@@ -616,7 +616,7 @@ export default function SettingsPage() {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-500">{s.systemAiCore}</span>
-              <span className="text-zinc-200">Gemini 2.5 Flash Fallback Cascade</span>
+              <span className="text-zinc-200">Gemini 3.8 / 3.6 Flash Fallback Cascade</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-500">{s.systemStt}</span>

@@ -24,7 +24,7 @@ export function PerspectiveGridHero() {
   }, [mouseX, mouseY]);
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden [perspective:1000px]">
+    <div className="sg-lines pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden [perspective:1000px]">
       <motion.div
         style={{
           rotateX: springY,

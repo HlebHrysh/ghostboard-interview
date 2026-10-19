@@ -4,7 +4,7 @@ import { Redis } from '@upstash/redis';
 
 // Create a new ratelimiter, that allows X requests per window
 // We use a dummy fallback for local dev if keys are not set, to avoid crashing.
-const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN && process.env.NODE_ENV !== 'test' && !process.env.VITEST)
   ? Redis.fromEnv()
   : null;
 
@@ -19,14 +19,26 @@ function isValidIp(ip: string): boolean {
 }
 
 export function getClientIp(req: NextRequest): string {
-  // x-real-ip is set by trusted reverse proxies (Nginx/Vercel) — prefer this
+  // Cloudflare Connecting IP (most trusted when behind Cloudflare proxy)
+  const cfIp = req.headers.get('cf-connecting-ip');
+  if (cfIp && isValidIp(cfIp.trim())) {
+    return cfIp.trim();
+  }
+
+  // x-real-ip is set by trusted reverse proxies (Nginx/Vercel/Cloud Run)
   const realIp = req.headers.get('x-real-ip');
   if (realIp && isValidIp(realIp.trim())) {
     return realIp.trim();
   }
 
+  // Next.js socket connection IP
+  const nextIp = (req as any).ip;
+  if (nextIp && isValidIp(nextIp)) {
+    return nextIp;
+  }
+
   // x-forwarded-for: take first IP only (leftmost = original client)
-  // Validate format to prevent spoofing
+  // Validate format to prevent header injection
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded) {
     const firstIp = forwarded.split(',')[0].trim();
@@ -55,8 +67,11 @@ export function validateOrigin(req: NextRequest): boolean {
     host,
     'localhost:3000',
     'localhost:3001',
+    'localhost:5173',
     '127.0.0.1:3000',
     '127.0.0.1:3001',
+    '127.0.0.1:5173',
+    'tauri.localhost',
     'leetcode.com',
   ].filter(Boolean);
 
@@ -84,7 +99,8 @@ export interface RateLimitResult {
   retryAfterSec: number;
 }
 
-const inMemoryStore = new Map<string, { count: number; resetAt: number }>();
+const inMemoryStore: Map<string, { count: number; resetAt: number }> =
+  ((globalThis as any).__ghostboardRateLimitStore ??= new Map<string, { count: number; resetAt: number }>());
 
 // Prevent memory leak by cleaning up expired entries periodically
 setInterval(() => {
@@ -95,6 +111,10 @@ setInterval(() => {
     }
   }
 }, 60000);
+
+export function resetRateLimits(): void {
+  inMemoryStore.clear();
+}
 
 /**
  * Enforces rate limiting per client IP and action bucket using Upstash Redis.

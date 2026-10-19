@@ -14,7 +14,7 @@ interface SubpageStripesContainerProps {
 export function SubpageStripesContainer({
   pattern = "blueprint",
   className = "",
-  glowIntensity = 0.06,
+  glowIntensity = 0.025,
   children,
 }: SubpageStripesContainerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,8 +40,8 @@ export function SubpageStripesContainer({
       case "horizon":
         return {
           backgroundImage: `
-            linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)
+            linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px)
           `,
           backgroundSize: "24px 64px",
           maskImage:
@@ -52,7 +52,7 @@ export function SubpageStripesContainer({
       case "spine":
         return {
           backgroundImage:
-            "repeating-linear-gradient(to right, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 48px)",
+            "repeating-linear-gradient(to right, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent 48px)",
           maskImage:
             "linear-gradient(to right, black 20%, rgba(0,0,0,0.5) 70%, transparent 95%)",
           WebkitMaskImage:
@@ -61,15 +61,15 @@ export function SubpageStripesContainer({
       case "telemetry":
         return {
           backgroundImage: `
-            radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px)
+            radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.012) 1px, transparent 1px)
           `,
           backgroundSize: "16px 16px, 100% 32px",
         };
       case "fracture":
         return {
           backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 2px, transparent 8px)",
+            "repeating-linear-gradient(0deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 2px, transparent 8px)",
           maskImage:
             "radial-gradient(ellipse 70% 60% at 50% 50%, black 20%, transparent 80%)",
           WebkitMaskImage:
@@ -79,8 +79,8 @@ export function SubpageStripesContainer({
       default:
         return {
           backgroundImage: `
-            linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px)
+            linear-gradient(to right, rgba(255,255,255,0.018) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.018) 1px, transparent 1px)
           `,
           backgroundSize: "40px 40px",
           maskImage:
@@ -98,7 +98,7 @@ export function SubpageStripesContainer({
     >
       {/* Mathematical procedural stripe pattern */}
       <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-80 transition-opacity duration-500 will-change-transform"
+        className="sg-lines pointer-events-none absolute inset-0 z-0 opacity-80 transition-opacity duration-500 will-change-transform"
         style={getBackgroundStyle()}
       />
 

@@ -1,0 +1,96 @@
+name: Release Ghostboard Desktop
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Package (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS: Apple Silicon (arm64) & Intel (x64)
+          - os: macos-latest
+            platform: mac
+            build-cmd: npm run build:mac
+
+          # Windows: x64 NSIS Setup
+          - os: windows-latest
+            platform: win
+            build-cmd: npm run build:win
+
+          # Linux: x64 AppImage & Debian
+          - os: ubuntu-22.04
+            platform: linux
+            build-cmd: npm run build:linux
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'desktop/package-lock.json'
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'mac' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.platform == 'win' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Install Linux Build Toolchain & Dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libasound2-dev
+
+      - name: Install Desktop Node Modules
+        working-directory: desktop
+        run: npm ci
+
+      # Compile, Package & Build Tauri v2 Artifacts
+      - name: Build Tauri v2 Desktop Bundle
+        working-directory: desktop
+        run: ${{ matrix.build-cmd }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # Compute SHA-256 Checksums for Release Transparency
+      - name: Generate Checksums
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          find desktop/src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.exe" -o -name "*.dmg" \) -exec cp {} release-artifacts/ \;
+          cd release-artifacts
+          for f in *; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" >> SHA256SUMS-${{ matrix.platform }}.txt
+            fi
+          done
+          cat SHA256SUMS-${{ matrix.platform }}.txt || true
+
+      - name: Upload Artifacts to Action Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostboard-${{ matrix.platform }}-tauri-bundle
+          path: |
+            release-artifacts/*.dmg
+            release-artifacts/*.exe
+            release-artifacts/*.AppImage
+            release-artifacts/*.deb
+            release-artifacts/SHA256SUMS-*.txt
+          if-no-files-found: warn

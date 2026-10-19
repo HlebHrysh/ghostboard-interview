@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
-import { InterviewQAItem } from '@/components/LiveInterviewHUD';
+import { InterviewQAItem } from '@/types/interview';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
 
 interface UseScreenshotAIOptions {

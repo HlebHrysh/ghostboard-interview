@@ -13,19 +13,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SOLVE_LEETCODE') {
     (async () => {
       try {
-        const { apiUrl = 'http://localhost:3001', outputLanguage = 'uk' } =
-          await chrome.storage.sync.get(['apiUrl', 'outputLanguage']);
+        const { apiUrl = 'http://localhost:3001', outputLanguage = 'uk', authToken = '' } =
+          await chrome.storage.sync.get(['apiUrl', 'outputLanguage', 'authToken']);
 
         const endpoint = `${apiUrl.replace(/\/$/, '')}/api/ai/interview-copilot`;
         const syncEndpoint = `${apiUrl.replace(/\/$/, '')}/api/ai/interview-sync`;
 
+        const authHeaders = {
+          'Content-Type': 'application/json',
+          'x-ghostboard-client': 'chrome-extension',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        };
+
         // 1. Call Ghostboard AI Copilot
         const res = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-ghostboard-client': 'chrome-extension',
-          },
+          headers: authHeaders,
+          credentials: 'include',
           body: JSON.stringify({
             question: message.payload.question,
             locale: outputLanguage,
@@ -46,10 +50,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // 2. Broadcast to Ghostboard Real-Time HUD (/interview)
         await fetch(syncEndpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-ghostboard-client': 'chrome-extension',
-          },
+          headers: authHeaders,
+          credentials: 'include',
           body: JSON.stringify({
             action: 'ADD_OR_UPDATE_QA',
             activeId: qaId,

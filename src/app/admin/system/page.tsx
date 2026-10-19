@@ -232,7 +232,7 @@ export default function AdminSystem() {
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-white flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-cyan-400" />
-                  <span>Gemini AI 2.5 Flash</span>
+                  <span>Gemini AI 3.8 / 3.6 Flash</span>
                 </span>
                 <span className="text-[10px] text-zinc-500">LLM Inference</span>
               </div>
@@ -350,7 +350,7 @@ export default function AdminSystem() {
 
           <div className="space-y-3 font-mono text-xs">
             <ServiceStatusRow
-              title="Google Gemini AI (2.5 Flash / Lite)"
+              title="Google Gemini AI (3.8 / 3.6 Flash)"
               isReady={Boolean(s?.gemini.configured)}
               detail={s?.gemini.configured ? "API Key налаштовано" : "Ключ відсутній у .env"}
             />

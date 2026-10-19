@@ -103,7 +103,20 @@ export default function SignupPage() {
 
     if (provider === "Google" || provider === "GitHub") {
       const provLower = provider.toLowerCase();
-      window.location.href = `/api/auth/oauth/${provLower}?from=${encodeURIComponent(getDestination())}&role=${encodeURIComponent(selectedRole)}`;
+      const search = new URLSearchParams(window.location.search);
+      const client = search.get("client");
+      const redirectUri = search.get("redirect_uri");
+      const stateParam = search.get("state");
+
+      const oauthUrl = new URL(`/api/auth/oauth/${provLower}`, window.location.origin);
+      oauthUrl.searchParams.set("from", getDestination());
+      oauthUrl.searchParams.set("role", selectedRole);
+      if (client === "desktop") {
+        oauthUrl.searchParams.set("client", "desktop");
+        if (redirectUri) oauthUrl.searchParams.set("redirect_uri", redirectUri);
+        if (stateParam) oauthUrl.searchParams.set("state", stateParam);
+      }
+      window.location.href = oauthUrl.toString();
       return;
     }
 
@@ -128,6 +141,9 @@ export default function SignupPage() {
     setEmailTakenError(false);
 
     try {
+      const search = new URLSearchParams(window.location.search);
+      const client = search.get("client") === "desktop" ? "desktop" : "web";
+
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,6 +151,7 @@ export default function SignupPage() {
           email: userEmail,
           password,
           role: selectedRole,
+          client,
         }),
       });
       const data = await res.json();
@@ -154,6 +171,13 @@ export default function SignupPage() {
         localStorage.setItem("ghostboard_auth_user", JSON.stringify(data.user));
       }
       toast.success(t.toastSuccess(selectedRole));
+
+      const redirectUri = search.get("redirect_uri");
+      if (redirectUri && client === "desktop" && data?.token) {
+        window.location.href = `${redirectUri}?token=${data.token}&state=${search.get("state")}`;
+        return;
+      }
+
       router.push(getDestination());
     } catch {
       toast.error("Registration error, please try again.");

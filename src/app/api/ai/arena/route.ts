@@ -16,6 +16,18 @@ const TRACK_PROFILES: Record<string, { title: string; skills: string }> = {
     title: 'System Design & Architecture',
     skills: 'Microservices architecture, database sharding & replication, message queues (Kafka, RabbitMQ), high availability, horizontal scaling',
   },
+  fullstack: {
+    title: 'Fullstack Systems',
+    skills: 'Next.js App Router, React 19, Node.js / Python, Prisma / Postgres, REST & GraphQL, Auth & Security, Cloud Deployment',
+  },
+  devops: {
+    title: 'DevOps & Cloud Platform',
+    skills: 'Kubernetes, Docker, Terraform, CI/CD pipelines, AWS/GCP, Prometheus/Grafana observability, zero-downtime deployments',
+  },
+  mobile: {
+    title: 'Mobile Architecture',
+    skills: 'React Native / Flutter / Swift, state synchronization, offline storage, memory management, bridge optimization, App Store releases',
+  },
 };
 
 const LANG_DIRECTIVES: Record<string, string> = {
@@ -39,9 +51,106 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Забагато запитів. Будь ласка, зачекайте хвилину.' }, { status: 429 });
     }
 
+    const token =
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+    const { getSessionUser } = await import('@/lib/serverDb');
+    const user = token ? await getSessionUser(token) : null;
+
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Unauthorized: Authentication required to enter Ghostboard Arena.', code: 'AUTH_REQUIRED' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const { action, language = 'uk' } = body;
     const targetDirective = LANG_DIRECTIVES[language] || LANG_DIRECTIVES['en'];
+
+    // ── 0. GENERATE ARENA FROM JOB VACANCY TEXT ──────────────────────────────
+    if (action === 'GENERATE_FROM_VACANCY') {
+      const { vacancyText = '', candidateName = 'Developer', level = 'Senior' } = body;
+      if (!vacancyText.trim()) {
+        return NextResponse.json({ error: 'Текст вакансії порожній.' }, { status: 400 });
+      }
+
+      const prompt = `You are an elite Principal Technical Recruiter & FAANG Staff Engineer designing a targeted technical interview arena for this job vacancy.
+
+JOB VACANCY TEXT:
+"""
+${vacancyText.slice(0, 3500)}
+"""
+
+Candidate: ${candidateName}
+Target Seniority Level: ${level}
+
+LANGUAGE DIRECTIVE (CRITICAL - FOLLOW STRICTLY):
+${targetDirective}
+
+TASK:
+1. Extract key vacancy profile:
+   - roleTitle: concise standard job title (e.g. "Senior Go Highload Engineer", "Lead Frontend Architect", "Staff AI Platform Engineer")
+   - seniority: detected or target level ("Junior" | "Middle" | "Senior" | "Staff / Lead")
+   - techStack: 4-7 key technologies / tools extracted from the vacancy text
+   - domain: company domain / industry (e.g. "Fintech & Payments", "B2B SaaS High-Load", "E-commerce & Streaming")
+   - focusAreas: 3 key engineering challenges or focus areas for this role
+   - interviewerTitle: persona title for the interviewer (e.g. "Principal Platform Architect", "VP of Engineering")
+   - summary: 1-2 sentence compelling summary in the target language explaining why this arena is calibrated for this job.
+
+2. Generate exactly 6 questions strictly tailored to this vacancy:
+   - Questions 1-5: Sharp, practical blitz questions testing the exact technologies, pitfalls, performance bottlenecks, and edge cases mentioned in the vacancy.
+   - Question 6: A realistic production-scale Architecture / System Design case study directly based on the business domain and scale of this vacancy.
+
+Return ONLY a valid JSON object matching this schema:
+{
+  "vacancyProfile": {
+    "roleTitle": "Senior Go Highload Engineer",
+    "seniority": "Senior",
+    "techStack": ["Go", "PostgreSQL", "Kafka", "Redis", "gRPC"],
+    "domain": "Fintech & Highload Payments",
+    "focusAreas": ["Idempotency & Race Conditions", "Sub-10ms Latency", "Database Partitioning"],
+    "interviewerTitle": "Lead Core Architect",
+    "summary": "Арена сфокусована на високопродуктивному бекенді..."
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "index": 1,
+      "topic": "Concise topic in target language",
+      "difficulty": "Medium or Hard in target language",
+      "question": "Full question text in target language",
+      "isArchitectureCase": false,
+      "contextHint": "Engineering hint in target language"
+    },
+    ...
+    {
+      "id": "q6",
+      "index": 6,
+      "topic": "Architecture Case in target language",
+      "difficulty": "Staff / Architecture in target language",
+      "question": "Full complex architectural case in target language",
+      "isArchitectureCase": true,
+      "contextHint": "Design guidance in target language"
+    }
+  ]
+}`;
+
+      const res = await callGeminiWithFallback({
+        models: FLASH_MODELS,
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.5 },
+      });
+
+      if (res.ok && res.text) {
+        let jsonStr = res.text.trim();
+        if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
+        if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
+        return NextResponse.json(JSON.parse(jsonStr));
+      }
+      throw new Error('Не вдалося сгенерувати арену по вакансії через Gemini.');
+    }
 
     // ── 1. START ARENA: Generate 5 blitz questions + 1 architectural case ────
     if (action === 'START_ARENA') {
@@ -109,9 +218,12 @@ Return ONLY a valid JSON object matching this schema:
         track = 'frontend',
         level = 'Senior',
         isArchitectureCase = false,
+        vacancyProfile = null,
       } = body;
 
       const profile = TRACK_PROFILES[track] || TRACK_PROFILES.frontend;
+      const targetRoleTitle = vacancyProfile?.roleTitle || profile.title;
+      const targetSkills = vacancyProfile?.techStack?.join(', ') || profile.skills;
 
       // Base speed calculation
       let calculatedSpeed = 85;
@@ -121,8 +233,10 @@ Return ONLY a valid JSON object matching this schema:
       else if (answerTimeSec < 120) calculatedSpeed = 74;
       else calculatedSpeed = 62;
 
-      const prompt = `You are a demanding Staff Engineer at a top FAANG company evaluating a candidate's answer.
-Track: ${profile.title} (${level})
+      const prompt = `You are a demanding Staff Engineer at a top tech company evaluating a candidate's answer for role: "${targetRoleTitle}" (${vacancyProfile?.seniority || level}).
+Required Skills & Tech: ${targetSkills}
+${vacancyProfile?.domain ? `Business Domain: ${vacancyProfile.domain}` : ''}
+
 Question asked: "${question}"
 Candidate Answer: "${candidateAnswer || '(Candidate was silent or provided an empty response)'}"
 Answer duration: ${answerTimeSec} seconds
@@ -141,7 +255,7 @@ Objectively evaluate the answer across 5 dimensions (score 10 to 100):
 
 Return ONLY valid JSON:
 {
-  "score": 88, // overall score (10-100)
+  "score": 88,
   "verdict": "Verdict in target language (e.g. Excellent / Good / Needs Improvement)",
   "scores": {
     "technicalAccuracy": 90,
@@ -178,9 +292,12 @@ Return ONLY valid JSON:
         candidateName = 'Developer',
         roundEvaluations = [],
         durationSec = 240,
+        vacancyProfile = null,
       } = body;
 
       const profile = TRACK_PROFILES[track] || TRACK_PROFILES.frontend;
+      const resolvedRole = vacancyProfile?.roleTitle || profile.title;
+      const resolvedLevel = vacancyProfile?.seniority || level;
 
       // Compute averages across rounds
       let avgAcc = 0;
@@ -217,25 +334,27 @@ Return ONLY valid JSON:
       }
 
       // Generate verified badge
-      const trackShort = track === 'frontend' ? 'Frontend' : track === 'backend' ? 'Backend' : 'System Architect';
-      const badge = `Verified ${level} ${trackShort} Engineer`;
+      const badge = resolvedRole.toLowerCase().startsWith(resolvedLevel.toLowerCase())
+        ? `Verified ${resolvedRole}`
+        : `Verified ${resolvedLevel} ${resolvedRole}`;
 
       // Clean slug: e.g. "alex-senior-frontend-94a2"
       const cleanName = candidateName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) || 'dev';
+      const cleanTrack = resolvedRole.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12) || 'track';
       const randomSuffix = Math.random().toString(36).substring(2, 6);
-      const slug = `${cleanName}-${level.toLowerCase()}-${track}-${totalOverall}-${randomSuffix}`;
+      const slug = `${cleanName}-${resolvedLevel.toLowerCase().slice(0, 4)}-${cleanTrack}-${totalOverall}-${randomSuffix}`;
 
       // Calculate percentile: e.g. 90 score -> Top 5%, 95 -> Top 2%
       const percentile = Math.min(99, Math.max(70, totalOverall + 4));
 
       // Synthesize brief Staff summary feedback
-      const promptSummary = `Formulate 2-3 sentences of Staff Engineer feedback for candidate ${candidateName} (${badge}) who scored ${totalOverall}/100 in Ghostboard Arena. Assess their technical readiness for top-tier engineering teams.
+      const promptSummary = `Formulate 2-3 sentences of Staff Engineer feedback for candidate ${candidateName} (${badge}) who scored ${totalOverall}/100 in Ghostboard Arena. Focus on their readiness for this specific role and engineering challenges: ${vacancyProfile?.focusAreas?.join(', ') || profile.skills}.
 LANGUAGE DIRECTIVE (CRITICAL):
 ${targetDirective}`;
 
       let summaryFeedback = language === 'en'
-        ? `The candidate demonstrated a strong command of the ${profile.title} stack and system design principles. Recommended for ${level} level responsibilities.`
-        : `Кандидат продемонстрував глибоке розуміння технологічного стеку ${profile.title} та системного проектування. Рекомендовано для позиції ${level}.`;
+        ? `The candidate demonstrated a strong command of the ${resolvedRole} stack and system design principles. Recommended for ${resolvedLevel} level responsibilities.`
+        : `Кандидат продемонстрував глибоке розуміння технологічного стеку ${resolvedRole} та системного проектування. Рекомендовано для позиції ${resolvedLevel}.`;
 
       try {
         const sumRes = await callGeminiWithFallback({

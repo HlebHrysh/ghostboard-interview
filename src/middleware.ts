@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminToken } from '@/lib/adminGuard';
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Protect /interview, /profile, /cabinet, and /dashboard UI — require active ghostboard_session
   if (
-    pathname === '/interview' ||
-    pathname.startsWith('/interview/') ||
-    pathname === '/profile' ||
-    pathname.startsWith('/profile/') ||
-    pathname === '/cabinet' ||
-    pathname.startsWith('/cabinet/') ||
-    pathname === '/dashboard' ||
-    pathname.startsWith('/dashboard/')
+    (pathname === '/interview' ||
+      (pathname.startsWith('/interview/') && pathname !== '/interview/dual-stream') ||
+      pathname === '/profile' ||
+      pathname.startsWith('/profile/') ||
+      pathname === '/cabinet' ||
+      pathname.startsWith('/cabinet/') ||
+      pathname === '/dashboard' ||
+      pathname.startsWith('/dashboard/') ||
+      pathname === '/mock-interview' ||
+      pathname === '/settings' ||
+      pathname === '/sandbox')
   ) {
     const sessionCookie = req.cookies.get('ghostboard_session')?.value;
     if (!sessionCookie || !sessionCookie.trim()) {
@@ -29,8 +32,9 @@ export function middleware(req: NextRequest) {
       pathname !== '/api/admin/auth') {
     
     const adminCookie = req.cookies.get('ghostboard_admin_session')?.value;
+    const isValid = adminCookie ? await verifyAdminToken(adminCookie) : false;
     
-    if (!adminCookie || !verifyAdminToken(adminCookie)) {
+    if (!isValid) {
       // If it's an API request, return 401 JSON
       if (pathname.startsWith('/api/')) {
         return NextResponse.json({ error: 'Unauthorized Admin API Access' }, { status: 401 });
@@ -57,5 +61,8 @@ export const config = {
     '/cabinet/:path*',
     '/dashboard',
     '/dashboard/:path*',
+    '/mock-interview',
+    '/settings',
+    '/sandbox',
   ],
 };

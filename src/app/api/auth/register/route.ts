@@ -13,7 +13,11 @@ import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
  */
 export async function POST(req: NextRequest) {
   try {
-    if (!validateOrigin(req)) {
+    const body = await req.json().catch(() => ({}));
+    const { email, password, name, role } = body;
+    const client = body?.client === 'desktop' ? 'desktop' : 'web';
+
+    if (client === 'web' && !validateOrigin(req)) {
       return NextResponse.json({ error: 'Origin mismatch', code: 'ORIGIN_MISMATCH' }, { status: 403 });
     }
 
@@ -25,9 +29,6 @@ export async function POST(req: NextRequest) {
         { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
       );
     }
-
-    const body = await req.json().catch(() => ({}));
-    const { email, password, name, role } = body;
 
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       return NextResponse.json({ error: 'Invalid email', code: 'INVALID_EMAIL' }, { status: 400 });
@@ -49,11 +50,20 @@ export async function POST(req: NextRequest) {
 
     const user = await createUser(cleanEmail, cleanName, 'free', cleanRole);
     await setUserPassword(user.id, password);
-    const session = await createSession(user.id, 'web');
+    const session = await createSession(user.id, client === 'desktop' ? 'desktop' : 'web');
+
+    const publicUser = { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role };
+    if (client === 'desktop') {
+      return NextResponse.json({
+        success: true,
+        user: publicUser,
+        token: session.token,
+      });
+    }
 
     const response = NextResponse.json({
       success: true,
-      user: { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role },
+      user: publicUser,
     });
 
     response.cookies.set('ghostboard_session', session.token, {

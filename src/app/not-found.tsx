@@ -3,8 +3,10 @@
 import React, { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Radio, Terminal, Home, Play } from "lucide-react";
+import { Radio, Terminal, Play } from "lucide-react";
 import { SubpageStripesContainer } from "@/components/ui/SubpageStripesContainer";
+import { SpacetimeRift } from "@/components/singularity/SpacetimeRift";
+import { BlackHoleButton } from "@/components/singularity/BlackHoleButton";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
 
 export default function NotFound() {
@@ -38,7 +40,7 @@ export default function NotFound() {
       </div>
 
       {/* Main error block */}
-      <main className="max-w-xl mx-auto w-full my-auto text-center space-y-6 py-12">
+      <main className="max-w-xl mx-auto w-full my-auto py-12"><SpacetimeRift><div className="text-center space-y-6">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/10 text-xs font-mono text-zinc-400">
           <Terminal className="w-3.5 h-3.5 text-zinc-300" />
           <span>DISCONNECTED_ROUTE_DETECTOR</span>
@@ -59,13 +61,10 @@ export default function NotFound() {
 
         {/* Primary Rescue Action */}
         <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Link
-            href="/interview"
-            className="btn-resend-primary !py-3 !px-7 text-xs font-mono w-full sm:w-auto flex items-center justify-center gap-2 group cursor-pointer shadow-[0_0_25px_rgba(255,255,255,0.15)]"
-          >
-            <Play className="w-3.5 h-3.5 fill-black" />
-            <span>Вернуться в суфлер [Enter]</span>
-          </Link>
+          <BlackHoleButton href="/interview" size="lg">
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Телепорт в суфлер [Enter]</span>
+          </BlackHoleButton>
           <Link
             href="/settings"
             className="btn-resend-glass !py-3 !px-5 text-xs font-mono w-full sm:w-auto flex items-center justify-center gap-1.5 cursor-pointer"
@@ -86,7 +85,7 @@ export default function NotFound() {
             Профиль
           </Link>
         </div>
-      </main>
+      </div></SpacetimeRift></main>
 
       {/* Bottom status */}
       <footer className="max-w-4xl mx-auto w-full text-center text-[10px] font-mono text-zinc-600 border-t border-white/[0.08] pt-4">

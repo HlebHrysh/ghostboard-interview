@@ -261,7 +261,12 @@ export class TabAudioCapture {
         if (this.micStream && this.isMicActive) {
           this.micSourceNode = this.audioContext.createMediaStreamSource(this.micStream);
           this.micSourceNode.connect(this.candidateGainNode);
-          // Mic is connected to masterMixNode for full session recording, but NEVER to interviewerGainNode!
+          
+          // In Acoustic / Room Mic Mode (when user chose mic or tab lacked audio track):
+          // Connect mic to interviewerGainNode so the AI captures speech from laptop speakers!
+          if (requestedSource === 'mic' || !hasTabAudio) {
+            this.micSourceNode.connect(this.interviewerGainNode);
+          }
           this.micSourceNode.connect(masterMixNode);
         }
 
@@ -277,7 +282,7 @@ export class TabAudioCapture {
           if (!this.isCapturing) return;
 
           let interviewerVol = 0;
-          if (this.interviewerAnalyser && hasTabAudio) {
+          if (this.interviewerAnalyser && (hasTabAudio || requestedSource === 'mic' || !this.stream)) {
             this.interviewerAnalyser.getFloatTimeDomainData(tabDataArray);
             let sumSquares = 0;
             for (let i = 0; i < tabDataArray.length; i++) {

@@ -104,4 +104,24 @@ describe('Desktop Fleet & Telemetry Store', () => {
     expect(removed).toBe(true);
     expect(getDesktopNode('test-node-1')).toBeUndefined();
   });
+
+  it('enforces bounded capacity to prevent memory exhaustion DoS', () => {
+    // Fill up to cap + 50 nodes
+    for (let i = 0; i < 2550; i++) {
+      registerOrUpdateDesktopNode({
+        nodeId: `cap-node-${i}`,
+        userId: `user-${i}`,
+        userEmail: `user${i}@test.com`,
+      });
+    }
+
+    const stats = getDesktopFleetStats();
+    // Must not exceed MAX_DESKTOP_NODES (2500)
+    expect(stats.totalNodes).toBeLessThanOrEqual(2500);
+
+    // Clean up test nodes to avoid leaking memory into subsequent tests
+    for (let i = 0; i < 2550; i++) {
+      removeDesktopNode(`cap-node-${i}`);
+    }
+  });
 });

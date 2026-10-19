@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Playfair_Display, Inter, JetBrains_Mono, Kanit } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Toaster } from 'sonner';
+import { ThemedToaster } from '@/components/ui/ThemedToaster';
+import { BlackHoleCanvas } from '@/components/singularity/BlackHoleCanvas';
+import { FloatingThemeToggle } from '@/components/singularity/FloatingThemeToggle';
+import { CommandPalette } from '@/components/singularity/CommandPalette';
+import { GhostFx } from '@/components/ui/GhostFx';
 import { LocaleProvider } from '@/contexts/LocaleContext';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
 
@@ -9,17 +13,9 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,
-  themeColor: '#040406',
+  themeColor: '#000000',
   viewportFit: 'cover',
 };
-
-const playfairDisplay = Playfair_Display({
-  variable: "--font-display",
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "600", "700"],
-  style: ["normal", "italic"],
-  display: "swap",
-});
 
 const inter = Inter({
   variable: "--font-sans",
@@ -30,13 +26,6 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
   subsets: ["latin", "cyrillic"],
-  display: "swap",
-});
-
-const kanit = Kanit({
-  variable: "--font-kanit",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
   display: "swap",
 });
 
@@ -71,13 +60,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark min-h-full w-full">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} ${playfairDisplay.variable} ${kanit.variable} min-h-screen w-full overflow-x-hidden antialiased bg-black text-zinc-100 font-sans`}>
+    <html lang="en" className="dark min-h-full w-full" suppressHydrationWarning>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen w-full overflow-x-hidden subpixel-antialiased bg-black text-zinc-100 font-sans`}>
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("gb-theme");if(!t){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}var d=document.documentElement;d.dataset.theme=t;d.classList.toggle("dark",t!=="light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f4f2":"#000000")}catch(e){}` }} />
         <LocaleProvider>
+          <BlackHoleCanvas />
+          <CommandPalette />
+          <FloatingThemeToggle />
+          <GhostFx />
           {children}
         </LocaleProvider>
         <ServiceWorkerRegister />
-        <Toaster theme="dark" position="bottom-right" closeButton richColors />
+        <ThemedToaster />
       </body>
     </html>
   );

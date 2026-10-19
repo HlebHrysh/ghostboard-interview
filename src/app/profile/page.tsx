@@ -27,6 +27,7 @@ import { useLocale } from "@/contexts/LocaleContext";
 import { getProfileTranslations } from "@/lib/profileI18n";
 import { CabinetHeader } from "@/components/cabinet/CabinetHeader";
 import { TelemetryBento } from "@/components/cabinet/TelemetryBento";
+import { LiveCopilotMonitor } from "@/components/cabinet/LiveCopilotMonitor";
 import { SubscriptionCard } from "@/components/cabinet/SubscriptionCard";
 import { DeviceManager, DeviceSession } from "@/components/cabinet/DeviceManager";
 import { SecuritySettings } from "@/components/cabinet/SecuritySettings";
@@ -404,6 +405,9 @@ export default function ProfilePage() {
             totalQuestions={totalQuestions}
             locale={locale}
           />
+
+          {/* ── Zone 2.5: Live Desktop & Copilot Monitor ── */}
+          <LiveCopilotMonitor locale={locale} userEmail={user?.email} />
 
           {/* ── Zone 3: Main Workspace with Tabbed Navigation ── */}
           <div className="space-y-6">

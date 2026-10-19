@@ -66,6 +66,8 @@ export default function AdminUsers() {
       const data = await res.json();
       if (Array.isArray(data)) {
         setUsers(data);
+      } else if (data.users && Array.isArray(data.users)) {
+        setUsers(data.users);
       } else {
         setUsers([]);
       }

@@ -56,6 +56,9 @@ export interface CandidateProfile {
   cvContext?: string;
   jobDescription?: string;
   aiDirectives?: AiDirectives;
+  customNuances?: string;
+  speakingStyle?: string;
+  speakingStyleBrief?: string;
 }
 
 export const DEFAULT_AI_DIRECTIVES: AiDirectives = {
@@ -87,6 +90,9 @@ export const DEFAULT_CANDIDATE_PROFILE: CandidateProfile = {
   customContext: 'Software Engineer with strong fundamentals in clean architecture, performance optimization, and scalable modern software development.',
   cvContext: '',
   jobDescription: '',
+  customNuances: 'Від першого лиця, з реальними кейсами, впевнено і по-простому',
+  speakingStyle: '',
+  speakingStyleBrief: '',
   aiDirectives: DEFAULT_AI_DIRECTIVES,
 };
 
@@ -441,6 +447,9 @@ export function getStoredCandidateProfile(): CandidateProfile {
       ...DEFAULT_CANDIDATE_PROFILE,
       ...parsed,
       level: (parsed.level as CandidateLevel) || 'middle',
+      customNuances: parsed.customNuances || parsed.aiDirectives?.customNuances || DEFAULT_CANDIDATE_PROFILE.customNuances,
+      speakingStyle: parsed.speakingStyle || '',
+      speakingStyleBrief: parsed.speakingStyleBrief || '',
       petProjects: Array.isArray(parsed.petProjects) ? parsed.petProjects : DEFAULT_CANDIDATE_PROFILE.petProjects,
       techStack: Array.isArray(parsed.techStack) ? parsed.techStack : DEFAULT_CANDIDATE_PROFILE.techStack,
       aiDirectives: {
@@ -1579,17 +1588,53 @@ export default function CandidateProfileModal({
                     </label>
                     <textarea
                       rows={2}
-                      value={profile.aiDirectives?.customNuances || ''}
+                      value={profile.customNuances || profile.aiDirectives?.customNuances || ''}
                       onChange={(e) => setProfile({
                         ...profile,
+                        customNuances: e.target.value,
                         aiDirectives: {
                           ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
                           customNuances: e.target.value,
                         },
                       })}
-                      placeholder="e.g. Always emphasize my Kafka partitioning & Kubernetes migration experience when scalability is asked."
+                      placeholder="e.g. Від першого лиця, з реальними кейсами, впевнено і по-простому..."
                       className="w-full bg-[#0a0a0f] border border-white/10 hover:border-white/20 focus:border-white/40 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none leading-relaxed font-sans"
                     />
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setProfile({
+                          ...profile,
+                          customNuances: 'Від першого лиця, з реальними кейсами з досвіду',
+                          aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Від першого лиця, з реальними кейсами з досвіду' }
+                        })}
+                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                      >
+                        🗣️ Від першого лиця
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProfile({
+                          ...profile,
+                          customNuances: 'Коротко, без води, конкретні факти та тези',
+                          aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Коротко, без води, конкретні факти та тези' }
+                        })}
+                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                      >
+                        ⚡ Коротко і по суті
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProfile({
+                          ...profile,
+                          customNuances: 'Упор на архітектуру, надійність та компроміси (trade-offs)',
+                          aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Упор на архітектуру, надійність та компроміси (trade-offs)' }
+                        })}
+                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                      >
+                        🏗️ Архітектура та трейдоффи
+                      </button>
+                    </div>
                   </div>
 
                   {/* Expandable Live Prompt Preview */}

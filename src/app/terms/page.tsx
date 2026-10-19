@@ -8,6 +8,7 @@ import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
 import { SubpageStripesContainer } from "@/components/ui/SubpageStripesContainer";
 import { useLocale } from "@/contexts/LocaleContext";
 import { getLegalTranslations } from "@/lib/legalI18n";
+import { ReadingSpine } from "@/components/singularity/ReadingSpine";
 
 function H2({ children }: { children: React.ReactNode }) {
   return (
@@ -27,6 +28,7 @@ export default function TermsPage() {
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 flex flex-col justify-between selection:bg-white/20 selection:text-white">
+      <ReadingSpine />
       <UnifiedNavbar />
 
       <SubpageStripesContainer pattern="spine" className="flex-1 py-12 px-4 sm:px-6">

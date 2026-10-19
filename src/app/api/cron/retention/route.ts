@@ -1,6 +1,13 @@
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/serverDb';
 import { sendRetentionEmail } from '@/lib/mail';
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const hashA = crypto.createHash('sha256').update(a).digest();
+  const hashB = crypto.createHash('sha256').update(b).digest();
+  return crypto.timingSafeEqual(hashA, hashB);
+}
 
 // This is required for Next.js to not cache this cron endpoint
 export const dynamic = 'force-dynamic';
@@ -14,7 +21,7 @@ export async function GET(req: NextRequest) {
       console.error('[Cron] CRON_SECRET env var is not set — cron endpoint locked down');
       return NextResponse.json({ error: 'Cron not configured' }, { status: 503 });
     }
-    if (authHeader !== `Bearer ${cronSecret}`) {
+    if (!authHeader || !timingSafeEqualStrings(authHeader, `Bearer ${cronSecret}`)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

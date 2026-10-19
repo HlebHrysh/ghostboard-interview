@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     const candidateRole = candidateProfile?.role || 'розробник';
     
-    let languageDirective = isEn
+    const languageDirective = isEn
       ? `OUTPUT LANGUAGE: ENGLISH. Create a very natural, spoken filler sentence to buy time. For example: "That's an interesting aspect of the architecture, from my experience..."`
       : `OUTPUT LANGUAGE: UKRAINIAN. Згенеруй дуже природну вставну фразу-перехід, щоб потягнути час. Наприклад: "З мого досвіду, тут є кілька ключових моментів. По-перше..."`;
 

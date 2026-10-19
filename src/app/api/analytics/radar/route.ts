@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSessionUser, prisma } from '@/lib/serverDb';
+import { getSessionUser, getUserSessions } from '@/lib/serverDb';
 import { callGeminiWithFallback, FLASH_MODELS } from '@/lib/geminiApi';
 import { checkRateLimit } from '@/lib/rateLimit';
 
@@ -22,12 +22,9 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. Fetch the last 5 sessions to build the skill profile
-    const recentHistory = await prisma.history.findMany({
-      where: { userId: user.id },
-      orderBy: { timestamp: 'desc' },
-      take: 5,
-    });
+    // 1. Fetch the last 5 sessions to build the skill profile safely
+    const allSessions = await getUserSessions(user.id);
+    const recentHistory = allSessions.slice(0, 5);
 
     if (!recentHistory || recentHistory.length === 0) {
       return NextResponse.json({ 

@@ -3,11 +3,11 @@
  */
 
 export const FLASH_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
   'gemini-flash-latest',
-  'gemini-3.6-flash',
-  'gemini-3.8-flash',
 ];
 
 export const PRO_MODELS = [
@@ -34,6 +34,8 @@ export interface GeminiCallOptions {
   models?: string[];
   contents: any[];
   generationConfig?: any;
+  /** Per-model request timeout in ms (default 25000). Lower = faster failover. */
+  timeoutMs?: number;
 }
 
 export interface GeminiCallResult {
@@ -64,7 +66,7 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
 
   for (const model of modelsToTry) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 25000);
+    const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {

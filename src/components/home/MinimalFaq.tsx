@@ -20,7 +20,7 @@ export function MinimalFaq({ t }: Props) {
   ];
 
   return (
-    <section className="relative w-full py-20 sm:py-28 border-t border-white/[0.08] bg-black">
+    <section className="relative w-full py-20 sm:py-28 border-t border-white/[0.08] bg-transparent">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
         <Reveal className="text-center max-w-xl mx-auto mb-12">
           <div className="shimmer-pill inline-flex items-center px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-zinc-300 mb-4">

@@ -30,16 +30,17 @@ import { CodeBlock } from '@/components/ui/CodeBlock';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getGuideTranslations } from '@/lib/guideI18n';
+import { ReadingSpine } from "@/components/singularity/ReadingSpine";
 
 type MainSection = 'stealth' | 'audio' | 'psychology' | 'checklist';
-type OsTab = 'universal' | 'macos' | 'windows' | 'linux';
+type OsTab = 'acoustic' | 'universal' | 'macos' | 'windows' | 'linux';
 
 export default function GuidePage() {
   const { locale } = useLocale();
   const g = getGuideTranslations(locale);
 
   const [mainSection, setMainSection] = useState<MainSection>('stealth');
-  const [osTab, setOsTab] = useState<OsTab>('universal');
+  const [osTab, setOsTab] = useState<OsTab>('acoustic');
 
   // Interactive pre-flight checklist state
   const [checkedItems, setCheckedItems] = useState<Record<number, boolean>>({});
@@ -50,6 +51,7 @@ export default function GuidePage() {
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 selection:bg-white/20 selection:text-white font-sans">
+      <ReadingSpine />
       <UnifiedNavbar />
 
       <SubpageStripesContainer pattern="blueprint" className="flex-1 py-10 sm:py-16 px-4 sm:px-6">
@@ -83,6 +85,83 @@ export default function GuidePage() {
             <p className="text-sm sm:text-base text-zinc-400 mt-4 leading-relaxed font-sans max-w-2xl mx-auto">
               {g.heroDesc}
             </p>
+          </div>
+
+          {/* Zero-Install Universal Highlight Banner */}
+          <div className="mb-10 p-5 sm:p-7 rounded-3xl bg-gradient-to-r from-[#10121a] via-[#0d0f15] to-[#12141c] border border-white/15 shadow-[0_16px_50px_rgba(0,0,0,0.6)] relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/5 rounded-full blur-[90px] pointer-events-none" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 font-mono text-[11px] font-bold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{g.zeroInstallHeroBadge || '⚡ 100% В БРАУЗЕРІ · 0 ЗАВАНТАЖЕНЬ'}</span>
+              </div>
+              <span className="text-[11px] font-mono text-zinc-400">
+                macOS · Windows · Linux · ChromeOS
+              </span>
+            </div>
+
+            <h2 className="text-lg sm:text-2xl font-bold text-white mb-2 font-sans">
+              {g.zeroInstallHeroTitle || 'Запуск за 30 секунд на будь-якій ОС'}
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-300 mb-5 leading-relaxed max-w-3xl">
+              {g.zeroInstallHeroDesc || 'Вам більше не потрібно завантажувати сторонні десктопні програми чи налаштовувати віртуальні аудіокабелі. Оберіть один із способів:'}
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => { setMainSection('audio'); setOsTab('acoustic'); }}
+                className="p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-amber-400/40 transition-all text-left flex items-center gap-3 cursor-pointer group"
+              >
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 group-hover:scale-105 transition-transform shrink-0">
+                  <Volume2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white group-hover:text-amber-300 transition-colors">
+                    {g.zeroInstallPill1 || '🔊 Динаміки + Мікрофон'}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                    0 завантажень · Будь-який Zoom/Teams
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setMainSection('audio'); setOsTab('universal'); }}
+                className="p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-cyan-400/40 transition-all text-left flex items-center gap-3 cursor-pointer group"
+              >
+                <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 group-hover:scale-105 transition-transform shrink-0">
+                  <Radio className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white group-hover:text-cyan-300 transition-colors">
+                    {g.zeroInstallPill2 || '⚡ Вкладка Chrome'}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                    Google Meet · Zoom Web
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setMainSection('stealth'); }}
+                className="p-3.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 hover:border-emerald-400/40 transition-all text-left flex items-center gap-3 cursor-pointer group"
+              >
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 group-hover:scale-105 transition-transform shrink-0">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white group-hover:text-emerald-300 transition-colors">
+                    {g.zeroInstallPill3 || '🪟 Always-on-Top PiP'}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                    Плаваючий суфлер над дзвінком
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Major Category Navigation Tabs */}
@@ -292,6 +371,35 @@ export default function GuidePage() {
                 </div>
               </div>
             </div>
+
+            {/* PiP Floating Window Prompter Feature */}
+            <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-[#0e1017] via-[#090b10] to-black border border-white/15 space-y-5 shadow-2xl relative overflow-hidden">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-bold uppercase">
+                <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{g.pipFeatureBadge || 'Always-on-Top Суфлер [Новинка]'}</span>
+              </div>
+
+              <h2 className="text-xl sm:text-2xl font-bold text-white font-sans">
+                {g.pipFeatureTitle || 'Document Picture-in-Picture: плаваюче вікно над Zoom і Teams'}
+              </h2>
+
+              <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                {g.pipFeatureDesc || 'Працює у Chrome та Edge на будь-якій системі без стороннього десктопного софту. Натисніть кнопку [PiP] або скористайтеся плаваючим суфлером — він залишається Always-on-Top поверх вікон Zoom, Teams чи CoderPad, навіть коли ви друкуєте в редакторі.'}
+              </p>
+
+              {g.pipFeatureSteps && (
+                <div className="p-5 rounded-2xl bg-zinc-900/60 border border-white/10 space-y-3">
+                  <span className="text-xs font-mono text-cyan-300 font-bold uppercase tracking-wider block">
+                    Як увімкнути плаваючий суфлер за 5 секунд:
+                  </span>
+                  <ol className="list-decimal list-inside text-xs text-zinc-300 space-y-2 font-sans">
+                    {g.pipFeatureSteps.map((step, idx) => (
+                      <li key={idx}>{step}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -301,17 +409,30 @@ export default function GuidePage() {
         {mainSection === 'audio' && (
           <div className="space-y-6 animate-in fade-in duration-200">
             {/* OS Selector Sub-Tabs */}
-            <div className="flex flex-wrap items-center justify-center gap-2 p-1.5 rounded-2xl bg-[#111113] border border-white/10 mb-6 max-w-xl mx-auto font-mono text-xs">
+            <div className="flex flex-wrap items-center justify-center gap-2 p-1.5 rounded-2xl bg-[#111113] border border-white/10 mb-6 max-w-2xl mx-auto font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setOsTab('acoustic')}
+                className={`py-2 px-4 rounded-xl transition-all cursor-pointer font-bold flex items-center gap-1.5 ${
+                  osTab === 'acoustic'
+                    ? 'bg-amber-400 text-black shadow-md'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>{g.tabAcoustic || '🔊 Динаміки (0 Програм)'}</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setOsTab('universal')}
-                className={`py-2 px-4 rounded-xl transition-all cursor-pointer font-bold ${
+                className={`py-2 px-4 rounded-xl transition-all cursor-pointer font-bold flex items-center gap-1.5 ${
                   osTab === 'universal'
                     ? 'bg-white text-black shadow-md'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                {g.tabUniversal}
+                <Radio className="w-3.5 h-3.5" />
+                <span>{g.tabUniversal}</span>
               </button>
               <button
                 type="button"
@@ -347,6 +468,70 @@ export default function GuidePage() {
                 🐧 Linux
               </button>
             </div>
+
+            {/* Sub-Tab 0: Acoustic Mode (0 Downloads, Any OS) */}
+            {osTab === 'acoustic' && (
+              <div className="p-6 sm:p-8 rounded-3xl bg-[#0c0d12] border border-amber-500/30 space-y-5 shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-amber-500/5 rounded-full blur-[100px] pointer-events-none" />
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{g.acousticBadge || 'Найпростіший запуск для будь-якої ОС'}</span>
+                </div>
+
+                <h2 className="text-2xl font-bold text-white font-sans">
+                  {g.acousticTitle || 'Акустичний режим: Звук інтервʼюера з динаміків ноутбука'}
+                </h2>
+
+                <p className="text-sm text-zinc-300 leading-relaxed font-sans">
+                  {g.acousticDesc || 'Працює з абсолютно БУДЬ-ЯКИМ додатком для дзвінків (Zoom Desktop, Microsoft Teams, Slack, Telegram, Skype). Жодних віртуальних аудіокабелів (VB-Cable / BlackHole) чи драйверів встановлювати НЕ потрібно!'}
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                  <div className="p-4 rounded-2xl bg-transparent/50 border border-white/10 space-y-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-400 text-black font-mono font-black text-xs flex items-center justify-center">
+                      1
+                    </span>
+                    <h3 className="font-bold text-sm text-white">
+                      {g.acousticStep1Title || '1. Увімкніть звук через динаміки'}
+                    </h3>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      {g.acousticStep1Desc || 'Зніміть навушники та налаштуйте гучність дзвінка в Zoom або Teams так, щоб ви добре чули співрозмовника з динаміків ноутбука.'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-transparent/50 border border-white/10 space-y-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-400 text-black font-mono font-black text-xs flex items-center justify-center">
+                      2
+                    </span>
+                    <h3 className="font-bold text-sm text-white">
+                      {g.acousticStep2Title || '2. У Ghostboard оберіть «Мікрофон»'}
+                    </h3>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      {g.acousticStep2Desc || 'Натисніть «ПОЧАТИ СПІВБЕСІДУ» та оберіть джерело «Мікрофон». Ghostboard захоплює звук співрозмовника прямо з динаміків через ваш вбудований мікрофон.'}
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-transparent/50 border border-white/10 space-y-2">
+                    <span className="w-6 h-6 rounded-full bg-amber-400 text-black font-mono font-black text-xs flex items-center justify-center">
+                      3
+                    </span>
+                    <h3 className="font-bold text-sm text-white">
+                      {g.acousticStep3Title || '3. ШІ миттєво підказує тези'}
+                    </h3>
+                    <p className="text-xs text-zinc-400 leading-relaxed">
+                      {g.acousticStep3Desc || 'Deepgram Nova-3 розпізнає мову інтервʼюера за 0.3 сек, фільтрує шум, а Gemini за 1 секунду видає структуру відповіді та перший хук.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/25 text-xs text-amber-200 font-mono flex items-center gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    {g.acousticTip || 'Порада: Встановіть помірну гучність динаміків (50–70%), щоб мікрофон чисто чув інтервʼюера.'}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Sub-Tab 1: Universal 1-Click Method */}
             {osTab === 'universal' && (
@@ -562,6 +747,21 @@ export default function GuidePage() {
                     {g.psychRule4Desc}
                   </p>
                 </div>
+
+                {g.bridgeFeatureTitle && (
+                  <div className="p-5 rounded-2xl bg-purple-950/20 border border-purple-500/30 space-y-2 md:col-span-2">
+                    <div className="flex items-center gap-2 font-mono text-xs font-bold text-purple-300 uppercase">
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      <span>{g.bridgeFeatureTitle}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-mono border border-purple-500/30 ml-auto">
+                        [B] KEY
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+                      {g.bridgeFeatureDesc}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

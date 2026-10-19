@@ -13,7 +13,7 @@ export const UnifiedFooter: React.FC = () => {
   const f = m.footer;
 
   return (
-    <footer className="w-full bg-[#040406] border-t border-white/[0.08] text-zinc-400 py-14 px-4 sm:px-8 select-none">
+    <footer className="w-full bg-black border-t border-white/[0.08] text-zinc-400 py-14 px-4 sm:px-8 select-none">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 pb-12 border-b border-white/[0.06]">
           {/* Brand Column */}
@@ -33,8 +33,8 @@ export const UnifiedFooter: React.FC = () => {
               {f.desc}
             </p>
 
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
-              <ShieldCheck className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-zinc-300 text-xs font-mono">
+              <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
               <span>{f.ramBadge}</span>
             </div>
           </div>
@@ -61,12 +61,7 @@ export const UnifiedFooter: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <Link href="/mock-interview" className="hover:text-white transition-colors">
-                  {f.mockLink}
-                </Link>
-              </li>
-              <li>
-                <Link href="/sandbox" className="text-zinc-300 hover:text-white transition-colors flex items-center gap-1">
+                <Link href="/mock-interview" className="text-zinc-300 hover:text-white transition-colors flex items-center gap-1">
                   <span>{t.nav.arena}</span>
                   <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.08] text-zinc-300 border border-white/15 font-bold">SCORECARD</span>
                 </Link>
@@ -123,7 +118,7 @@ export const UnifiedFooter: React.FC = () => {
           </div>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#C8F135] animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-pulse" />
               <span className="text-zinc-400">Deepgram Nova-3 &amp; Gemini 2.5 Flash</span>
             </span>
           </div>

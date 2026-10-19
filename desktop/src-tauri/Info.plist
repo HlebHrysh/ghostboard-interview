@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>LSUIElement</key>
+    <string>1</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>ai.ghostboard.desktop.copilot</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>copilot</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Ghostboard requires microphone access to transcribe candidate speech and perform real-time interview soundchecks.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Ghostboard requires screen and audio recording permissions to capture interlocutor loopback audio from Zoom, Google Meet, Teams, and Discord.</string>
+</dict>
+</plist>

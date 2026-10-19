@@ -138,13 +138,18 @@ export async function POST(req: NextRequest) {
 
     const contentType = req.headers.get('content-type') || '';
 
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
-      const file = formData.get('file') as File | null;
+      const file = (formData.get('file') || formData.get('resume')) as File | null;
       if (!file) {
         return NextResponse.json({ error: 'No PDF file uploaded.' }, { status: 400 });
       }
-      fileName = file.name;
+      if (file.size > MAX_FILE_SIZE) {
+        return NextResponse.json({ error: 'File size exceeds maximum limit of 10MB.' }, { status: 413 });
+      }
+      fileName = file.name.slice(0, 100).replace(/[^a-zA-Z0-9._-]/g, '_');
       const arrayBuffer = await file.arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
       base64Pdf = buffer.toString('base64');
@@ -152,14 +157,17 @@ export async function POST(req: NextRequest) {
       const body = await req.json().catch(() => ({}));
       if (body.fileBase64) {
         const clean = body.fileBase64.includes(',') ? body.fileBase64.split(',')[1] : body.fileBase64;
+        if (clean.length > MAX_FILE_SIZE * 1.37) {
+          return NextResponse.json({ error: 'File size exceeds maximum limit of 10MB.' }, { status: 413 });
+        }
         buffer = Buffer.from(clean, 'base64');
         base64Pdf = clean;
       }
       if (body.rawText) {
-        rawTextContent = String(body.rawText).trim();
+        rawTextContent = String(body.rawText).slice(0, 100000).trim();
       }
       if (body.fileName) {
-        fileName = body.fileName;
+        fileName = String(body.fileName).slice(0, 100).replace(/[^a-zA-Z0-9._-]/g, '_');
       }
     }
 
@@ -167,9 +175,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No resume file or text content provided.' }, { status: 400 });
     }
 
-    // Try extracting local plain text from PDF first
-    if (buffer && !rawTextContent) {
-      rawTextContent = await extractTextFromPdfBuffer(buffer);
+    // Verify PDF Magic Bytes (%PDF-)
+    if (buffer) {
+      const pdfMagic = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2D]);
+      if (buffer.length < 5 || !buffer.subarray(0, 5).equals(pdfMagic)) {
+        return NextResponse.json(
+          { error: 'Invalid file format: Document does not contain valid PDF header magic bytes (%PDF-).' },
+          { status: 400 }
+        );
+      }
+      if (!rawTextContent) {
+        rawTextContent = await extractTextFromPdfBuffer(buffer);
+      }
     }
 
     const systemPrompt = `You are an elite CTO and technical recruiter AI analyzing a candidate's resume/CV for interview copilot context.
@@ -208,10 +225,10 @@ Read the provided resume and return structured data strictly matching this JSON 
     parts.push({ text: systemPrompt });
 
     const preferredModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-flash-latest',
       'gemini-3.8-flash',
       'gemini-3.6-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-flash-latest',
     ];
 
     const result = await callGeminiWithFallback({

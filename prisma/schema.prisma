@@ -16,11 +16,18 @@ model User {
   trialQuestionsUsed Int      @default(0)
   stripeCustomerId   String?
   resumeContext      String?
+  candidateProfile   Json?    // Detailed profile: techStack, petProjects, aiDirectives, etc.
   passwordHash       String?  // scrypt hash; null for OAuth-only accounts
+  isBanned           Boolean  @default(false)
+  lastActiveAt       DateTime?
   createdAt          DateTime @default(now())
 
   sessions Session[]
   history  History[]
+  payments Payment[]
+
+  @@index([createdAt])
+  @@index([lastActiveAt])
 }
 
 model Session {
@@ -48,4 +55,19 @@ model History {
 
   @@index([userId])
   @@index([publicSlug])
+}
+
+model Payment {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  email       String
+  plan        String   // pro, lifetime
+  amountCents Int
+  status      String   @default("succeeded") // succeeded, failed, refunded
+  timestamp   BigInt
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
 }

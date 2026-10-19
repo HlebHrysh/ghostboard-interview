@@ -4,8 +4,16 @@ import { FLASH_MODELS, PRO_MODELS, getCleanGeminiKey } from "../src/lib/geminiAp
 describe("geminiApi helper", () => {
   it("defines cascade models with fallback sequence", () => {
     expect(FLASH_MODELS.length).toBeGreaterThanOrEqual(3);
-    expect(FLASH_MODELS[0]).toContain("flash");
+    expect(FLASH_MODELS[0]).toBe("gemini-3.8-flash");
+    expect(FLASH_MODELS[1]).toBe("gemini-3.6-flash");
+    expect(FLASH_MODELS).not.toContain("gemini-3.7-flash");
+    expect(FLASH_MODELS).not.toContain("gemini-3.5-flash");
+
     expect(PRO_MODELS.length).toBeGreaterThanOrEqual(2);
+    expect(PRO_MODELS[0]).toBe("gemini-3.8-flash");
+    expect(PRO_MODELS[1]).toBe("gemini-3.6-flash");
+    expect(PRO_MODELS).not.toContain("gemini-3.7-flash");
+    expect(PRO_MODELS).not.toContain("gemini-3.5-flash");
   });
 
   it("handles empty or missing key gracefully", () => {

@@ -7,11 +7,17 @@ import { motion } from "framer-motion";
 import { ArrowRight, Download, Volume2, ShieldCheck } from "lucide-react";
 import type { HomeTranslations } from "@/lib/homeI18n";
 import { MonochromeStripesCanvas } from "@/components/ui/MonochromeStripesCanvas";
+import { BlackHoleButton } from "@/components/singularity/BlackHoleButton";
 import { PerspectiveGridHero } from "@/components/ui/PerspectiveGridHero";
 
-// Three.js is client-only and heavy — load it lazily after hydration.
+// Lazy load client-only 3D visual components
 const GhostDetective3D = dynamic(
   () => import("@/components/ui/GhostDetective3D").then((m) => m.GhostDetective3D),
+  { ssr: false }
+);
+
+const BlackHoleHeroVisual = dynamic(
+  () => import("@/components/singularity/BlackHoleHeroVisual").then((m) => m.BlackHoleHeroVisual),
   { ssr: false }
 );
 
@@ -35,7 +41,11 @@ export function ResendHero({ t }: Props) {
       className="pt-28 sm:pt-32 pb-16 sm:pb-24 px-4 sm:px-6"
     >
       {/* 3D Perspective Grid floor & ceiling laser lines */}
+      <div aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none [perspective:1200px]"><div className="accretion-disk" /></div>
       <PerspectiveGridHero />
+
+      <div className="gp-blob w-[32rem] h-[32rem] -top-24 -left-24 bg-white/[0.04]" />
+      <div className="gp-blob w-[26rem] h-[26rem] top-40 right-0 bg-white/[0.03]" style={{ animationDelay: "-6s" }} />
 
       <div className="max-w-6xl mx-auto relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-10 lg:gap-6 items-center">
         {/* Left: Typography & Action */}
@@ -53,10 +63,10 @@ export function ResendHero({ t }: Props) {
 
           <motion.h1
             {...fadeUp(0.08)}
-            className="mt-6 text-5xl sm:text-6xl lg:text-7xl font-medium tracking-tight leading-[1.05] text-white bg-gradient-to-b from-white via-zinc-100 to-zinc-400 bg-clip-text text-transparent"
+            className="mt-6 text-5xl sm:text-6xl lg:text-7xl font-medium tracking-tight leading-[1.05] text-white"
           >
             {t.title} <br className="hidden sm:inline" />
-            {t.titleAccent}
+            <span className="gp-aurora-text">{t.titleAccent}</span>
           </motion.h1>
 
           <motion.p
@@ -67,13 +77,10 @@ export function ResendHero({ t }: Props) {
           </motion.p>
 
           <motion.div {...fadeUp(0.24)} className="mt-8 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <Link
-              href="/interview"
-              className="btn-resend-primary !py-3 !px-7 text-sm group"
-            >
+            <BlackHoleButton href="/interview" size="lg">
               <span>{t.ctaLaunch}</span>
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
+            </BlackHoleButton>
             <Link
               href="/download"
               className="btn-resend-glass !py-3 !px-6 text-sm flex items-center gap-1.5"
@@ -117,15 +124,16 @@ export function ResendHero({ t }: Props) {
           </motion.div>
         </div>
 
-        {/* Right: Interactive 3D Ghost */}
+        {/* Right: Interactive Singularity Black Hole & Ghost Detective */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.96 }}
+          initial={{ opacity: 0, scale: 0.94 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 1.2, ease, delay: 0.2 }}
-          className="relative w-full h-[450px] lg:h-[580px] flex items-center justify-center pointer-events-auto"
+          className="relative w-full h-[460px] lg:h-[600px] flex items-center justify-center pointer-events-auto"
         >
-          <div className="absolute inset-[15%] rounded-full bg-white/[0.04] blur-[90px] pointer-events-none" />
-          <GhostDetective3D className="absolute inset-0 w-full h-full [&>canvas]:w-full [&>canvas]:h-full" />
+          <BlackHoleHeroVisual className="w-full h-full max-w-[540px] max-h-[540px]">
+            <GhostDetective3D className="w-full h-full" />
+          </BlackHoleHeroVisual>
         </motion.div>
       </div>
     </MonochromeStripesCanvas>

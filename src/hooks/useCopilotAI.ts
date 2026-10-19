@@ -1,8 +1,91 @@
 import { useState, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
-import { InterviewQAItem } from '@/components/LiveInterviewHUD';
+import { InterviewQAItem } from '@/types/interview';
 import { normalizeTechnicalSpeech, hasTechnicalKeyword, isFillerOrNoise } from '@/lib/techSpeechNormalizer';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
+
+interface CopilotMessages {
+  analyzing: (q: string) => string;
+  ready: string;
+  busy: string;
+  noTranscript: string;
+  answerFailed: string;
+  genFailed: string;
+  timeout: string;
+  queued: (n: number) => string;
+  refined: string;
+  refineFailed: string;
+  updating: string;
+  defaultHints: string[];
+  refineLabels: Record<string, string>;
+}
+
+const MESSAGES: Record<string, CopilotMessages> = {
+  uk: {
+    analyzing: (q) => `⚡ ШІ аналізує «${q}...»`,
+    ready: '✅ Відповідь готова!',
+    busy: '⚡ ШІ вже аналізує та формує відповідь...',
+    noTranscript: '⏳ Немає накопиченого тексту запитання. Зачекайте, поки співрозмовник озвучить запитання.',
+    answerFailed: 'Помилка отримання відповіді',
+    genFailed: 'Помилка генерації відповіді',
+    timeout: 'ШІ відповідає надто довго. Спробуйте ще раз [Enter].',
+    queued: (n) => `⚡ ШІ дав відповідь на нове питання (+${n} у черзі). Перегляд зафіксовано. [Space] для переходу.`,
+    refined: 'Відповідь скориговано!',
+    refineFailed: 'Не вдалося скоригувати відповідь',
+    updating: 'Оновлюю відповідь...',
+    defaultHints: ['Поясни внутрішню архітектуру та механізми памʼяті', 'Наведи практичний приклад зі свого стеку'],
+    refineLabels: {
+      under_the_hood: '⚙️ Поглиблюю механіку "Під капотом"...',
+      code: '💻 Генерую практичний код...',
+      shorter: '✂️ Стискаю до ключової тези...',
+      re_angle: '🔄 Переосмислюю під іншим кутом...',
+    },
+  },
+  ru: {
+    analyzing: (q) => `⚡ ИИ анализирует «${q}...»`,
+    ready: '✅ Ответ готов!',
+    busy: '⚡ ИИ уже анализирует и формирует ответ...',
+    noTranscript: '⏳ Нет накопленного текста вопроса. Подождите, пока собеседник задаст вопрос.',
+    answerFailed: 'Ошибка получения ответа',
+    genFailed: 'Ошибка генерации ответа',
+    timeout: 'ИИ отвечает слишком долго. Попробуйте ещё раз [Enter].',
+    queued: (n) => `⚡ ИИ ответил на новый вопрос (+${n} в очереди). Просмотр зафиксирован. [Space] для перехода.`,
+    refined: 'Ответ скорректирован!',
+    refineFailed: 'Не удалось скорректировать ответ',
+    updating: 'Обновляю ответ...',
+    defaultHints: ['Объясни внутреннюю архитектуру и работу с памятью', 'Приведи практический пример из своего стека'],
+    refineLabels: {
+      under_the_hood: '⚙️ Углубляю механику «под капотом»...',
+      code: '💻 Генерирую практический код...',
+      shorter: '✂️ Сжимаю до ключевого тезиса...',
+      re_angle: '🔄 Переосмысляю под другим углом...',
+    },
+  },
+  en: {
+    analyzing: (q) => `⚡ AI is analyzing "${q}..."`,
+    ready: '✅ Answer ready!',
+    busy: '⚡ AI is already generating an answer...',
+    noTranscript: '⏳ No question captured yet. Wait for the interviewer to finish speaking.',
+    answerFailed: 'Failed to get an answer',
+    genFailed: 'Answer generation failed',
+    timeout: 'AI is taking too long. Try again with [Enter].',
+    queued: (n) => `⚡ AI answered a new question (+${n} queued). View is frozen. Press [Space] to jump.`,
+    refined: 'Answer refined!',
+    refineFailed: 'Could not refine the answer',
+    updating: 'Updating answer...',
+    defaultHints: ['Explain the internal architecture and memory behavior', 'Give a practical example from your stack'],
+    refineLabels: {
+      under_the_hood: '⚙️ Digging into the internals...',
+      code: '💻 Generating practical code...',
+      shorter: '✂️ Condensing to the key point...',
+      re_angle: '🔄 Rethinking from another angle...',
+    },
+  },
+};
+
+function getMsg(lang: string | undefined): CopilotMessages {
+  return MESSAGES[lang || ''] || MESSAGES.en;
+}
 
 interface UseCopilotAIOptions {
   speechLanguageRef: React.MutableRefObject<string>;
@@ -28,6 +111,8 @@ export function useCopilotAI({
   sessionDuration,
 }: UseCopilotAIOptions) {
   const [interviewQAs, setInterviewQAs] = useState<InterviewQAItem[]>([]);
+  const interviewQAsRef = useRef<InterviewQAItem[]>([]);
+  interviewQAsRef.current = interviewQAs;
   const [activeQAId, setActiveQAId] = useState<string | null>(null);
   const activeQAIdRef = useRef<string | null>(null);
   const [isCopilotGenerating, setIsCopilotGenerating] = useState(false);
@@ -39,6 +124,8 @@ export function useCopilotAI({
   const lastQATextRef = useRef<string>('');
   const [pendingNewCount, setPendingNewCount] = useState<number>(0);
   const pendingNewCountRef = useRef<number>(0);
+  const sessionDurationRef = useRef<number>(sessionDuration);
+  sessionDurationRef.current = sessionDuration;
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -122,16 +209,24 @@ export function useCopilotAI({
       isListening: true,
     });
 
+    const msg = getMsg(outputLanguageRef.current);
     const toastId = overrideText
-      ? toast.loading(`⚡ ШІ аналізує «${overrideText.slice(0, 35)}...»`, { id: 'copilot-gen' })
+      ? toast.loading(msg.analyzing(overrideText.slice(0, 35)), { id: 'copilot-gen' })
       : null;
+
+    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
+      question: qa.question,
+      answer: qa.quickAnswer || qa.startHook || '',
+    }));
 
     try {
       const res = await fetch('/api/ai/interview-copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           question: cleanText,
+          history: recentHistory,
           locale: speechLanguageRef.current,
           outputLanguage: outputLanguageRef.current,
           candidateProfile: candidateProfileRef.current,
@@ -147,14 +242,12 @@ export function useCopilotAI({
           const finalQA: InterviewQAItem = {
             id: `qa_${now}`,
             timestamp: now,
-            timecode: formatTime(sessionDuration),
+            timecode: formatTime(sessionDurationRef.current),
             question: data.question || cleanText,
             startHook: data.startHook || data.quickAnswer,
             quickAnswer: data.quickAnswer,
             nativeTranslation: data.nativeTranslation || null,
-            hints: data.hints?.length
-              ? data.hints
-              : ['Поясни внутрішню архітектуру та механізми памʼяті', 'Наведи практичний приклад зі свого стеку'],
+            hints: data.hints?.length ? data.hints : msg.defaultHints,
             tag: data.tag || '#InterviewQA',
             codeSnippet: data.codeSnippet,
             deliveryTip: data.deliveryTip,
@@ -170,7 +263,7 @@ export function useCopilotAI({
               pendingNewCountRef.current = next;
               return next;
             });
-            toast.info(`⚡ ШІ дав відповідь на нове питання (+${pendingNewCountRef.current + 1} у черзі). Перегляд зафіксовано. [Space] для переходу.`, {
+            toast.info(msg.queued(pendingNewCountRef.current + 1), {
               id: 'freeze-queue-toast',
               duration: 4000,
             });
@@ -180,7 +273,7 @@ export function useCopilotAI({
           }
 
           if (toastId) {
-            toast.success('✅ Відповідь готова!', { id: 'copilot-gen' });
+            toast.success(msg.ready, { id: 'copilot-gen' });
           }
 
           fetch('/api/ai/interview-sync', {
@@ -207,13 +300,14 @@ export function useCopilotAI({
             window.dispatchEvent(new CustomEvent('ghostboard:show_paywall'));
           }
           toast.error(errData.error || 'Trial limit reached', { id: 'copilot-gen' });
-        } else if (toastId) {
-          toast.error(errData.error || 'Помилка отримання відповіді', { id: 'copilot-gen' });
+        } else if (toastId || res.status >= 500 || res.status === 429) {
+          toast.error(errData.error || msg.answerFailed, { id: 'copilot-gen' });
         }
       }
     } catch (err) {
       console.error('Interview copilot error:', err);
-      toast.error('Помилка генерації відповіді', { id: 'copilot-gen' });
+      const timedOut = err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError');
+      toast.error(timedOut ? msg.timeout : msg.genFailed, { id: 'copilot-gen' });
     } finally {
       isCopilotGeneratingRef.current = false;
       setIsCopilotGenerating(false);
@@ -257,16 +351,28 @@ export function useCopilotAI({
       const words = combined.split(/\s+/).filter(Boolean).length;
       if (words >= 3) {
         if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+        // Smart Turn-Taking: check if thought is dangling mid-sentence
+        const isDanglingThought = /(?:[,–—\-\:]|\b(?:а|і|й|та|але|бо|тому що|якщо|чи|щоб|як|в|у|на|з|із|зі|про|до|через|де|коли|and|or|but|if|because|so|with|in|on|to|at|for|about|then|when|where|while))\s*$/i.test(combined.trim());
+        const hasQuestionSign = combined.includes('?');
+
+        const delay = isDanglingThought
+          ? (speechFinal ? 1200 : 1600)
+          : hasQuestionSign
+          ? (speechFinal ? 650 : 900)
+          : (speechFinal ? 750 : 1100);
+
         debounceTimerRef.current = setTimeout(() => {
           processAggregatedQuestion();
-        }, speechFinal ? 700 : 1500);
+        }, delay);
       }
     }
   }, []);
 
   const handleManualEnterTrigger = useCallback((liveTranscript: string) => {
+    const msg = getMsg(outputLanguageRef.current);
     if (isCopilotGeneratingRef.current) {
-      toast.info('⚡ ШІ вже аналізує та формує відповідь...', { id: 'copilot-busy' });
+      toast.info(msg.busy, { id: 'copilot-busy' });
       return;
     }
 
@@ -280,7 +386,7 @@ export function useCopilotAI({
 
     const combinedText = fragments.join(' ').trim();
     if (!combinedText || combinedText.length < 3 || isFillerOrNoise(combinedText)) {
-      toast.info('⏳ Немає накопиченого тексту запитання. Зачекайте, поки співрозмовник озвучить запитання.', {
+      toast.info(msg.noTranscript, {
         id: 'no-transcript-enter',
       });
       return;
@@ -293,38 +399,47 @@ export function useCopilotAI({
     const existing = interviewQAs.find((q) => q.id === qaId);
     if (!existing) return;
 
-    const labels: Record<string, string> = {
-      under_the_hood: '⚙️ Поглиблюю механіку "Під капотом"...',
-      code: '💻 Генерую практичний код...',
-      shorter: '✂️ Стискаю до ключової тези...',
-      re_angle: '🔄 Переосмислюю під іншим кутом...',
-    };
+    const msg = getMsg(outputLanguageRef.current);
+    const labels: Record<string, string> = msg.refineLabels;
 
     const pendingQA: InterviewQAItem = {
       ...existing,
-      startHook: labels[refinement] || 'Оновлюю відповідь...',
+      startHook: labels[refinement] || msg.updating,
       quickAnswer: '...',
     };
 
     setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? pendingQA : q)));
     hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: pendingQA });
 
+    const restore = () => {
+      setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? existing : q)));
+      hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: existing });
+    };
+
+    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
+      question: qa.question,
+      answer: qa.quickAnswer || qa.startHook || '',
+    }));
+
     try {
       const res = await fetch('/api/ai/interview-copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(20000),
         body: JSON.stringify({
           question: existing.question,
           existingQA: existing,
+          history: recentHistory,
           refinement,
           locale: speechLanguageRef.current,
           outputLanguage: outputLanguageRef.current,
           candidateProfile: candidateProfileRef.current,
+          isConcise: isConciseRef.current,
           sessionMode: sessionModeRef.current,
         }),
       });
 
-      const data = await res.json();
+      const data = res.ok ? await res.json().catch(() => null) : null;
       if (data && data.quickAnswer) {
         const finalQA: InterviewQAItem = {
           ...existing,
@@ -346,11 +461,15 @@ export function useCopilotAI({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD_OR_UPDATE_QA', qa: finalQA, activeId: finalQA.id }),
         }).catch(() => {});
-        toast.success('Відповідь скориговано!');
+        toast.success(msg.refined);
+      } else {
+        restore();
+        toast.error(msg.refineFailed);
       }
     } catch (err) {
       console.error('Failed to refine answer:', err);
-      toast.error('Не вдалося скоригувати відповідь');
+      restore();
+      toast.error(msg.refineFailed);
     }
   };
 

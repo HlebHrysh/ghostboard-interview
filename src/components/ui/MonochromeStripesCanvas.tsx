@@ -17,7 +17,7 @@ interface MonochromeStripesCanvasProps {
 export function MonochromeStripesCanvas({
   density = "normal",
   direction = "vertical",
-  glowIntensity = 0.07,
+  glowIntensity = 0.025,
   showScanlines = true,
   className = "",
   children,
@@ -49,14 +49,14 @@ export function MonochromeStripesCanvas({
   const getStripePattern = () => {
     switch (direction) {
       case "diagonal":
-        return "repeating-linear-gradient(45deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 24px)";
+        return "repeating-linear-gradient(45deg, rgba(255,255,255,0.018) 0px, rgba(255,255,255,0.018) 1px, transparent 1px, transparent 24px)";
       case "horizontal":
-        return `repeating-linear-gradient(to bottom, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent ${gapMap[density]})`;
+        return `repeating-linear-gradient(to bottom, rgba(255,255,255,0.015) 0px, rgba(255,255,255,0.015) 1px, transparent 1px, transparent ${gapMap[density]})`;
       case "perspective":
-        return `repeating-linear-gradient(to right, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent ${gapMap[density]})`;
+        return `repeating-linear-gradient(to right, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent ${gapMap[density]})`;
       case "vertical":
       default:
-        return `repeating-linear-gradient(to right, rgba(255,255,255,0.04) 0px, rgba(255,255,255,0.04) 1px, transparent 1px, transparent ${gapMap[density]})`;
+        return `repeating-linear-gradient(to right, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent ${gapMap[density]})`;
     }
   };
 
@@ -74,7 +74,7 @@ export function MonochromeStripesCanvas({
     >
       {/* Layer 1: Procedural mathematical pinstripes */}
       <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-80"
+        className="sg-lines pointer-events-none absolute inset-0 z-0 opacity-80"
         style={{
           backgroundImage: getStripePattern(),
           maskImage:
@@ -95,7 +95,7 @@ export function MonochromeStripesCanvas({
       {/* Layer 3: Architectural horizontal scanlines (subtle depth) */}
       {showScanlines && (
         <div
-          className="pointer-events-none absolute inset-0 z-0 opacity-20"
+          className="sg-lines pointer-events-none absolute inset-0 z-0 opacity-20"
           style={{
             backgroundImage:
               "linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)",

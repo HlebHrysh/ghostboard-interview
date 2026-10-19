@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { GravitationalCard } from "@/components/singularity/GravitationalCard";
 import { Activity, MessageSquareCode, Zap, ArrowUpRight } from "lucide-react";
 
 interface TelemetryBentoProps {
@@ -18,7 +19,7 @@ export function TelemetryBento({
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {/* ── Metric Card 1: Active Sessions ── */}
-      <div className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950/60 p-5 backdrop-blur-xl transition-all duration-300 hover:border-white/[0.16] hover:bg-zinc-950/80 shadow-[0_12px_24px_-8px_rgba(0,0,0,0.6)]">
+      <GravitationalCard tilt={4} className="p-5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-zinc-400">
             {locale === "ua" ? "Активні сесії" : "Active Sessions"}
@@ -43,10 +44,10 @@ export function TelemetryBento({
             ? "Пройдених тренувань та реальних співбесід"
             : "Recorded mock and real live interview sessions"}
         </p>
-      </div>
+      </GravitationalCard>
 
       {/* ── Metric Card 2: Total Questions with Sparkline ── */}
-      <div className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950/60 p-5 backdrop-blur-xl transition-all duration-300 hover:border-white/[0.16] hover:bg-zinc-950/80 shadow-[0_12px_24px_-8px_rgba(0,0,0,0.6)]">
+      <GravitationalCard tilt={4} className="p-5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-zinc-400">
             {locale === "ua" ? "Опрацьовано питань" : "Questions Handled"}
@@ -90,10 +91,10 @@ export function TelemetryBento({
             </svg>
           </div>
         </div>
-      </div>
+      </GravitationalCard>
 
       {/* ── Metric Card 3: AI Inference Latency HUD ── */}
-      <div className="group relative overflow-hidden rounded-2xl border border-white/[0.08] bg-zinc-950/60 p-5 backdrop-blur-xl transition-all duration-300 hover:border-white/[0.16] hover:bg-zinc-950/80 shadow-[0_12px_24px_-8px_rgba(0,0,0,0.6)]">
+      <GravitationalCard tilt={4} className="p-5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-zinc-400">
             {locale === "ua" ? "Затримка ШІ Копілота" : "Copilot AI Latency"}
@@ -124,7 +125,7 @@ export function TelemetryBento({
           <span>{locale === "ua" ? "Deepgram Nova-3 + Gemini Flash" : "Deepgram Nova-3 + Gemini Flash"}</span>
           <Zap className="h-3.5 w-3.5 text-emerald-400" />
         </div>
-      </div>
+      </GravitationalCard>
     </section>
   );
 }

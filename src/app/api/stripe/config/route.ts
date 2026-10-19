@@ -2,35 +2,38 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { validateOrigin } from '@/lib/rateLimit';
+import { requireAdmin } from '@/lib/adminGuard';
 
 function updateEnvFile(keyName: string, value: string) {
-  const envPath = path.join(process.cwd(), '.env.local');
-  let currentContent = '';
-  if (fs.existsSync(envPath)) {
-    currentContent = fs.readFileSync(envPath, 'utf8');
-  }
-  const lines = currentContent.split('\n').filter((l) => l.trim().length > 0);
-  let updated = false;
-  const newLines = lines.map((line) => {
-    if (line.startsWith(`${keyName}=`) || line.startsWith(`${keyName} =`)) {
-      updated = true;
-      return `${keyName}=${value}`;
+  try {
+    const envPath = path.join(process.cwd(), '.env.local');
+    let currentContent = '';
+    if (fs.existsSync(envPath)) {
+      currentContent = fs.readFileSync(envPath, 'utf8');
     }
-    return line;
-  });
-  if (!updated) {
-    newLines.push(`${keyName}=${value}`);
+    const lines = currentContent.split('\n').filter((l) => l.trim().length > 0);
+    let updated = false;
+    const newLines = lines.map((line) => {
+      if (line.startsWith(`${keyName}=`) || line.startsWith(`${keyName} =`)) {
+        updated = true;
+        return `${keyName}=${value}`;
+      }
+      return line;
+    });
+    if (!updated) {
+      newLines.push(`${keyName}=${value}`);
+    }
+    fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
+  } catch (err: any) {
+    console.warn(`[updateEnvFile] Could not persist to .env.local (${err?.message}). Running in-memory.`);
   }
-  fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
   process.env[keyName] = value;
 }
 
 export async function GET(req: NextRequest) {
   // Auth guard: only admin can view Stripe configuration details
-  const adminCookie = req.cookies.get('ghostboard_admin_session')?.value;
-  if (adminCookie !== 'authenticated') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authError = await requireAdmin(req);
+  if (authError) return authError;
 
   const secretKey = process.env.STRIPE_SECRET_KEY?.trim() || '';
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() || '';
@@ -57,10 +60,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const adminCookie = req.cookies.get('ghostboard_admin_session')?.value;
-    if (adminCookie !== 'authenticated') {
-      return NextResponse.json({ error: 'Unauthorized. Admin only.' }, { status: 401 });
-    }
+    const authError = await requireAdmin(req);
+    if (authError) return authError;
 
     if (!validateOrigin(req)) {
       return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });

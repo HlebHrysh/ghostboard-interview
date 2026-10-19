@@ -13,6 +13,17 @@ const nextConfig: NextConfig = {
       "https://js.stripe.com",
     ].join(' ');
 
+    const connectSrcDirectives = [
+      "'self'",
+      ...(isDev ? ["ws:", "wss:"] : []),
+      "https://api.stripe.com",
+      "https://generativelanguage.googleapis.com",
+      "https://api.deepgram.com",
+      "wss://api.deepgram.com",
+      "https://translate.google.com",
+      "https://accounts.google.com",
+    ].join(' ');
+
     const headersList: Array<{ key: string; value: string }> = [
       // Prevent MIME sniffing
       {
@@ -58,13 +69,13 @@ const nextConfig: NextConfig = {
           // Fonts: self + Google Fonts CDN
           "font-src 'self' https://fonts.gstatic.com data:",
           // Images: self + data URIs (screenshots) + blob (audio visualization) + remote avatars
-          "img-src 'self' data: blob: https:",
+          "img-src 'self' data: blob: https://*.googleusercontent.com https://avatars.githubusercontent.com https://img.clerk.com https://images.unsplash.com",
           // Media: self + blob (audio/video streams)
           "media-src 'self' blob:",
           // Workers: self + blob (AudioWorklet for Deepgram)
           "worker-src 'self' blob:",
-          // Connections: self + WebSockets (HMR / Deepgram) + APIs
-          "connect-src 'self' ws: wss: https://api.stripe.com https://generativelanguage.googleapis.com https://api.deepgram.com wss://api.deepgram.com https://translate.google.com https://accounts.google.com",
+          // Connections: self + WebSockets (HMR dev only / Deepgram) + APIs
+          `connect-src ${connectSrcDirectives}`,
           // Frames: Stripe requires iframe for payment elements
           "frame-src 'self' https://js.stripe.com https://hooks.stripe.com",
           // Objects: block all plugin-based content

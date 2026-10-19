@@ -14,6 +14,7 @@ import { ARENA_I18N } from '../src/lib/arenaI18n';
 import { GUIDE_I18N } from '../src/lib/guideI18n';
 import { PROFILE_I18N } from '../src/lib/profileI18n';
 import { HOME_I18N } from '../src/lib/homeI18n';
+import { LUX_I18N } from '../src/lib/luxI18n';
 
 
 describe('i18n 10-Locale Exhaustive Coverage', () => {
@@ -117,6 +118,19 @@ describe('i18n 10-Locale Exhaustive Coverage', () => {
       expect(hud.transcript.enterPrompt.length).toBeGreaterThan(0);
       expect(hud.transcript.candidateSpeechLabel.length).toBeGreaterThan(0);
       expect(hud.transcript.candidateShieldNote.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('contains valid translations for all 10 locales in LUX_I18N', () => {
+    for (const loc of expectedLocales) {
+      const lux = LUX_I18N[loc];
+      expect(lux, `Missing lux translation for ${loc}`).toBeDefined();
+      expect(lux.status.listening.length).toBeGreaterThan(0);
+      expect(lux.status.paused.length).toBeGreaterThan(0);
+      expect(lux.hook.length).toBeGreaterThan(0);
+      expect(lux.points.length).toBeGreaterThan(0);
+      expect(lux.kbd.screenshot.length).toBeGreaterThan(0);
+      expect(lux.disguise.exitHint.length).toBeGreaterThan(0);
     }
   });
 

@@ -40,9 +40,12 @@ import CandidateProfileModal, {
   DEFAULT_CANDIDATE_PROFILE,
 } from '@/components/CandidateProfileModal';
 import { StealthHeaderHUD } from '@/components/interview/StealthHeaderHUD';
+import { EyelineNotch } from '@/components/interview/EyelineNotch';
+import { StealthDisguise } from '@/components/interview/StealthDisguise';
 import { StealthCommandDock } from '@/components/interview/StealthCommandDock';
 import { StealthHistoryDrawer } from '@/components/interview/StealthHistoryDrawer';
-import { StealthPanicShield } from '@/components/interview/StealthPanicShield';
+import { getLuxTranslations } from '@/lib/luxI18n';
+import { GlowBadge } from '@/components/ui/lux/primitives';
 import { TrialLimitModal } from '@/components/interview/TrialLimitModal';
 import { SoundCheckModal } from '@/components/interview/SoundCheckModal';
 import { EyeLineTeleprompter } from '@/components/interview/EyeLineTeleprompter';
@@ -105,6 +108,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const hudT = getHudTranslations(locale).transcript;
   const hudAnswer = getHudTranslations(locale).answer;
   const hudToasts = getHudTranslations(locale).toasts;
+  const luxT = getLuxTranslations(locale);
 
   // ── Document Picture-in-Picture Always-On-Top Window ──
   const { isSupported: isPiPSupported, isOpen: isPiPOpen, pipContainer, togglePiP, closePiP } = useDocumentPiP({
@@ -799,6 +803,13 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 Q · {activeQA.question}
               </p>
 
+              {activeQA.nativeTranslation && (
+                <div className="space-y-1.5">
+                  <GlowBadge tone="indigo">{luxT.translation}</GlowBadge>
+                  <p className="font-semibold leading-[1.4] tracking-tight text-indigo-100">{activeQA.nativeTranslation}</p>
+                </div>
+              )}
+
               {mainAnswer && (
                 <div className="relative pl-4 border-l-2 border-white">
                   <button
@@ -890,17 +901,25 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
   return (
     <SubpageStripesContainer pattern="horizon" glowIntensity={0.05} className="font-sans relative selection:bg-white/20 selection:text-white">
-      {isPanicShieldActive && (
-        <StealthPanicShield
-          isActive={isPanicShieldActive}
-          isCapturing={isCapturing}
-          questionCount={interviewQAs.length}
-          onDeactivate={() => {
-            setIsPanicShieldActive(false);
-            onPanicExit?.();
-          }}
-        />
-      )}
+      <StealthDisguise
+        isActive={isPanicShieldActive}
+        onDeactivate={() => {
+          setIsPanicShieldActive(false);
+          onPanicExit?.();
+        }}
+      />
+      <EyelineNotch
+        isCapturing={isCapturing}
+        sttStatus={sttStatus}
+        isFrozen={isFrozen}
+        isGenerating={isCopilotGenerating}
+        level={liveVolume}
+        activeQA={activeQA ?? null}
+        onToggleFreeze={handleToggleFreeze}
+        onManualReconnect={handleManualReconnect}
+        onPanic={() => setIsPanicShieldActive((p) => !p)}
+        onScreenshot={handleTriggerScreenshot}
+      />
       {isEyeLineActive && (
         <EyeLineTeleprompter activeQA={activeQA} onClose={() => setIsEyeLineActive(false)} isCapturing={isCapturing} />
       )}
@@ -940,7 +959,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         </div>
       </div>
 
-      <main className="relative z-10 mx-auto w-full max-w-[1500px] px-3 sm:px-6 pt-3 pb-28 h-[calc(100vh-4.5rem)] min-h-[520px]">
+      <main className="relative z-10 mx-auto w-full max-w-[1500px] px-3 sm:px-6 pt-3 pb-28 h-[calc(100vh-7rem)] min-h-[520px]">
         <div className="hidden lg:grid h-full gap-4 grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
           {hearingPane}
           {prompterPane}

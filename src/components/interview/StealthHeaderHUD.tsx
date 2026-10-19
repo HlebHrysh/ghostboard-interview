@@ -14,7 +14,6 @@ import {
   BookOpen,
   User,
 } from 'lucide-react';
-import { FluidAudioWaveform } from './FluidAudioWaveform';
 import { GhostDetectiveLogo } from '@/components/ui/GhostDetectiveLogo';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
@@ -63,7 +62,7 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full px-3 sm:px-6 pt-2.5 pointer-events-none select-none">
+    <header className="sticky top-0 z-40 w-full px-3 sm:px-6 pt-14 pointer-events-none select-none">
       <div className="max-w-[700px] mx-auto flex items-center justify-between gap-2 pointer-events-auto">
         {/* Left: Brand, Time & Role Pill */}
         <div className="flex items-center gap-1.5">
@@ -120,43 +119,6 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
             )}
           </div>
         </div>
-
-        {/* Center: Live STT Status & Audio Waveform */}
-        {isCapturing && (
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0D0D10]/90 border border-white/[0.08] backdrop-blur-xl">
-            <button
-              type="button"
-              onClick={onManualReconnect}
-              title={hud.sttTooltip}
-              className="flex items-center gap-1 text-[10px] font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
-            >
-              {sttStatus === 'connected' ? (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />
-                  <span className="font-semibold text-zinc-300">STT Live</span>
-                </span>
-              ) : sttStatus === 'reconnecting' ? (
-                <span className="flex items-center gap-1 text-amber-300 animate-pulse">
-                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                  <span>Reconnecting</span>
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-rose-400">
-                  <WifiOff className="w-2.5 h-2.5" />
-                  <span>Offline</span>
-                </span>
-              )}
-            </button>
-
-            <div className="border-l border-white/[0.08] pl-1.5 flex items-center">
-              <FluidAudioWaveform
-                isCapturing={isCapturing}
-                width={70}
-                height={16}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Right: Sound Check, Language, User Profile & Settings Menu */}
         <div className="flex items-center gap-1.5 relative">

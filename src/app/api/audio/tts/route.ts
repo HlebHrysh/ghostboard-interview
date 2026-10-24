@@ -213,8 +213,8 @@ export async function GET(req: NextRequest) {
         'X-TTS-Source': 'google-fallback',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[TTS API Error]', error);
-    return NextResponse.json({ error: error.message || 'TTS generation failed' }, { status: 500 });
+    return NextResponse.json({ error: (error as { message?: string })?.message || 'TTS generation failed' }, { status: 500 });
   }
 }

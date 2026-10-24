@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
+use crate::ipc::events::HudEvent;
 
 pub const DEFAULT_DEEPGRAM_URL: &str =
     "wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1";
@@ -123,7 +124,133 @@ pub fn parse_deepgram_json_with_speaker(
     })
 }
 
+/// KeepAlive is sent when no audio was written for this long (Deepgram drops idle sockets at ~10s).
+pub const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(7500);
+/// Reconnect backoff: first retry delay and ceiling.
+pub const RECONNECT_BASE_DELAY_MS: u64 = 500;
+pub const RECONNECT_MAX_DELAY_MS: u64 = 5000;
+
+/// Exponential reconnect backoff: 500ms -> 1s -> 2s -> 4s -> 5s (capped).
+/// `attempt` is zero-based (0 = first retry).
+pub fn reconnect_backoff(attempt: u32) -> Duration {
+    let factor = 1u64.checked_shl(attempt.min(16)).unwrap_or(u64::MAX);
+    let ms = RECONNECT_BASE_DELAY_MS
+        .saturating_mul(factor)
+        .min(RECONNECT_MAX_DELAY_MS);
+    Duration::from_millis(ms)
+}
+
+/// Builds the Deepgram KeepAlive text frame.
+pub fn keepalive_message() -> Message {
+    Message::Text(r#"{"type":"KeepAlive"}"#.to_string())
+}
+
+fn status_event(speaker: &str, status: &str, attempt: u32, retry_in_ms: u64, message: Option<String>) -> HudEvent {
+    HudEvent::SttStatus {
+        speaker: speaker.to_string(),
+        status: status.to_string(),
+        attempt,
+        retry_in_ms,
+        message,
+    }
+}
+
+type WsStream = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+fn build_request(
+    api_key: &str,
+    url: &str,
+) -> Result<tokio_tungstenite::tungstenite::handshake::client::Request, String> {
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| format!("Invalid Deepgram URL {}: {}", url, e))?;
+    let auth_header = format!("Token {}", api_key.trim());
+    request.headers_mut().insert(
+        "Authorization",
+        HeaderValue::from_str(&auth_header).map_err(|e| format!("Invalid Authorization header: {}", e))?,
+    );
+    Ok(request)
+}
+
+/// True when the handshake failure is a non-retryable auth/permission rejection.
+fn is_fatal_connect_error(e: &tokio_tungstenite::tungstenite::Error) -> bool {
+    matches!(
+        e,
+        tokio_tungstenite::tungstenite::Error::Http(resp)
+            if matches!(resp.status().as_u16(), 401 | 402 | 403)
+    )
+}
+
+enum SessionEnd {
+    /// Client dropped / transcript consumer gone: stop supervising.
+    Stopped,
+    /// Socket lost: reconnect.
+    Dropped,
+}
+
+/// Runs one WebSocket session: forwards PCM, sends idle KeepAlive, reads transcripts.
+async fn run_session(
+    ws: WsStream,
+    audio_rx: &mut mpsc::Receiver<Vec<u8>>,
+    transcript_tx: &mpsc::Sender<TranscriptToken>,
+    speaker: &str,
+) -> SessionEnd {
+    let (mut ws_write, mut ws_read) = ws.split();
+    let mut last_write = tokio::time::Instant::now();
+
+    let end = loop {
+        let keepalive_deadline = last_write + KEEPALIVE_INTERVAL;
+        tokio::select! {
+            chunk = audio_rx.recv() => {
+                match chunk {
+                    None => break SessionEnd::Stopped,
+                    Some(pcm) if pcm.is_empty() => {}
+                    Some(pcm) => {
+                        if let Err(e) = ws_write.send(Message::Binary(pcm)).await {
+                            tracing::error!(target: "ghostboard::stt", speaker = %speaker, "Error sending PCM audio chunk: {}", e);
+                            break SessionEnd::Dropped;
+                        }
+                        last_write = tokio::time::Instant::now();
+                    }
+                }
+            }
+            _ = tokio::time::sleep_until(keepalive_deadline) => {
+                if let Err(e) = ws_write.send(keepalive_message()).await {
+                    tracing::warn!(target: "ghostboard::stt", speaker = %speaker, "KeepAlive ping failed: {}", e);
+                    break SessionEnd::Dropped;
+                }
+                last_write = tokio::time::Instant::now();
+            }
+            msg = ws_read.next() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        let now_ms = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        if let Some(token) = parse_deepgram_json_with_speaker(&text, now_ms, speaker) {
+                            if transcript_tx.send(token).await.is_err() {
+                                break SessionEnd::Stopped;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break SessionEnd::Dropped,
+                    Some(Ok(_)) => {}
+                    Some(Err(e)) => {
+                        tracing::error!(target: "ghostboard::stt", speaker = %speaker, "WebSocket read error: {}", e);
+                        break SessionEnd::Dropped;
+                    }
+                }
+            }
+        }
+    };
+    let _ = ws_write.close().await;
+    end
+}
+
 /// Full-duplex WebSocket client streaming 16kHz linear PCM to Deepgram Nova-3.
+/// The audio channel outlives individual sockets: a supervisor task reconnects with
+/// exponential backoff while the client is alive, so capture never needs to restart.
 pub struct DeepgramClient {
     audio_tx: mpsc::Sender<Vec<u8>>,
     is_connected: Arc<AtomicBool>,
@@ -147,94 +274,117 @@ impl DeepgramClient {
         speaker: &str,
         transcript_tx: mpsc::Sender<TranscriptToken>,
     ) -> Result<Self, String> {
-        let generated_url;
+        Self::connect_supervised(api_key, endpoint_url, speaker, transcript_tx, None).await
+    }
+
+    /// Like `connect_with_speaker`, additionally publishing `HudEvent::SttStatus`
+    /// (connected / reconnecting / failed) to `status_tx`.
+    pub async fn connect_supervised(
+        api_key: &str,
+        endpoint_url: Option<&str>,
+        speaker: &str,
+        transcript_tx: mpsc::Sender<TranscriptToken>,
+        status_tx: Option<mpsc::UnboundedSender<HudEvent>>,
+    ) -> Result<Self, String> {
         let url = match endpoint_url {
-            Some(u) => u,
-            None => {
-                generated_url = build_deepgram_url(Some("nova-3"), None);
-                &generated_url
-            }
+            Some(u) => u.to_string(),
+            None => build_deepgram_url(Some("nova-3"), None),
         };
+        let api_key = api_key.to_string();
 
-        let mut request = url
-            .into_client_request()
-            .map_err(|e| format!("Invalid Deepgram URL {}: {}", url, e))?;
-
-        let auth_header = format!("Token {}", api_key.trim());
-        request.headers_mut().insert(
-            "Authorization",
-            HeaderValue::from_str(&auth_header)
-                .map_err(|e| format!("Invalid Authorization header: {}", e))?,
-        );
-
-        let (ws_stream, _) = tokio_tungstenite::connect_async(request)
+        let request = build_request(&api_key, &url)?;
+        let (initial_ws, _) = tokio_tungstenite::connect_async(request)
             .await
             .map_err(|e| format!("Deepgram WebSocket connection failed: {}", e))?;
 
-        let (mut ws_write, mut ws_read) = ws_stream.split();
         let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<u8>>(100);
         let is_connected = Arc::new(AtomicBool::new(true));
-        let is_conn_read = is_connected.clone();
-        let is_conn_write = is_connected.clone();
+        let is_conn = is_connected.clone();
         let speaker_tag = speaker.to_string();
 
-        // 1. Audio Sender Task (Streams 16kHz PCM chunks + KeepAlive ping during silence)
-        tokio::spawn(async move {
-            let mut keepalive_interval = tokio::time::interval(Duration::from_secs(8));
-            keepalive_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let emit = move |ev: HudEvent| {
+            if let Some(tx) = &status_tx {
+                let _ = tx.send(ev);
+            }
+        };
 
-            loop {
-                tokio::select! {
-                    Some(pcm_chunk) = audio_rx.recv() => {
-                        if !pcm_chunk.is_empty() {
-                            if let Err(e) = ws_write.send(Message::Binary(pcm_chunk)).await {
-                                eprintln!("[Deepgram] Error sending PCM audio chunk: {}", e);
-                                break;
+        tokio::spawn(async move {
+            let mut next_ws = Some(initial_ws);
+            let mut attempt: u32 = 0;
+
+            'supervisor: loop {
+                let ws = match next_ws.take() {
+                    Some(ws) => ws,
+                    None => loop {
+                        let delay = reconnect_backoff(attempt);
+                        emit(status_event(
+                            &speaker_tag,
+                            "reconnecting",
+                            attempt + 1,
+                            delay.as_millis() as u64,
+                            None,
+                        ));
+                        tracing::info!(
+                            target: "ghostboard::stt",
+                            speaker = %speaker_tag,
+                            attempt = attempt + 1,
+                            delay_ms = delay.as_millis(),
+                            "Reconnecting to Deepgram"
+                        );
+
+                        // Wait out the backoff, discarding stale audio so capture is never blocked.
+                        let sleep = tokio::time::sleep(delay);
+                        tokio::pin!(sleep);
+                        loop {
+                            tokio::select! {
+                                _ = &mut sleep => break,
+                                chunk = audio_rx.recv() => {
+                                    if chunk.is_none() {
+                                        break 'supervisor;
+                                    }
+                                }
                             }
                         }
-                    }
-                    _ = keepalive_interval.tick() => {
-                        // Deepgram closes idle connections after 10-15s of silence
-                        let keepalive = Message::Text(r#"{"type":"KeepAlive"}"#.to_string());
-                        if let Err(e) = ws_write.send(keepalive).await {
-                            eprintln!("[Deepgram] KeepAlive ping failed: {}", e);
-                            break;
-                        }
-                    }
-                    else => break,
-                }
-            }
-            is_conn_write.store(false, Ordering::Relaxed);
-            let _ = ws_write.close().await;
-        });
+                        attempt = attempt.saturating_add(1);
 
-        // 2. Transcript Receiver Task (Reads interim and final transcription tokens)
-        tokio::spawn(async move {
-            while let Some(msg_result) = ws_read.next().await {
-                match msg_result {
-                    Ok(Message::Text(text)) => {
-                        let now_ms = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64;
-
-                        if let Some(token) = parse_deepgram_json_with_speaker(&text, now_ms, &speaker_tag) {
-                            if transcript_tx.send(token).await.is_err() {
-                                break;
+                        let request = match build_request(&api_key, &url) {
+                            Ok(r) => r,
+                            Err(e) => {
+                                emit(status_event(&speaker_tag, "failed", attempt, 0, Some(e)));
+                                break 'supervisor;
+                            }
+                        };
+                        match tokio_tungstenite::connect_async(request).await {
+                            Ok((ws, _)) => break ws,
+                            Err(e) => {
+                                tracing::warn!(target: "ghostboard::stt", speaker = %speaker_tag, "Reconnect failed: {}", e);
+                                if is_fatal_connect_error(&e) {
+                                    emit(status_event(
+                                        &speaker_tag,
+                                        "failed",
+                                        attempt,
+                                        0,
+                                        Some(format!("Deepgram rejected credentials: {}", e)),
+                                    ));
+                                    break 'supervisor;
+                                }
                             }
                         }
-                    }
-                    Ok(Message::Close(_)) => {
-                        break;
-                    }
-                    Ok(_) => {}
-                    Err(e) => {
-                        eprintln!("[Deepgram] WebSocket read error: {}", e);
-                        break;
+                    },
+                };
+
+                attempt = 0; // successful connect resets the backoff
+                is_conn.store(true, Ordering::Relaxed);
+                emit(status_event(&speaker_tag, "connected", 0, 0, None));
+
+                match run_session(ws, &mut audio_rx, &transcript_tx, &speaker_tag).await {
+                    SessionEnd::Stopped => break,
+                    SessionEnd::Dropped => {
+                        is_conn.store(false, Ordering::Relaxed);
                     }
                 }
             }
-            is_conn_read.store(false, Ordering::Relaxed);
+            is_conn.store(false, Ordering::Relaxed);
         });
 
         Ok(Self {
@@ -262,6 +412,39 @@ impl DeepgramClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_reconnect_backoff_sequence_and_cap() {
+        assert_eq!(reconnect_backoff(0), Duration::from_millis(500));
+        assert_eq!(reconnect_backoff(1), Duration::from_millis(1000));
+        assert_eq!(reconnect_backoff(2), Duration::from_millis(2000));
+        assert_eq!(reconnect_backoff(3), Duration::from_millis(4000));
+        assert_eq!(reconnect_backoff(4), Duration::from_millis(5000));
+        assert_eq!(reconnect_backoff(100), Duration::from_millis(5000));
+        assert_eq!(reconnect_backoff(u32::MAX), Duration::from_millis(5000));
+    }
+
+    #[test]
+    fn test_keepalive_message_and_interval() {
+        match keepalive_message() {
+            Message::Text(t) => {
+                let v: serde_json::Value = serde_json::from_str(&t).expect("valid json");
+                assert_eq!(v["type"], "KeepAlive");
+            }
+            other => panic!("KeepAlive must be a text frame, got {:?}", other),
+        }
+        assert!(KEEPALIVE_INTERVAL >= Duration::from_secs(7));
+        assert!(KEEPALIVE_INTERVAL <= Duration::from_secs(8));
+    }
+
+    #[test]
+    fn test_status_event_shape() {
+        let ev = status_event("candidate", "reconnecting", 2, 1000, None);
+        let json = serde_json::to_string(&ev).expect("serialize");
+        assert!(json.contains(r#""type":"sttStatus""#));
+        assert!(json.contains(r#""status":"reconnecting""#));
+        assert!(json.contains(r#""attempt":2"#));
+    }
 
     #[test]
     fn test_parse_deepgram_interim_json() {

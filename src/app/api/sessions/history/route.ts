@@ -26,8 +26,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, session: saved });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Помилка збереження сесії' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Помилка збереження сесії' }, { status: 500 });
   }
 }
 

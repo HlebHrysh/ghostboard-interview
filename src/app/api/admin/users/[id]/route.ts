@@ -29,8 +29,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
     return NextResponse.json({ success: true, user: updated });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Update failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Update failed' }, { status: 500 });
   }
 }
 
@@ -46,8 +46,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'User not found or deletion failed' }, { status: 404 });
     }
     return NextResponse.json({ success: true, message: 'User deleted successfully' });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Deletion failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Deletion failed' }, { status: 500 });
   }
 }
 

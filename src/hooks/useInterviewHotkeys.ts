@@ -8,7 +8,7 @@ interface UseInterviewHotkeysOptions {
   isFrozenRef: React.MutableRefObject<boolean>;
   pendingNewCountRef: React.MutableRefObject<number>;
   activeQAIdRef: React.MutableRefObject<string | null>;
-  interviewQAs: any[];
+  interviewQAs: Array<{ id: string }>;
   setIsFrozen: (val: boolean) => void;
   setPendingNewCount: (val: number | ((prev: number) => number)) => void;
   setActiveQAId: (val: string | null) => void;

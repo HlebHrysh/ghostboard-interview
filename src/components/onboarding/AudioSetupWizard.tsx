@@ -92,7 +92,7 @@ export const AudioSetupWizard: React.FC<AudioSetupWizardProps> = ({
     
     // Play a generic test phrase in the current locale via TTS
     const textToSay = locale === 'ua' ? 'Як працює збирач сміття?' : 'Can you explain how this works?';
-    const ttsLang = (TTS_LANG_MAP as any)[locale] || 'en';
+    const ttsLang = (TTS_LANG_MAP as Record<string, string>)[locale] || 'en';
     const audioUrl = `/api/audio/tts?lang=${ttsLang}&text=${encodeURIComponent(textToSay)}`;
     
     const audio = new Audio(audioUrl);

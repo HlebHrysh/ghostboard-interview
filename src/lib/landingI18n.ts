@@ -1,6 +1,13 @@
 import type { SupportedLocale } from './geoLang';
 
-export const LANDING_COPY: Record<SupportedLocale, any> = {
+export interface LandingCopyData {
+  nav?: Record<string, string>;
+  hero: { line1: string; [key: string]: unknown };
+  demo: { title: string; [key: string]: unknown };
+  [key: string]: unknown;
+}
+
+export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
   "ua": {
     "nav": {
       "features": "МОЖЛИВОСТІ",

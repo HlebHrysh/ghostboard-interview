@@ -13,7 +13,7 @@ import {
   ExternalLink,
   ShieldAlert,
 } from 'lucide-react';
-import type { DesktopMediaSource } from '../types/electron';
+import type { DesktopMediaSource } from '../types/tauri';
 
 export interface SourcePickerModalProps {
   isOpen: boolean;
@@ -72,9 +72,9 @@ export const SourcePickerModal: React.FC<SourcePickerModalProps> = ({
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[SourcePickerModal] Error fetching sources:', err);
-      setPermissionError(err.message || 'Не вдалося отримати список вікон');
+      setPermissionError(err instanceof Error ? err.message : 'Не вдалося отримати список вікон');
     } finally {
       setIsLoading(false);
     }

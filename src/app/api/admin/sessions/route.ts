@@ -42,8 +42,8 @@ export async function DELETE(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, message: 'Session deleted' });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to delete session' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Failed to delete session' }, { status: 500 });
   }
 }
 

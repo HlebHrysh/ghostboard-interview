@@ -8,7 +8,7 @@ import {
 } from '../desktop/src/lib/audioEngine';
 import React from 'react';
 import { AudioWaveform } from '../desktop/src/components/AudioWaveform';
-import type { DesktopMediaSource } from '../desktop/src/types/electron';
+import type { DesktopMediaSource } from '../desktop/src/types/tauri';
 
 describe('Challenger 2: Strict Speaker Separation & UI Stability Empirical Verification', () => {
   // =========================================================================

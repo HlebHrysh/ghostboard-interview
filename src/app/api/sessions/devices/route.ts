@@ -75,8 +75,8 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, sessions });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Server error' }, { status: 500 });
   }
 }
 
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Server error' }, { status: 500 });
   }
 }

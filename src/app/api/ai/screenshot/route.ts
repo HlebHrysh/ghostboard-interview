@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callGeminiWithFallback, FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore } from '@/lib/interviewSyncStore';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
 import { getSessionUser } from '@/lib/serverDb';
 
 // Global cache for latest screenshot analysis (shared across client sessions)
-let latestScreenshotQA: any = null;
+let latestScreenshotQA: Record<string, unknown> | null = null;
 let latestScreenshotTimestamp = 0;
 
 export async function GET(req: NextRequest) {
@@ -256,7 +256,7 @@ Do not wrap JSON in backticks or markdown fences. Output pure JSON only.`;
       latestScreenshotTimestamp = Date.now();
 
       // Push to unified interview sync store for multi-device live sync
-      interviewSyncStore.addOrUpdateQA({
+      await syncStore.addOrUpdateQA({
         id: `ss_${Date.now()}`,
         question: parsed.topic
           ? `📸 ${parsed.topic} ${parsed.language && parsed.language !== 'none' ? `(${parsed.language})` : ''}`
@@ -295,8 +295,8 @@ Do not wrap JSON in backticks or markdown fences. Output pure JSON only.`;
         { status: 200 }
       );
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Screenshot API] Fatal error:', err);
-    return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Server error' }, { status: 500 });
   }
 }

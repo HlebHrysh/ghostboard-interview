@@ -721,7 +721,7 @@ export default function CandidateProfileModal({
           techStack: Array.isArray(p.techStack) && p.techStack.length > 0 ? p.techStack : prev.techStack,
           cvContext: p.cvContext || prev.cvContext,
           petProjects: Array.isArray(p.petProjects) && p.petProjects.length > 0
-            ? p.petProjects.map((item: any, idx: number) => ({
+            ? p.petProjects.map((item: { name?: string; title?: string; description?: string; keyHighlight?: string; keyAchievement?: string }, idx: number) => ({
                 id: `parsed_proj_${Date.now()}_${idx}`,
                 name: item.name || item.title || `Project #${idx + 1}`,
                 description: item.description || '',
@@ -738,8 +738,8 @@ export default function CandidateProfileModal({
       });
 
       toast.success('Resume parsed & profile populated successfully!');
-    } catch (err: any) {
-      toast.error(err.message || 'Could not parse resume. Try pasting text directly into CV tab.');
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || 'Could not parse resume. Try pasting text directly into CV tab.');
     } finally {
       setIsUploadingPdf(false);
       setUploadScanStep('');
@@ -855,7 +855,7 @@ export default function CandidateProfileModal({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id as any)}
+                  onClick={() => setActiveTab(tab.id as 'role' | 'projects' | 'context' | 'persona')}
                   className={`relative flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-2 z-10 ${
                     isActive ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
                   }`}
@@ -1439,7 +1439,7 @@ export default function CandidateProfileModal({
                               ...profile,
                               aiDirectives: {
                                 ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
-                                responseLength: item.id as any,
+                                responseLength: item.id as 'ultra-concise' | 'structured' | 'bullets',
                               }
                             })}
                             className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${
@@ -1476,7 +1476,7 @@ export default function CandidateProfileModal({
                               ...profile,
                               aiDirectives: {
                                 ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
-                                toneOfVoice: item.id as any,
+                                toneOfVoice: item.id as 'authoritative' | 'pragmatic' | 'star',
                               }
                             })}
                             className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${
@@ -1513,7 +1513,7 @@ export default function CandidateProfileModal({
                               ...profile,
                               aiDirectives: {
                                 ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES),
-                                engineeringFocus: item.id as any,
+                                engineeringFocus: item.id as 'architecture' | 'clean_code' | 'business_impact',
                               }
                             })}
                             className={`p-2.5 rounded-xl text-left border cursor-pointer transition-all ${

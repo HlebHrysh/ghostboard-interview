@@ -188,7 +188,7 @@ impl AudioCaptureStream {
         let is_running_clone = is_running.clone();
 
         let err_fn = move |err| {
-            eprintln!("Audio capture stream error: {:?}", err);
+            tracing::error!(target: "ghostboard::audio", "Audio capture stream error: {:?}", err);
         };
 
         let stream = match sample_format {

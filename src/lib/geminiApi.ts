@@ -1,6 +1,9 @@
 /**
  * Shared Gemini API Client with model fallback and robust error handling.
  */
+import { logger } from './logger';
+
+const log = logger.child({ component: 'geminiApi' });
 
 export const FLASH_MODELS = [
   'gemini-3.8-flash',
@@ -32,8 +35,8 @@ export function getCleanGeminiKey(): string | null {
 
 export interface GeminiCallOptions {
   models?: string[];
-  contents: any[];
-  generationConfig?: any;
+  contents: unknown[];
+  generationConfig?: Record<string, unknown>;
   /** Per-model request timeout in ms (default 25000). Lower = faster failover. */
   timeoutMs?: number;
 }
@@ -41,7 +44,7 @@ export interface GeminiCallOptions {
 export interface GeminiCallResult {
   ok: boolean;
   modelUsed?: string;
-  data?: any;
+  data?: unknown;
   text?: string;
   error?: string;
   isQuotaError?: boolean;
@@ -58,55 +61,71 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
   }
 
   const modelsToTry = options.models || FLASH_MODELS;
-  let lastError = '';
+  let lastError = 'No models available';
   let isQuota = false;
   let isDenied = false;
   let isInvalidKey = false;
   let isPrepayDepleted = false;
 
   for (const model of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const timeoutMs = options.timeoutMs || 25000;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), options.timeoutMs ?? 25000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
         body: JSON.stringify({
           contents: options.contents,
-          generationConfig: options.generationConfig,
+          generationConfig: options.generationConfig || {
+            temperature: 0.2,
+            maxOutputTokens: 2048,
+          },
         }),
+        signal: controller.signal,
       });
+
       clearTimeout(timeoutId);
 
       if (res.ok) {
-        const data = await res.json();
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return {
-          ok: true,
-          modelUsed: model,
-          data,
-          text,
+        const data = (await res.json()) as {
+          candidates?: Array<{
+            content?: {
+              parts?: Array<{ text?: string }>;
+            };
+          }>;
         };
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          return {
+            ok: true,
+            modelUsed: model,
+            data,
+            text,
+          };
+        }
       }
 
-      const errText = await res.text();
-      let errMsg = errText;
+      // If not ok, analyze the error
+      let errBody = '';
       try {
-        const parsed = JSON.parse(errText);
-        errMsg = parsed.error?.message || errText;
-      } catch {}
+        errBody = await res.text();
+      } catch {
+        // ignore
+      }
 
+      const errMsg = `${res.statusText} ${errBody}`;
       lastError = errMsg;
 
-      // Check if invalid API key (fatal across all models)
-      if (res.status === 401 || errMsg.includes('UNAUTHENTICATED') || errMsg.includes('API_KEY_INVALID') || errMsg.includes('invalid authentication credentials') || errMsg.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED')) {
+      // Check if API key is invalid
+      if (res.status === 400 && (errMsg.includes('API_KEY_INVALID') || errMsg.includes('API key not valid'))) {
         isInvalidKey = true;
-        break;
+        break; // Key is dead, fail fast without hammering further models
       }
 
-      // Check if prepayment credits are depleted
+      // Check for Google Prepay zero-balance lock
       if (errMsg.includes('prepayment credits are depleted')) {
         isPrepayDepleted = true;
         break;
@@ -120,20 +139,20 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
 
       // Check if rate limited / quota exhausted on THIS specific model: try the next model!
       if (res.status === 429 || errMsg.includes('Quota exceeded') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('free_tier_requests, limit: 0')) {
-        console.warn(`Model ${model} quota/rate limit reached (429). Trying fallback model...`);
+        log.warn(`Model ${model} quota/rate limit reached (429). Trying fallback model...`, { model, status: res.status });
         isQuota = true;
         continue;
       }
 
       // If model not found, high demand (503) or deprecated, try next model
       if (res.status === 404 || res.status === 503 || errMsg.includes('not found') || errMsg.includes('no longer available') || errMsg.includes('high demand')) {
-        console.warn(`Model ${model} unavailable (status ${res.status}). Trying fallback...`);
+        log.warn(`Model ${model} unavailable (status ${res.status}). Trying fallback...`, { model, status: res.status });
         continue;
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearTimeout(timeoutId);
-      lastError = e.message || 'Network error';
-      console.warn(`Model ${model} request error: ${lastError}. Trying fallback...`);
+      lastError = e instanceof Error ? e.message : 'Network error';
+      log.warn(`Model ${model} request error: ${lastError}. Trying fallback...`, { model }, e);
     }
   }
 

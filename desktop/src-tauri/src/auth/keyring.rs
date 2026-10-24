@@ -33,7 +33,7 @@ impl KeyringStore {
         match Entry::new(KEYRING_SERVICE, KEYRING_USER) {
             Ok(entry) => {
                 if let Err(e) = entry.set_password(&serialized) {
-                    eprintln!("[Keyring] Native store warning: {}, using secure memory store", e);
+                    tracing::warn!(target: "ghostboard::auth", "Native store warning: {}, using secure memory store", e);
                     let mut lock = self.fallback_memory.write().map_err(|e| e.to_string())?;
                     *lock = Some(serialized);
                 } else {
@@ -44,7 +44,7 @@ impl KeyringStore {
                 }
             }
             Err(e) => {
-                eprintln!("[Keyring] Entry creation notice: {}, using memory store", e);
+                tracing::warn!(target: "ghostboard::auth", "Entry creation notice: {}, using memory store", e);
                 let mut lock = self.fallback_memory.write().map_err(|e| e.to_string())?;
                 *lock = Some(serialized);
             }
@@ -75,7 +75,7 @@ impl KeyringStore {
             }
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => {
-                eprintln!("[Keyring] Keyring load notice (fallback active): {}", e);
+                tracing::warn!(target: "ghostboard::auth", "Keyring load notice (fallback active): {}", e);
                 Ok(None)
             }
         }

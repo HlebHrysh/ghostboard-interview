@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
         role: user.role,
       }
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }

@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
         let activeModelUsed = '';
         let fullGeneratedText = '';
 
-        const sendEvent = (event: string, data: any) => {
+        const sendEvent = (event: string, data: unknown) => {
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
@@ -291,8 +291,8 @@ export async function POST(req: NextRequest) {
 
             streamSuccess = true;
             break;
-          } catch (err: any) {
-            console.warn(`[DualStream] Error streaming model ${model}:`, err.message);
+          } catch (err: unknown) {
+            console.warn(`[DualStream] Error streaming model ${model}:`, (err as { message?: string })?.message);
           }
         }
 
@@ -356,10 +356,10 @@ export async function POST(req: NextRequest) {
         'X-Accel-Buffering': 'no',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[DualStream API Error]', error);
     return NextResponse.json(
-      { error: error.message || 'Internal server error' },
+      { error: (error as { message?: string })?.message || 'Internal server error' },
       { status: 500 }
     );
   }

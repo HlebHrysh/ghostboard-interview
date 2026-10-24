@@ -217,7 +217,7 @@ export default function ProfilePage() {
         if (data?.history && Array.isArray(data.history)) {
           setSessionCount(data.history.length);
           const qCount = data.history.reduce(
-            (acc: number, s: any) => acc + (s.questionsCount || (s.items?.length || 0)),
+            (acc: number, s: { questionsCount?: number; items?: unknown[] }) => acc + (s.questionsCount || (s.items?.length || 0)),
             0
           );
           setTotalQuestions(qCount);

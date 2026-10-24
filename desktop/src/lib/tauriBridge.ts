@@ -1,9 +1,18 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
-import type { HudEvent } from '../types/hud';
+import type { HudEvent, UserProfile } from '../types/hud';
+import type { UpdateCheckResult } from '../types/tauri';
 
-const getGlobalObject = (): any => {
-  if (typeof window !== 'undefined') return window;
-  if (typeof globalThis !== 'undefined') return globalThis;
+interface TauriGlobals {
+  isTauri?: boolean;
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI__?: unknown;
+  ghostboard?: unknown;
+  desktopAPI?: unknown;
+}
+
+const getGlobalObject = (): (Window & typeof globalThis & TauriGlobals) | undefined => {
+  if (typeof window !== 'undefined') return window as Window & typeof globalThis & TauriGlobals;
+  if (typeof globalThis !== 'undefined') return globalThis as unknown as Window & typeof globalThis & TauriGlobals;
   return undefined;
 };
 
@@ -245,11 +254,11 @@ export async function startPkceLogin(baseUrl?: string): Promise<{ auth_url: stri
   }
 }
 
-export async function handleDeepLinkCode(code: string, state: string): Promise<any> {
+export async function handleDeepLinkCode(code: string, state: string): Promise<Record<string, unknown> | null> {
   if (!isTauriEnvironment()) return null;
   try {
-    return await invoke('handle_deep_link_code', { code, state });
-  } catch (err) {
+    return await invoke<Record<string, unknown>>('handle_deep_link_code', { code, state });
+  } catch (err: unknown) {
     console.warn('[tauriBridge] handle_deep_link_code error:', err);
     return null;
   }
@@ -275,19 +284,19 @@ export async function startDeviceCodeFlow(baseUrl?: string): Promise<{
   }
   try {
     return await invoke('start_device_code_flow', { baseUrl });
-  } catch (err) {
+  } catch (err: unknown) {
     console.warn('[tauriBridge] start_device_code_flow error:', err);
     return null;
   }
 }
 
-export async function getAuthState(): Promise<{ authenticated: boolean; user: any; plan: string }> {
+export async function getAuthState(): Promise<{ authenticated: boolean; user: UserProfile | null; plan: string }> {
   if (!isTauriEnvironment()) {
     return { authenticated: false, user: null, plan: 'free' };
   }
   try {
-    return await invoke('get_auth_state');
-  } catch (err) {
+    return await invoke<{ authenticated: boolean; user: UserProfile | null; plan: string }>('get_auth_state');
+  } catch (err: unknown) {
     console.warn('[tauriBridge] get_auth_state error:', err);
     return { authenticated: false, user: null, plan: 'free' };
   }
@@ -351,6 +360,39 @@ export async function captureScreen(): Promise<{
 }
 
 /**
+ * Checks for application updates via native Tauri v2 updater.
+ * Gracefully falls back to { available: false } in non-Tauri browser environments.
+ */
+export async function checkForUpdates(): Promise<UpdateCheckResult> {
+  if (!isTauriEnvironment()) {
+    return { available: false, version: null, body: null, date: null };
+  }
+  try {
+    return await invoke<UpdateCheckResult>('check_for_updates');
+  } catch (err: unknown) {
+    console.warn('[tauriBridge] check_for_updates error:', err);
+    return { available: false, version: null, body: null, date: null };
+  }
+}
+
+/**
+ * Downloads and installs the pending update, then prompts restart.
+ * Gracefully handles non-Tauri or offline environments.
+ */
+export async function quitAndInstallUpdate(): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    return false;
+  }
+  try {
+    await invoke('install_update');
+    return true;
+  } catch (err: unknown) {
+    console.warn('[tauriBridge] install_update error:', err);
+    return false;
+  }
+}
+
+/**
  * Ensure global window compatibility shim so legacy callers (`window.desktopAPI` / `window.ghostboard`)
  * gracefully route through Tauri v2 native invoke bindings.
  */
@@ -360,6 +402,9 @@ export function setupWindowCompatibilityShim(): void {
 
   const bridgeApi = {
     isTauri: isTauriEnvironment(),
+    checkForUpdates: () => checkForUpdates(),
+    quitAndInstallUpdate: () => quitAndInstallUpdate(),
+    installUpdate: () => quitAndInstallUpdate(),
     setContentProtection: (enable: boolean) => setScreenShareStealth(enable),
     setIgnoreMouseEvents: (enable: boolean) => toggleClickThrough(enable),
     setOpacity: (opacity: number) => setWindowOpacity(opacity),

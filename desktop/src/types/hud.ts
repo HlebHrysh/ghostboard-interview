@@ -100,6 +100,23 @@ export interface PlanUpdatedPayload {
   plan: string;
 }
 
+export type SttConnectionStatus = 'connected' | 'reconnecting' | 'failed';
+
+export interface SttStatusPayload {
+  speaker: SpeakerRole;
+  status: SttConnectionStatus | string;
+  attempt?: number;
+  retry_in_ms?: number;
+  message?: string | null;
+}
+
+export interface UpdateStatusPayload {
+  status: 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'installed' | 'upToDate' | 'error' | string;
+  progress?: number | null;
+  version?: string | null;
+  message?: string | null;
+}
+
 export type HudEvent =
   | { type: 'vadState'; payload: VadStatePayload }
   | { type: 'sttTranscript'; payload: SttTranscriptPayload }
@@ -113,9 +130,18 @@ export type HudEvent =
   | { type: 'authChanged'; payload: AuthChangedPayload }
   | { type: 'deviceCodePending'; payload: DeviceCodePendingPayload }
   | { type: 'planUpdated'; payload: PlanUpdatedPayload }
+  | { type: 'sttStatus'; payload: SttStatusPayload }
+  | { type: 'updateStatus'; payload: UpdateStatusPayload }
   | { type: 'error'; payload: ErrorPayload };
 
 export interface HudStreamState {
+  sttStatus: {
+    status: SttConnectionStatus | 'idle';
+    attempt?: number;
+    retryInMs?: number;
+    message?: string | null;
+    speaker?: SpeakerRole;
+  };
   isSpeech: boolean;
   vadConfidence: number;
   interlocutorVolume: number;

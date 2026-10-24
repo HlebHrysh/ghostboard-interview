@@ -74,8 +74,8 @@ export default function AdminDesktopFleet() {
       const data = await res.json();
       setNodes(data.nodes || []);
       setStats(data.stats || null);
-    } catch (err: any) {
-      toast.error(err.message || "Помилка завантаження телеметрії десктопів");
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Помилка завантаження телеметрії десктопів");
     } finally {
       setLoading(false);
       setRefreshing(false);

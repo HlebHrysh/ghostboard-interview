@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { HudEvent, SpeakerRole } from '../types/hud';
+import type { HudEvent, SpeakerRole, SttConnectionStatus, UserProfile, DeviceCodePendingPayload } from '../types/hud';
 import {
   startCopilotStream,
   startAudioCapture,
@@ -30,6 +30,14 @@ function cleanStreamingAnswerText(raw: string): string {
     .trim();
 }
 
+export interface SttStatusState {
+  status: SttConnectionStatus | 'idle';
+  attempt?: number;
+  retryInMs?: number;
+  message?: string | null;
+  speaker?: SpeakerRole;
+}
+
 export interface UseHudStreamOptions {
   autoConnect?: boolean;
   onQuestionDetected?: (question: string, id: string) => void;
@@ -39,6 +47,7 @@ export interface UseHudStreamOptions {
 export function useHudStream(options: UseHudStreamOptions = {}) {
   const { autoConnect = true, onQuestionDetected, onHotkey } = options;
 
+  const [sttStatus, setSttStatus] = useState<SttStatusState>({ status: 'connected' });
   const [isSpeech, setIsSpeech] = useState(false);
   const [vadConfidence, setVadConfidence] = useState(0);
   const [interviewerVolume, setInterviewerVolume] = useState(0);
@@ -62,9 +71,9 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [plan, setPlan] = useState<string>('pro');
-  const [deviceCode, setDeviceCode] = useState<any>(null);
+  const [deviceCode, setDeviceCode] = useState<DeviceCodePendingPayload | null>(null);
   const [connectionLatencyMs, setConnectionLatencyMs] = useState<number>(45);
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -99,7 +108,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
       }
 
       case 'audioLevel': {
-        const p = event.payload as any;
+        const p = event.payload;
         if (p.source !== undefined && p.level !== undefined) {
           const lvl = typeof p.level === 'number' ? p.level : 0;
           if (p.source === 'loopback' || p.source === 'interlocutor') {
@@ -246,8 +255,31 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         break;
       }
 
+      case 'sttStatus': {
+        const payload = event.payload;
+        const status = (payload.status as SttConnectionStatus) || 'connected';
+        setSttStatus({
+          status,
+          attempt: payload.attempt,
+          retryInMs: payload.retry_in_ms,
+          message: payload.message,
+          speaker: payload.speaker,
+        });
+        if (status === 'connected') {
+          setError((prev) => (prev?.code === 'AUDIO_PIPELINE_ERROR' ? null : prev));
+        }
+        break;
+      }
+
       case 'error': {
         setError(event.payload);
+        if (event.payload.code === 'AUDIO_PIPELINE_ERROR') {
+          setSttStatus((prev) => ({
+            ...prev,
+            status: 'failed',
+            message: event.payload.message,
+          }));
+        }
         break;
       }
     }
@@ -315,6 +347,23 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     }
   }, []);
 
+  const restartCapture = useCallback(async (source?: string) => {
+    try {
+      await stopAudioCapture().catch(() => {});
+      const ok = await startAudioCapture(source || 'dual');
+      setIsCapturing(ok);
+      if (ok) {
+        setSttStatus({ status: 'connected' });
+        setError((prev) => (prev?.code === 'AUDIO_PIPELINE_ERROR' ? null : prev));
+      }
+      return ok;
+    } catch (err) {
+      console.warn('[useHudStream] restartCapture error:', err);
+      setIsCapturing(false);
+      return false;
+    }
+  }, []);
+
   const triggerAnswer = useCallback(async (prompt?: string) => {
     setIsStreaming(true);
     await triggerManualAnswer(prompt);
@@ -365,6 +414,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
 
   return {
     // Reactive State
+    sttStatus,
     isSpeech,
     vadConfidence,
     interviewerVolume,
@@ -392,6 +442,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     // Actions
     startCapture,
     stopCapture,
+    restartCapture,
     triggerAnswer,
     clearSession,
     setOpacity,

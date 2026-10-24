@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     await setUserPassword(user.id, newPassword);
 
     return NextResponse.json({ success: true, message: 'Password updated successfully' });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Server error', code: 'SERVER_ERROR' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Server error', code: 'SERVER_ERROR' }, { status: 500 });
   }
 }

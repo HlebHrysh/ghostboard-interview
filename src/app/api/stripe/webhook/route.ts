@@ -8,17 +8,27 @@ export async function POST(req: NextRequest) {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
     const stripeKey = process.env.STRIPE_SECRET_KEY?.trim();
 
-    let event: any;
+    interface StripeWebhookEvent {
+      type: string;
+      data?: { object?: Record<string, unknown> };
+      session?: Record<string, unknown>;
+      plan?: string;
+      userId?: string;
+      email?: string;
+      [key: string]: unknown;
+    }
+
+    let event: StripeWebhookEvent;
 
     // 1. Verify HMAC Signature if live Stripe credentials are provided
     if (webhookSecret && sig && stripeKey && stripeKey.startsWith('sk_')) {
       const Stripe = (await import('stripe')).default;
       const stripe = new Stripe(stripeKey);
       try {
-        event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
-      } catch (err: any) {
-        console.error('[Stripe Webhook] Signature verification failed:', err.message);
-        return NextResponse.json({ error: `Webhook signature verification failed: ${err.message}` }, { status: 400 });
+        event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret) as unknown as StripeWebhookEvent;
+      } catch (err: unknown) {
+        console.error('[Stripe Webhook] Signature verification failed:', (err as { message?: string })?.message);
+        return NextResponse.json({ error: `Webhook signature verification failed: ${(err as { message?: string })?.message}` }, { status: 400 });
       }
     } else {
       if (process.env.NODE_ENV === 'production') {
@@ -40,7 +50,13 @@ export async function POST(req: NextRequest) {
     // 3. Handle Subscription Lifecycle Events
     switch (event.type) {
       case 'checkout.session.completed': {
-        const session = event.data?.object || event.session;
+        const session = (event.data?.object || event.session) as {
+          client_reference_id?: string;
+          metadata?: Record<string, string>;
+          customer_email?: string;
+          customer_details?: { email?: string };
+          amount_total?: number;
+        } | undefined;
         if (session) {
           const userId = session.client_reference_id || session.metadata?.userId;
           const userEmail = session.customer_email || session.customer_details?.email || session.metadata?.userEmail;
@@ -91,7 +107,7 @@ export async function POST(req: NextRequest) {
       }
 
       case 'customer.subscription.deleted': {
-        const subscription = event.data?.object;
+        const subscription = event.data?.object as { customer_email?: string } | undefined;
         const customerEmail = subscription?.customer_email;
         if (customerEmail) {
           const user = await getUserByEmail(customerEmail);
@@ -123,8 +139,8 @@ export async function POST(req: NextRequest) {
         }
 
         const targetPlan = event.plan === 'lifetime' ? 'lifetime' : 'pro';
-        const userId = event.userId;
-        const userEmail = event.email || 'guest_simulated';
+        const userId = typeof event.userId === 'string' ? event.userId : undefined;
+        const userEmail = typeof event.email === 'string' ? event.email : 'guest_simulated';
         
         if (userId) {
           await updateUserPlan(userId, targetPlan).catch(() => {});
@@ -138,7 +154,7 @@ export async function POST(req: NextRequest) {
             amountCents: targetPlan === 'lifetime' ? 9900 : 1500,
             status: 'simulated'
           });
-        } catch (e) {}
+        } catch {}
         
         upgradedPlan = targetPlan;
         break;
@@ -168,8 +184,8 @@ export async function POST(req: NextRequest) {
     }
 
     return response;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[Stripe Webhook] Error processing event:', err);
-    return NextResponse.json({ error: err.message || 'Webhook processing failed' }, { status: 500 });
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Webhook processing failed' }, { status: 500 });
   }
 }

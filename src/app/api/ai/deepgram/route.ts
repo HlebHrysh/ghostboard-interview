@@ -31,8 +31,8 @@ function updateEnvFile(keyName: string, value: string) {
       newLines.push(`${keyName}=${value}`);
     }
     fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
-  } catch (err: any) {
-    console.warn(`[updateEnvFile] Could not persist to .env.local (${err?.message}). Running in-memory.`);
+  } catch (err: unknown) {
+    console.warn(`[updateEnvFile] Could not persist to .env.local (${(err as { message?: string })?.message}). Running in-memory.`);
   }
   process.env[keyName] = value;
 }
@@ -158,7 +158,7 @@ export async function GET(req: NextRequest) {
       status: 'error',
       message: errText || 'Помилка валідації Deepgram ключа',
     });
-  } catch (e: any) {
+  } catch (e: unknown) {
     return NextResponse.json({
       configured: true,
       maskedKey: masked,
@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
         const errJson = await testRes.json().catch(() => null);
         testMessage = errJson?.err_msg || errJson?.message || 'Недійсний ключ Deepgram';
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       isValid = true;
       testMessage = 'Ключ збережено (перевірку мережі пропущено)';
     }
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
       maskedKey: `${cleanKey.slice(0, 6)}...${cleanKey.slice(-4)}`,
       apiKey: cleanKey,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to save Deepgram key' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Failed to save Deepgram key' }, { status: 500 });
   }
 }

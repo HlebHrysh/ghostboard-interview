@@ -88,7 +88,7 @@ ${languageDirective}
     }
 
     throw new Error('Fallback failed');
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Panic Shield Error:', err);
     return NextResponse.json({ success: false, error: 'Внутрішня помилка сервера' }, { status: 500 });
   }

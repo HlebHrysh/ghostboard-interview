@@ -90,10 +90,10 @@ export async function POST(
       message,
       user: updatedUser,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin User Action Error]:', error);
     return NextResponse.json(
-      { error: error?.message || 'Failed to execute administrative action' },
+      { error: (error as { message?: string })?.message || 'Failed to execute administrative action' },
       { status: 500 }
     );
   }

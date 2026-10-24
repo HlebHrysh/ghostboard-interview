@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAdminToken } from '@/lib/adminGuard';
+import { isProdSimulatorAllowed } from '@/lib/envGuard';
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Block the payment simulator page in production (unless ENABLE_PROD_SIMULATOR=true)
+  if (pathname === '/checkout/simulator' && !isProdSimulatorAllowed()) {
+    const pricingUrl = new URL('/pricing', req.url);
+    pricingUrl.searchParams.set('error', 'simulator_disabled');
+    return NextResponse.redirect(pricingUrl);
+  }
 
   // Protect /interview, /profile, /cabinet, and /dashboard UI — require active ghostboard_session
   if (
@@ -64,5 +72,6 @@ export const config = {
     '/mock-interview',
     '/settings',
     '/sandbox',
+    '/checkout/simulator',
   ],
 };

@@ -19,11 +19,13 @@
      - `<<<PHASE_2:PILLARS>>>`: 3 concrete technical bullet points.
      - `<<<PHASE_3:DEEP_DIVE>>>`: Production architectural trade-offs and code examples.
 
-3. **Awwwards-Grade Interactive HUD (React 19 + Framer Motion 13)**:
+3. **Awwwards-Grade Interactive HUD (Tauri v2 + React 19 + Framer Motion 13)**:
+   - **Tauri v2 Rust Core**: Ultra-lightweight native foundation powered by `cpal` for high-performance audio loopback/mic streaming, `Silero VAD` for speech detection, `xcap` for screen capture, and zero-overhead Tauri IPC channels.
    - **2-in-1 Adaptive Layout**: Seamlessly morphs between a floating Eyeline HUD (pinned below webcam at 580x220), full dual-column chat mode, and ultra-compact 40px ticker ribbon.
    - **Hardware Screen-Share Invisibility**:
      - **Windows 10/11**: Direct OS compositor exclusion via `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`.
      - **macOS**: `[NSWindow setSharingType:NSWindowSharingNone]`.
+     - **Linux**: Skip-taskbar, skip-pager, and portal-aware stealth.
 
 ---
 
@@ -32,20 +34,23 @@
 ```bash
 cd desktop
 
-# 1. Install dependencies
+# 1. Install frontend dependencies
 npm install
 
-# 2. Start Vite development server & launch Electron
-npm run dev
+# 2. Run in Tauri v2 development mode (Vite + Rust Core)
+npm run tauri:dev
 
 # 3. Typecheck TypeScript sources
 npm run typecheck
 
-# 4. Build Vite renderer bundle
+# 4. Build Vite renderer bundle (<500 kB optimized chunks)
 npm run build:renderer
 
-# 5. Package standalone desktop application (Linux / Windows / macOS)
-npm run pack
+# 5. Run Rust core unit & integration test suite
+cargo test --manifest-path src-tauri/Cargo.toml
+
+# 6. Build production standalone binary & installer (AppImage, deb, dmg, nsis)
+npm run tauri:build
 ```
 
 ---

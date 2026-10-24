@@ -5,16 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Ghostboard — AI Interview Copilot</title>
   
-  <!-- Content Security Policy: allows local Vite scripts, fonts, WebSockets to Deepgram, and local API fetch -->
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self' file: data:;
-    script-src 'self' 'unsafe-inline' 'unsafe-eval' file:;
-    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-    font-src 'self' data: https://fonts.gstatic.com;
-    connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:* http://localhost:* https://*.deepgram.com wss://*.deepgram.com https://ghostboard.ai https://*.ghostboard.ai;
-    img-src 'self' data: blob: https:;
-    media-src 'self' blob:;
-  ">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

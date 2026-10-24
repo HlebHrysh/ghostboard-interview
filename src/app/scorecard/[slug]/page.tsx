@@ -46,11 +46,21 @@ export default async function ScorecardPage({ params }: PageProps) {
     );
   }
 
-  const rawItems = Array.isArray(session.items) ? session.items : [];
+interface ScorecardItem {
+  id?: string;
+  question?: string;
+  tag?: string;
+  quickAnswer?: string;
+  hints?: string[];
+  codeSnippet?: string;
+  confidenceScore?: number;
+}
+
+  const rawItems = ((Array.isArray(session.items) ? session.items : []) as unknown) as ScorecardItem[];
   const questionsCount = session.questionsCount || rawItems.length || 1;
 
   // Calculate synthetic criteria scores based on question depth & confidence
-  const avgConfidence = rawItems.reduce((acc: number, item: any) => acc + (item.confidenceScore || 90), 0) / (rawItems.length || 1);
+  const avgConfidence = rawItems.reduce((acc: number, item: ScorecardItem) => acc + (item.confidenceScore || 90), 0) / (rawItems.length || 1);
   const baseScore = Math.min(Math.max(Math.round(avgConfidence), 75), 98);
 
   const scorecardData: ScorecardData = {
@@ -149,7 +159,7 @@ export default async function ScorecardPage({ params }: PageProps) {
               </h2>
 
               <div className="space-y-3">
-                {rawItems.map((item: any, idx: number) => (
+                {rawItems.map((item: ScorecardItem, idx: number) => (
                   <div
                     key={item.id || idx}
                     className="p-5 rounded-2xl bg-zinc-950/80 border border-white/10 hover:border-white/30 transition-all space-y-3 backdrop-blur-sm"

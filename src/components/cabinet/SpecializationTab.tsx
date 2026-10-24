@@ -136,7 +136,7 @@ export function SpecializationTab({
                     if (candidateProfile) {
                       onProfileChange({
                         ...candidateProfile,
-                        level: lvl.id as any,
+                        level: lvl.id as 'junior' | 'middle' | 'senior' | 'lead',
                         age: lvl.id === "junior" ? 21 : lvl.id === "middle" ? 24 : lvl.id === "senior" ? 28 : 33,
                       });
                     }

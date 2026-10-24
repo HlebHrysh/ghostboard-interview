@@ -30,6 +30,7 @@ import {
   History,
   Smartphone,
   QrCode,
+  RefreshCw,
 } from 'lucide-react';
 import type { StructuredAnswerOutput } from '../lib/streamClient';
 import type { CandidateProfile } from '../lib/profileStore';
@@ -78,6 +79,13 @@ export interface EyeLineTeleprompterProps {
   onAudioSourceChange?: (source: AudioSourceOption) => void;
   onOpenCompanionModal?: () => void;
   onOpenHistory?: () => void;
+  sttStatus?: {
+    status: 'connected' | 'reconnecting' | 'failed' | 'idle' | string;
+    attempt?: number;
+    retryInMs?: number;
+    message?: string | null;
+  };
+  onRestartAudio?: () => void;
 }
 
 const SPRING_PHYSICS = {
@@ -142,6 +150,8 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
   onAudioSourceChange,
   onOpenCompanionModal,
   onOpenHistory,
+  sttStatus,
+  onRestartAudio,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [copiedHook, setCopiedHook] = useState(false);
@@ -150,7 +160,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
   const [localOpacity, setLocalOpacity] = useState(opacity);
   const [audioSource, setAudioSource] = useState<AudioSourceOption>('loopback');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [activeDeviceCode, setActiveDeviceCode] = useState<any>(deviceCode);
+  const [activeDeviceCode, setActiveDeviceCode] = useState(deviceCode);
   const [copiedDeviceCode, setCopiedDeviceCode] = useState(false);
 
   // Auto-scroll state management
@@ -256,7 +266,13 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
 
   const handleRequestDeviceCode = async () => {
     const res = await startDeviceCodeFlow();
-    if (res) setActiveDeviceCode(res);
+    if (res) {
+      setActiveDeviceCode({
+        user_code: res.user_code,
+        verification_uri: res.verification_uri,
+        expires_in_sec: res.expires_in,
+      });
+    }
   };
 
   const handleCopyDeviceCode = () => {
@@ -355,6 +371,37 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
               ))}
             </div>
           </button>
+
+          {/* STT Status Badge (Reconnecting / Failed Alert) */}
+          {sttStatus?.status === 'reconnecting' && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-mono animate-pulse"
+              title={`Deepgram STT reconnection in progress (retry #${sttStatus.attempt || 1})`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
+              <span>Перепідключення STT {sttStatus.attempt ? `(#${sttStatus.attempt})` : '...'}</span>
+            </div>
+          )}
+
+          {sttStatus?.status === 'failed' && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-mono"
+              title={sttStatus.message || 'Помилка аудіо / STT: Перевірте мікрофон або Deepgram API ключ'}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)]" />
+              <span>Збій STT</span>
+              {onRestartAudio && (
+                <button
+                  type="button"
+                  onClick={onRestartAudio}
+                  title="Перезапустити аудіоконвеєр"
+                  className="hover:text-white transition-colors cursor-pointer ml-0.5"
+                >
+                  <RefreshCw className="w-3 h-3 hover:rotate-180 transition-transform duration-300" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Center Section: Hotkey Controls & Trigger Actions */}

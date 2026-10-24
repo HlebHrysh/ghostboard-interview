@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   if (isPostgres) {
     try {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
 
       if (search) {
         where.OR = [
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Order By
-      let orderBy: any = { createdAt: sortOrder };
+      let orderBy: Record<string, 'asc' | 'desc'> = { createdAt: sortOrder };
       if (sortBy === 'lastActiveAt') orderBy = { lastActiveAt: sortOrder };
       else if (sortBy === 'email') orderBy = { email: sortOrder };
 
@@ -230,8 +230,8 @@ export async function POST(req: NextRequest) {
 
     const user = await createUser(email, name, plan, role);
     return NextResponse.json({ success: true, user }, { status: 201 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to create user' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Failed to create user' }, { status: 500 });
   }
 }
 
@@ -258,7 +258,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message }, { status: 500 });
   }
 }

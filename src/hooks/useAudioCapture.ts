@@ -53,6 +53,7 @@ export function useAudioCapture({
   const sessionStartTimeRef = useRef<number>(0);
   const sessionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const warnedAboutLimitRef = useRef<boolean>(false);
+  const lastVolUpdateRef = useRef<number>(0);
 
   // 1. Initialize preferred source and pre-fetch Deepgram token on mount
   // Pre-fetching is crucial so getDisplayMedia() never gets blocked by network latency!
@@ -91,32 +92,33 @@ export function useAudioCapture({
 
   // 2. Listen for cross-OS audio events dispatched by TabAudioCapture
   useEffect(() => {
-    const handleAudioToast = (e: any) => {
-      const detail = e.detail;
+    const handleAudioToast = (e: Event) => {
+      const detail = (e as CustomEvent<{ type?: string; message?: string }>).detail;
       if (!detail) return;
       if (detail.type === 'warning') {
-        toast.warning(detail.message, { duration: 6000 });
+        toast.warning(detail.message || '', { duration: 6000 });
       } else if (detail.type === 'info') {
-        toast.info(detail.message, { duration: 4000 });
+        toast.info(detail.message || '', { duration: 4000 });
       }
     };
-    const handleTabAudioStatus = (e: any) => {
-      if (typeof e.detail?.hasTabAudio === 'boolean') {
-        setHasTabAudio(e.detail.hasTabAudio);
+    const handleTabAudioStatus = (e: Event) => {
+      const detail = (e as CustomEvent<{ hasTabAudio?: boolean }>).detail;
+      if (typeof detail?.hasTabAudio === 'boolean') {
+        setHasTabAudio(detail.hasTabAudio);
       }
     };
-    window.addEventListener('ghostboard:audio_toast', handleAudioToast);
-    window.addEventListener('ghostboard:tab_audio_status', handleTabAudioStatus);
+    window.addEventListener('ghostboard:audio_toast', handleAudioToast as EventListener);
+    window.addEventListener('ghostboard:tab_audio_status', handleTabAudioStatus as EventListener);
     return () => {
-      window.removeEventListener('ghostboard:audio_toast', handleAudioToast);
-      window.removeEventListener('ghostboard:tab_audio_status', handleTabAudioStatus);
+      window.removeEventListener('ghostboard:audio_toast', handleAudioToast as EventListener);
+      window.removeEventListener('ghostboard:tab_audio_status', handleTabAudioStatus as EventListener);
     };
   }, []);
 
   const requestWakeLock = async () => {
     try {
       if (typeof navigator !== 'undefined' && 'wakeLock' in navigator) {
-        (window as any).wakeLockRef = await (navigator as any).wakeLock.request('screen');
+        (window as unknown as { wakeLockRef?: unknown }).wakeLockRef = await (navigator as unknown as { wakeLock: { request: (type: string) => Promise<unknown> } }).wakeLock.request('screen');
       }
     } catch {}
   };
@@ -214,8 +216,8 @@ export function useAudioCapture({
         onConnectionStateChange: handleSttStatusChange,
         onVolumeChange: (vol, candVol = 0) => {
           const now = Date.now();
-          if (!tabCaptureRef.current || now - ((tabCaptureRef.current as any).lastVolUpdate || 0) > 200) {
-            (tabCaptureRef.current as any).lastVolUpdate = now;
+          if (now - lastVolUpdateRef.current > 200) {
+            lastVolUpdateRef.current = now;
             setLiveVolume(vol);
             setInterviewerVolume(vol);
             setCandidateVolume(candVol);
@@ -292,9 +294,9 @@ export function useAudioCapture({
           }
         }
       }, 1000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       stopCapture();
-      toast.error(err?.message || 'Не вдалося підключитися до звуку. Перевірте дозволи.');
+      toast.error((err as { message?: string })?.message || 'Не вдалося підключитися до звуку. Перевірте дозволи.');
     }
   }, [onLiveTranscript, setShowTrialLimitModal, setSessionDuration, stopCapture, userPlanRef, speechLanguageRef]);
 

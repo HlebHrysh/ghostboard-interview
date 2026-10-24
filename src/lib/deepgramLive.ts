@@ -13,7 +13,7 @@ export interface DeepgramLiveOptions {
   language?: string;
   sampleRate?: number;
   onTranscript?: (result: DeepgramTranscriptResult) => void;
-  onError?: (err: any) => void;
+  onError?: (err: unknown) => void;
   onOpen?: () => void;
   onClose?: () => void;
   onStateChange?: (state: 'connected' | 'reconnecting' | 'disconnected') => void;
@@ -48,7 +48,7 @@ export class DeepgramLiveClient {
   private socket: WebSocket | null = null;
   private processor: AudioWorkletNode | ScriptProcessorNode | null = null;
   private silentGain: GainNode | null = null;
-  private keepAliveTimer: any = null;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
 
   private sendDiag(msg: string) {
     try {
@@ -61,7 +61,7 @@ export class DeepgramLiveClient {
       }
     } catch {}
   }
-  private reconnectTimer: any = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isRunning = false;
   private isReconnecting = false;
   private reconnectAttempts = 0;
@@ -347,7 +347,7 @@ export class DeepgramLiveClient {
     options: DeepgramLiveOptions,
     existingAudioContext?: AudioContext
   ): Promise<void> {
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     const ctx = existingAudioContext || new AudioCtx();
     if (!existingAudioContext) {
       this.internalAudioContext = ctx;

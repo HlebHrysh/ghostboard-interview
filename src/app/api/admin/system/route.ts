@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/adminGuard';
 import { getCleanGeminiKey, callGeminiWithFallback, FLASH_MODELS } from '@/lib/geminiApi';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore } from '@/lib/interviewSyncStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -134,12 +134,12 @@ export async function POST(req: NextRequest) {
 
     // 3. Clear Live Sync Store
     if (action === 'clear_sync_store') {
-      interviewSyncStore.clear();
+      await syncStore.clear();
       return NextResponse.json({ success: true, message: 'Live Interview Sync Store cleared successfully' });
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Action failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Action failed' }, { status: 500 });
   }
 }

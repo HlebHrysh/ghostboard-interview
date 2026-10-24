@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
       desktopDeepLink,
       expiresAt: deviceSession.expiresAt,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Internal error' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Internal error' }, { status: 500 });
   }
 }

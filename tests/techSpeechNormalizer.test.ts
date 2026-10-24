@@ -80,4 +80,59 @@ describe("techSpeechNormalizer", () => {
       expect(detectQuestionLanguage("How do you handle race conditions in distributed systems?")).toBe("en");
     });
   });
+
+  describe("Web and Desktop normalizer synchronization", () => {
+    it("guarantees web and desktop normalizer modules produce identical results", async () => {
+      const desktopNormalizer = await import("../desktop/src/lib/techSpeechNormalizer");
+      const testInputs = [
+        "постгрес",
+        "селері",
+        "редіс",
+        "докер",
+        "фастапі",
+        "джанго",
+        "Що таке дандер?",
+        "розкажи про дандери",
+        "ми підключаємо кафку",
+        "з постгресом працюємо через orm",
+        "наскільки швидка асінка в python",
+        "розгорнуто в кубері",
+        "розкажи про мвцц",
+        "реалізуй лру кеш",
+        "використовуй ордерд дікт",
+        "написано на пайтон",
+        "Як влаштований Event Loop у Node.js?",
+        "How does React reconciliation work under the hood?",
+        "ага",
+        "ну",
+        "добре",
+      ];
+
+      for (const input of testInputs) {
+        expect(desktopNormalizer.normalizeTechnicalSpeech(input)).toBe(
+          normalizeTechnicalSpeech(input)
+        );
+        expect(desktopNormalizer.isFillerOrNoise(input)).toBe(
+          isFillerOrNoise(input)
+        );
+        expect(desktopNormalizer.hasTechnicalKeyword(input)).toBe(
+          hasTechnicalKeyword(input)
+        );
+        expect(desktopNormalizer.detectQuestionLanguage(input)).toBe(
+          detectQuestionLanguage(input)
+        );
+      }
+    });
+
+    it("verifies Web and Desktop source files share the identical ruleset", async () => {
+      const fs = await import("fs");
+      const path = await import("path");
+      const webPath = path.resolve(__dirname, "../src/lib/techSpeechNormalizer.ts");
+      const desktopPath = path.resolve(__dirname, "../desktop/src/lib/techSpeechNormalizer.ts");
+      const webContent = fs.readFileSync(webPath, "utf-8").trim();
+      const desktopContent = fs.readFileSync(desktopPath, "utf-8").trim();
+      expect(desktopContent).toBe(webContent);
+    });
+  });
 });
+

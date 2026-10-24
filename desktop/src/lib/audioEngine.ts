@@ -10,7 +10,7 @@
  * - Clean switching and zero-leak teardown protocol.
  */
 
-import type { DesktopMediaSource } from '../types/electron';
+import type { DesktopMediaSource } from '../types/tauri';
 
 export type AudioSourceMode = 'system' | 'window' | 'tab' | 'mic';
 export type SpeakerRole = 'interviewer' | 'candidate';
@@ -116,10 +116,10 @@ export function resampleAndQuantize(
  */
 export function calculateRMSFromAnalyser(
   analyser: AnalyserNode,
-  tempBuffer?: Float32Array
+  tempBuffer?: Float32Array<ArrayBuffer>
 ): number {
   const buffer = tempBuffer || new Float32Array(analyser.fftSize || 64);
-  (analyser as any).getFloatTimeDomainData(buffer);
+  analyser.getFloatTimeDomainData(buffer);
   let sumSquares = 0;
   for (let i = 0; i < buffer.length; i++) {
     sumSquares += buffer[i] * buffer[i];
@@ -184,8 +184,8 @@ registerProcessor('dual-pcm-processor', DualPcmProcessor);
  */
 export class DeepgramStreamClient {
   private socket: WebSocket | null = null;
-  private keepAliveTimer: any = null;
-  private reconnectTimer: any = null;
+  private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private isExplicitlyStopped = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -257,7 +257,7 @@ export class DeepgramStreamClient {
           this.onStateChange?.(this.speaker, 'disconnected');
         }
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn(`[Deepgram:${this.speaker}] Failed to initiate connection:`, err);
       this.scheduleReconnect();
     }
@@ -489,7 +489,7 @@ export class DesktopAudioEngine {
     try {
       // 1. Initialize AudioContext synchronously on user interaction
       if (typeof window !== 'undefined') {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (AudioCtx) {
           if (!this.audioContext || this.audioContext.state === 'closed') {
             this.audioContext = new AudioCtx();
@@ -514,8 +514,8 @@ export class DesktopAudioEngine {
 
       try {
         tempInterviewerStream = await this.acquireInterlocutorStream(this.sourceMode, options.selectedWindowSourceId);
-      } catch (err: any) {
-        console.warn('[DesktopAudioEngine] Interlocutor stream acquisition failed, falling back to dummy:', err?.message);
+      } catch (err: unknown) {
+        console.warn('[DesktopAudioEngine] Interlocutor stream acquisition failed, falling back to dummy:', (err as { message?: string })?.message);
         tempInterviewerStream = this.createFallbackStream('interviewer-stream-fallback');
       }
 
@@ -527,8 +527,8 @@ export class DesktopAudioEngine {
 
       try {
         tempCandidateStream = await this.acquireCandidateStream(options.micDeviceId);
-      } catch (err: any) {
-        console.warn('[DesktopAudioEngine] Candidate mic acquisition failed, falling back to dummy:', err?.message);
+      } catch (err: unknown) {
+        console.warn('[DesktopAudioEngine] Candidate mic acquisition failed, falling back to dummy:', (err as { message?: string })?.message);
         tempCandidateStream = this.createFallbackStream('candidate-mic-fallback');
       }
 
@@ -760,11 +760,11 @@ export class DesktopAudioEngine {
     this.candidateGainNode.connect(this.candidateAnalyser);
 
     // Attach custom test helper calculateRMS to analysers for parity
-    (this.interviewerAnalyser as any).calculateRMS = () => {
+    (this.interviewerAnalyser as unknown as { calculateRMS: () => number }).calculateRMS = () => {
       if (this.simulatedInterviewerVol > 0) return this.simulatedInterviewerVol;
       return calculateRMSFromAnalyser(this.interviewerAnalyser!);
     };
-    (this.candidateAnalyser as any).calculateRMS = () => {
+    (this.candidateAnalyser as unknown as { calculateRMS: () => number }).calculateRMS = () => {
       if (this.simulatedCandidateVol > 0) return this.simulatedCandidateVol;
       return calculateRMSFromAnalyser(this.candidateAnalyser!);
     };
@@ -823,10 +823,9 @@ export class DesktopAudioEngine {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
-      } as any,
-      // @ts-ignore Chrome / Electron specific
+      } as unknown as MediaTrackConstraints,
       systemAudio: mode === 'system' ? 'include' : 'exclude',
-    });
+    } as unknown as DisplayMediaStreamOptions);
 
     // Strip and stop video tracks immediately to prevent GPU/CPU overhead
     stream.getVideoTracks().forEach((track) => {
@@ -1012,7 +1011,7 @@ export class DesktopAudioEngine {
     this.animationFrameId = requestAnimationFrame(tick);
   }
 
-  private createFallbackStream(id: string): any {
+  private createFallbackStream(id: string): MediaStream {
     const track = {
       id: `${id}-track`,
       kind: 'audio',
@@ -1030,6 +1029,6 @@ export class DesktopAudioEngine {
       getAudioTracks: () => [track],
       getVideoTracks: () => [],
       removeTrack: () => {},
-    };
+    } as unknown as MediaStream;
   }
 }

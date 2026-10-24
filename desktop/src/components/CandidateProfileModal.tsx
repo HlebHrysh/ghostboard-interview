@@ -220,8 +220,8 @@ export function CandidateProfileModal({
         'success',
         `Резюме успішно розпізнано! Знайдено ${p.techStack?.length || 0} технологій та рівень ${String(p.experienceLevel || 'SENIOR').toUpperCase()}`
       );
-    } catch (err: any) {
-      showStatus('error', err.message || 'Помилка під час обробки резюме.');
+    } catch (err: unknown) {
+      showStatus('error', err instanceof Error ? err.message : 'Помилка під час обробки резюме.');
     } finally {
       setIsParsingPdf(false);
       setParsingStep('');
@@ -260,7 +260,7 @@ export function CandidateProfileModal({
       setTimeout(() => {
         onClose();
       }, 350);
-    } catch (err: any) {
+    } catch (_err: unknown) {
       showStatus('error', 'Не вдалося зберегти профіль');
     }
   };

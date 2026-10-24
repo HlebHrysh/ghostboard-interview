@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NextRequest } from 'next/server';
-import { middleware } from '../src/middleware';
+import { proxy as middleware } from '../src/proxy';
 
 describe('Auth Guard & Middleware Protection', () => {
   it('redirects unauthenticated users trying to access /interview to /auth/login?from=/interview', async () => {

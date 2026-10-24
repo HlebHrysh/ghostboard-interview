@@ -108,8 +108,8 @@ export function AdminDashboard() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setMetrics(data);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to load telemetry");
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Failed to load telemetry");
     } finally {
       setMetricsLoading(false);
       setCountdown(30);
@@ -179,7 +179,7 @@ export function AdminDashboard() {
   }, [autoRefresh, fetchMetrics, fetchUsers]);
 
   // ── User Action Execution ──
-  const executeUserAction = async (userId: string, action: string, extra?: Record<string, any>) => {
+  const executeUserAction = async (userId: string, action: string, extra?: Record<string, unknown>) => {
     setActionLoading(true);
     try {
       const res = await fetch(`/api/admin/users/${userId}/action`, {
@@ -197,8 +197,8 @@ export function AdminDashboard() {
       }
       fetchUsers();
       fetchMetrics(true);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to execute action");
+    } catch (err: unknown) {
+      toast.error((err as { message?: string })?.message || "Failed to execute action");
     } finally {
       setActionLoading(false);
     }

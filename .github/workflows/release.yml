@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS: Apple Silicon (arm64) & Intel (x64)
+          # macOS: Universal Apple Silicon (arm64) & Intel (x64)
           - os: macos-latest
             platform: mac
             build-cmd: npm run build:mac
@@ -60,21 +60,86 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      # Compile, Package & Build Tauri v2 Artifacts
+      # Prepare Signing Keys & Graceful Fallback for Matrix Build
+      - name: Configure Tauri Signing Key & Environment
+        shell: bash
+        working-directory: desktop
+        env:
+          SIGNING_KEY_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          SIGNING_PASSWORD_SECRET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$SIGNING_KEY_SECRET" ]; then
+            echo "Production TAURI_SIGNING_PRIVATE_KEY detected in GitHub Secrets."
+            echo "TAURI_SIGNING_PRIVATE_KEY=$SIGNING_KEY_SECRET" >> $GITHUB_ENV
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$SIGNING_PASSWORD_SECRET" >> $GITHUB_ENV
+          else
+            echo "TAURI_SIGNING_PRIVATE_KEY secret is not configured; generating ephemeral keypair for matrix build fallback..."
+            mkdir -p /tmp/tauri-keys
+            node ./node_modules/.bin/tauri signer generate --ci -p "" -w /tmp/tauri-keys/ephemeral.key
+            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat /tmp/tauri-keys/ephemeral.key)" >> $GITHUB_ENV
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> $GITHUB_ENV
+          fi
+
+      # Prepare Optional Code Signing for macOS (Apple Developer ID & Notarytool)
+      - name: Setup macOS Code Signing Identity (Optional)
+        if: matrix.platform == 'mac' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Setting up temporary keychain for macOS code signing..."
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          security create-keychain -p "" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "" $KEYCHAIN_PATH
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k $KEYCHAIN_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
+
+      # Prepare Optional Code Signing for Windows (Authenticode)
+      - name: Setup Windows Authenticode Certificate (Optional)
+        if: matrix.platform == 'win' && env.WINDOWS_CERTIFICATE != ''
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "Decoding Windows Authenticode certificate..."
+          echo "$WINDOWS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.pfx"
+
+      # Compile, Package & Build Tauri v2 Artifacts (including Updater Bundles)
       - name: Build Tauri v2 Desktop Bundle
         working-directory: desktop
         run: ${{ matrix.build-cmd }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ env.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS Apple Notarytool
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows Code Signing
+          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}/cert.pfx
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
-      # Compute SHA-256 Checksums for Release Transparency
-      - name: Generate Checksums
+      # Compute SHA-256 Checksums for Release & Updater Artifacts
+      - name: Generate Checksums & Consolidate Artifacts
         shell: bash
         run: |
           mkdir -p release-artifacts
-          find desktop/src-tauri/target -type f \( -name "*.AppImage" -o -name "*.deb" -o -name "*.exe" -o -name "*.dmg" \) -exec cp {} release-artifacts/ \;
+          find desktop/src-tauri/target -type f \( \
+            -name "*.AppImage" -o \
+            -name "*.deb" -o \
+            -name "*.exe" -o \
+            -name "*.msi" -o \
+            -name "*.dmg" -o \
+            -name "*.tar.gz" -o \
+            -name "*.zip" -o \
+            -name "*.sig" -o \
+            -name "latest.json" \
+          \) -exec cp {} release-artifacts/ \;
           cd release-artifacts
           for f in *; do
             if [ -f "$f" ]; then
@@ -90,7 +155,12 @@ jobs:
           path: |
             release-artifacts/*.dmg
             release-artifacts/*.exe
+            release-artifacts/*.msi
             release-artifacts/*.AppImage
             release-artifacts/*.deb
+            release-artifacts/*.tar.gz
+            release-artifacts/*.zip
+            release-artifacts/*.sig
+            release-artifacts/latest.json
             release-artifacts/SHA256SUMS-*.txt
           if-no-files-found: warn

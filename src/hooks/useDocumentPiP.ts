@@ -57,7 +57,7 @@ export function useDocumentPiP({
     }
 
     try {
-      const pipWindow: Window = await (window as any).documentPictureInPicture.requestWindow({
+      const pipWindow: Window = await (window as unknown as { documentPictureInPicture: { requestWindow: (options?: { width?: number; height?: number }) => Promise<Window> } }).documentPictureInPicture.requestWindow({
         width,
         height,
       });

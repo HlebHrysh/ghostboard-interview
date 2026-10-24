@@ -36,8 +36,9 @@ import {
   Briefcase,
   Smartphone,
   QrCode,
+  ArrowDownCircle,
 } from 'lucide-react';
-import type { DesktopMediaSource } from './types/electron';
+import type { DesktopMediaSource } from './types/tauri';
 import {
   DesktopAudioEngine,
   AudioSourceMode,
@@ -50,14 +51,23 @@ import {
   isFillerOrNoise,
   isolateTargetQuestionHeuristics,
 } from './lib/techSpeechNormalizer';
-import { SourcePickerModal } from './components/SourcePickerModal';
 import { AudioWaveform } from './components/AudioWaveform';
 import { DualColumnChat } from './components/DualColumnChat';
 import { EyeLineTeleprompter } from './components/EyeLineTeleprompter';
 import { PanicShield } from './components/PanicShield';
-import { HistoryDrawer, SessionQAItem } from './components/HistoryDrawer';
-import { CandidateProfileModal } from './components/CandidateProfileModal';
-import { CompanionQRModal } from './components/CompanionQRModal';
+import type { SessionQAItem } from './components/HistoryDrawer';
+const SourcePickerModal = React.lazy(() =>
+  import('./components/SourcePickerModal').then((m) => ({ default: m.SourcePickerModal }))
+);
+const CandidateProfileModal = React.lazy(() =>
+  import('./components/CandidateProfileModal').then((m) => ({ default: m.CandidateProfileModal }))
+);
+const CompanionQRModal = React.lazy(() =>
+  import('./components/CompanionQRModal').then((m) => ({ default: m.CompanionQRModal }))
+);
+const HistoryDrawer = React.lazy(() =>
+  import('./components/HistoryDrawer').then((m) => ({ default: m.HistoryDrawer }))
+);
 import { CandidateProfile, loadStoredProfile } from './lib/profileStore';
 import { CompanionSyncManager } from './lib/companionSync';
 import { useHudStream } from './hooks/useHudStream';
@@ -73,6 +83,8 @@ import {
   getAccessToken,
   captureScreen,
   isTauriEnvironment,
+  checkForUpdates,
+  quitAndInstallUpdate,
 } from './lib/tauriBridge';
 
 export type HUDMode = 'launcher' | 'stealth' | 'ticker';
@@ -162,7 +174,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ghostboard_backend_mode');
       if (saved === 'local' || saved === 'cloud') return saved;
-      if (Boolean((window as any).__TAURI_INTERNALS__)) return 'cloud';
+      if (Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__)) return 'cloud';
     }
     return 'local';
   });
@@ -181,13 +193,67 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const isTauriProd = typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__);
+    const isTauriProd = typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
     const saved = typeof window !== 'undefined' ? localStorage.getItem('ghostboard_backend_mode') : null;
     const initialMode: 'local' | 'cloud' = (saved === 'local' || saved === 'cloud') ? saved : (isTauriProd ? 'cloud' : 'local');
     const initialUrl = initialMode === 'cloud' ? 'https://ghostboard.ai' : 'http://localhost:3001';
     setBackendMode(initialMode);
     streamClientRef.current.setBaseUrl(initialUrl);
     companionSyncRef.current.setBaseUrl(initialUrl);
+  }, []);
+
+  // ── Native Auto-Updater State & Verification ──
+  const [updateState, setUpdateState] = useState<{
+    available: boolean;
+    version: string | null;
+    body: string | null;
+    status: 'idle' | 'available' | 'installing' | 'installed' | 'error';
+    errorMsg: string | null;
+  }>({
+    available: false,
+    version: null,
+    body: null,
+    status: 'idle',
+    errorMsg: null,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    checkForUpdates()
+      .then((res) => {
+        if (isMounted && res.available && res.version) {
+          setUpdateState({
+            available: true,
+            version: res.version,
+            body: res.body || null,
+            status: 'available',
+            errorMsg: null,
+          });
+        }
+      })
+      .catch((err: unknown) => {
+        console.debug('[App] Auto-updater check silent fallback:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handlePerformUpdate = useCallback(async () => {
+    setUpdateState((prev) => ({ ...prev, status: 'installing' }));
+    try {
+      const success = await quitAndInstallUpdate();
+      if (success) {
+        setUpdateState((prev) => ({ ...prev, status: 'installed' }));
+      } else {
+        setUpdateState((prev) => ({ ...prev, status: 'available' }));
+      }
+    } catch (err: unknown) {
+      console.warn('[App] Update install error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setUpdateState((prev) => ({ ...prev, status: 'error', errorMsg: msg }));
+    }
   }, []);
 
   // ── AI Streaming Copilot Trigger ──
@@ -272,7 +338,7 @@ export default function App() {
             },
           }
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.warn('[App] requestStream failed:', err);
         setIsStreaming(false);
       }
@@ -378,7 +444,20 @@ export default function App() {
 
       setIsStreaming(true);
 
-      let data: any = null;
+      let data: {
+        quickAnswer?: string;
+        summary?: string;
+        codeSnippet?: string;
+        language?: string;
+        timecode?: string;
+        bugsAndFlaws?: string[];
+        howToImprove?: string[];
+        lineByLine?: Array<{ line: string | number; explanation: string }>;
+        deliveryTip?: string;
+        complexity?: string;
+        hints?: string[];
+        topic?: string;
+      } | null = null;
       try {
         const response = await fetch(`${serverBaseUrl}/api/ai/screenshot`, {
           method: 'POST',
@@ -391,7 +470,7 @@ export default function App() {
         } else {
           console.warn(`[App] Vision API responded with status ${response.status}. Using fallback heuristics.`);
         }
-      } catch (fetchErr) {
+      } catch (fetchErr: unknown) {
         console.warn('[App] Vision API network request failed. Using fallback heuristics:', fetchErr);
       }
 
@@ -543,7 +622,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
         });
         setIsStreaming(false);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('[App] handleTriggerScreenshot unexpected error:', err);
       setIsStreaming(false);
     } finally {
@@ -710,10 +789,11 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
 
     // Fetch saved session
     api.getSavedSession().then((session) => {
-      if (session?.user?.email) {
-        setSessionUser(session.user.email);
-      } else if (session?.user?.name) {
-        setSessionUser(session.user.name);
+      const user = session?.user as { email?: string; name?: string } | undefined;
+      if (user?.email) {
+        setSessionUser(user.email);
+      } else if (user?.name) {
+        setSessionUser(user.name);
       }
     }).catch(console.warn);
 
@@ -950,7 +1030,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
         });
         setIsCapturing(true);
         companionSyncRef.current.syncStatus(true, isFrozen, isPanic);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('[App] Failed to start audio capture:', err);
       }
     }
@@ -1037,6 +1117,8 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           onTriggerAnswer={() => handleManualAnswer()}
           onTriggerScreenshot={() => handleTriggerScreenshot()}
           isCapturingScreen={isCapturingScreen}
+          sttStatus={hudStream.sttStatus}
+          onRestartAudio={() => hudStream.restartCapture()}
           candidateProfile={candidateProfile}
           onOpenProfileModal={() => setIsProfileModalOpen(true)}
           onOpenCompanionModal={() => setIsCompanionOpen((p) => !p)}
@@ -1051,34 +1133,34 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           }}
         />
 
-        {/* ── SESSION HISTORY DRAWER (Milestone 5: Direct Notch Mode Access) ── */}
-        <HistoryDrawer
-          isOpen={isHistoryOpen}
-          onClose={() => setIsHistoryOpen(false)}
-          sessionItems={sessionHistory}
-          onSelectItem={(item) => {
-            setIsHistoryOpen(false);
-            setCurrentQuestion(item.question);
-            setActiveAnswer(item.answer);
-          }}
-        />
+        {/* ── MODALS & DRAWERS (Lazy Loaded with Suspense) ── */}
+        <React.Suspense fallback={null}>
+          <HistoryDrawer
+            isOpen={isHistoryOpen}
+            onClose={() => setIsHistoryOpen(false)}
+            sessionItems={sessionHistory}
+            onSelectItem={(item) => {
+              setIsHistoryOpen(false);
+              setCurrentQuestion(item.question);
+              setActiveAnswer(item.answer);
+            }}
+          />
 
-        {/* ── COMPANION QR MODAL (Milestone 5: Notch / Ticker View) ── */}
-        <CompanionQRModal
-          isOpen={isCompanionOpen}
-          onClose={() => setIsCompanionOpen(false)}
-          serverBaseUrl={streamClientRef.current.getBaseUrl()}
-          authToken={sessionUser}
-        />
+          <CompanionQRModal
+            isOpen={isCompanionOpen}
+            onClose={() => setIsCompanionOpen(false)}
+            serverBaseUrl={streamClientRef.current.getBaseUrl()}
+            authToken={sessionUser}
+          />
 
-        {/* ── CANDIDATE PROFILE MODAL (Milestone 4: Notch / Ticker View) ── */}
-        <CandidateProfileModal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-          onSave={(updated) => setCandidateProfile(updated)}
-          serverBaseUrl={streamClientRef.current.getBaseUrl()}
-          authToken={sessionUser}
-        />
+          <CandidateProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            onSave={(updated) => setCandidateProfile(updated)}
+            serverBaseUrl={streamClientRef.current.getBaseUrl()}
+            authToken={sessionUser}
+          />
+        </React.Suspense>
       </div>
     );
   }
@@ -1129,6 +1211,79 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             </div>
           </div>
         </div>
+
+        {/* Native Auto-Updater Notification Indicator */}
+        {updateState.available && updateState.version && (
+          <div
+            className="no-drag flex items-center gap-2 px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-white text-xs font-mono shadow-[0_0_12px_rgba(6,182,212,0.15)] animate-in fade-in duration-300"
+            title={updateState.body || `Доступна нова версія Ghostboard v${updateState.version}`}
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse" />
+              <span className="text-zinc-200">
+                Доступне оновлення <strong className="text-cyan-300 font-semibold">v{updateState.version}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={updateState.status === 'installing'}
+              onClick={handlePerformUpdate}
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer ${
+                updateState.status === 'installing'
+                  ? 'bg-cyan-500/20 text-cyan-200 cursor-wait'
+                  : updateState.status === 'installed'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-cyan-500 text-black hover:bg-cyan-400 hover:shadow-[0_0_10px_rgba(6,182,212,0.4)]'
+              }`}
+            >
+              {updateState.status === 'installing' ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  <span>Встановлення...</span>
+                </>
+              ) : updateState.status === 'installed' ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Встановлено!</span>
+                </>
+              ) : (
+                <>
+                  <ArrowDownCircle className="w-3 h-3" />
+                  <span>Оновити</span>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* STT Connection Status Indicator (Reconnecting / Failed) */}
+        {hudStream.sttStatus.status === 'reconnecting' && (
+          <div
+            className="no-drag flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs font-mono animate-pulse"
+            title={`Deepgram STT reconnection in progress (attempt #${hudStream.sttStatus.attempt || 1})`}
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
+            <span>Перепідключення STT {hudStream.sttStatus.attempt ? `(#${hudStream.sttStatus.attempt})` : '...'}</span>
+          </div>
+        )}
+
+        {(hudStream.sttStatus.status === 'failed' || hudStream.error?.code === 'AUDIO_PIPELINE_ERROR') && (
+          <div
+            className="no-drag flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-mono"
+            title={hudStream.sttStatus.message || hudStream.error?.message || 'Помилка аудіо: Перевірте мікрофон або Deepgram API ключ'}
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]" />
+            <span>Збій STT / Аудіо</span>
+            <button
+              type="button"
+              onClick={() => hudStream.restartCapture()}
+              title="Швидкий перезапуск аудіоконвеєра"
+              className="ml-1 p-0.5 rounded hover:bg-white/10 text-rose-200 hover:text-white transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 hover:rotate-180 transition-transform duration-300" />
+            </button>
+          </div>
+        )}
 
         {/* Central Audio Capture Controls & Dual 60fps VU Meter */}
         <div className="no-drag flex items-center gap-3">
@@ -1564,42 +1719,41 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
         )}
       </main>
 
-      {/* ── SOURCE PICKER MODAL (Meeting Window / Tab Selection) ── */}
-      <SourcePickerModal
-        isOpen={isPickerOpen}
-        activeSourceId={selectedSourceId}
-        onCancel={() => setIsPickerOpen(false)}
-        onSelect={handleSourcePickerSelect}
-      />
+      {/* ── MODALS & DRAWERS (Lazy Loaded with Suspense) ── */}
+      <React.Suspense fallback={null}>
+        <SourcePickerModal
+          isOpen={isPickerOpen}
+          activeSourceId={selectedSourceId}
+          onCancel={() => setIsPickerOpen(false)}
+          onSelect={handleSourcePickerSelect}
+        />
 
-      {/* ── SESSION HISTORY DRAWER (Markdown Export) ── */}
-      <HistoryDrawer
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
-        sessionItems={sessionHistory}
-        onSelectItem={(item) => {
-          setIsHistoryOpen(false);
-          setCurrentQuestion(item.question);
-          setActiveAnswer(item.answer);
-        }}
-      />
+        <HistoryDrawer
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          sessionItems={sessionHistory}
+          onSelectItem={(item) => {
+            setIsHistoryOpen(false);
+            setCurrentQuestion(item.question);
+            setActiveAnswer(item.answer);
+          }}
+        />
 
-      {/* ── CANDIDATE PROFILE MODAL (Milestone 4: Full Chat Mode) ── */}
-      <CandidateProfileModal
-        isOpen={isProfileModalOpen}
-        onClose={() => setIsProfileModalOpen(false)}
-        onSave={(updated) => setCandidateProfile(updated)}
-        serverBaseUrl={streamClientRef.current.getBaseUrl()}
-        authToken={sessionUser}
-      />
+        <CandidateProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          onSave={(updated) => setCandidateProfile(updated)}
+          serverBaseUrl={streamClientRef.current.getBaseUrl()}
+          authToken={sessionUser}
+        />
 
-      {/* ── COMPANION QR MODAL (Milestone 5: Full Chat Mode) ── */}
-      <CompanionQRModal
-        isOpen={isCompanionOpen}
-        onClose={() => setIsCompanionOpen(false)}
-        serverBaseUrl={streamClientRef.current.getBaseUrl()}
-        authToken={sessionUser}
-      />
+        <CompanionQRModal
+          isOpen={isCompanionOpen}
+          onClose={() => setIsCompanionOpen(false)}
+          serverBaseUrl={streamClientRef.current.getBaseUrl()}
+          authToken={sessionUser}
+        />
+      </React.Suspense>
     </div>
   );
 }

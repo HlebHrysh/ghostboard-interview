@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore } from '@/lib/interviewSyncStore';
 import { getSessionUser } from '@/lib/serverDb';
 import { checkRateLimit } from '@/lib/rateLimit';
 import fs from 'fs';
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
   }
 
   const since = Number(searchParams.get('since') || 0);
-  const state = interviewSyncStore.getState(userId);
+  const state = await syncStore.getState(userId);
 
   if (since > 0 && state.lastUpdated <= since) {
     return NextResponse.json({ hasUpdate: false, lastUpdated: state.lastUpdated });
@@ -101,29 +101,29 @@ export async function POST(req: NextRequest) {
     } = body;
 
     if (action === 'SYNC_ALL' && Array.isArray(qas)) {
-      interviewSyncStore.syncAll(qas, isCapturing, sessionDuration, activeId, sttStatus, userId);
+      await syncStore.syncAll(qas, isCapturing, sessionDuration, activeId, sttStatus, userId);
     } else if (action === 'ADD_OR_UPDATE_QA' && qa) {
-      interviewSyncStore.addOrUpdateQA(qa, activeId, userId);
+      await syncStore.addOrUpdateQA(qa, activeId, userId);
     } else if (action === 'SELECT_QA' && activeId) {
-      interviewSyncStore.setActiveId(activeId, userId);
+      await syncStore.setActiveId(activeId, userId);
     } else if (action === 'SET_OUTPUT_LANGUAGE' && outputLanguage) {
-      interviewSyncStore.setOutputLanguage(outputLanguage, userId);
+      await syncStore.setOutputLanguage(outputLanguage, userId);
     } else if (action === 'SET_SPEECH_LANGUAGE' && speechLanguage) {
-      interviewSyncStore.setSpeechLanguage(speechLanguage, userId);
+      await syncStore.setSpeechLanguage(speechLanguage, userId);
     } else if (action === 'SET_NATIVE_LANGUAGE' && nativeLanguage) {
-      interviewSyncStore.setNativeLanguage(nativeLanguage, userId);
+      await syncStore.setNativeLanguage(nativeLanguage, userId);
     } else if (action === 'SET_FREEZE' || action === 'FREEZE_TOGGLE') {
-      interviewSyncStore.setFrozen(typeof isFrozen === 'boolean' ? isFrozen : true, userId);
+      await syncStore.setFrozen(typeof isFrozen === 'boolean' ? isFrozen : true, userId);
     } else if (action === 'SET_PANIC' || action === 'PANIC_TOGGLE') {
-      interviewSyncStore.setPanic(typeof isPanic === 'boolean' ? isPanic : true, userId);
+      await syncStore.setPanic(typeof isPanic === 'boolean' ? isPanic : true, userId);
     } else if (action === 'REGISTER_DEVICE' && device) {
-      interviewSyncStore.registerDevice(device, typeof active === 'boolean' ? active : true, userId);
+      await syncStore.registerDevice(device, typeof active === 'boolean' ? active : true, userId);
     } else if (action === 'SET_STT_STATUS' && sttStatus) {
-      interviewSyncStore.setSttStatus(sttStatus, userId);
+      await syncStore.setSttStatus(sttStatus, userId);
     } else if (action === 'LIVE_TRANSCRIPT' && typeof text === 'string') {
-      interviewSyncStore.setLiveTranscript(text, userId);
+      await syncStore.setLiveTranscript(text, userId);
     } else if (action === 'STATUS' && typeof isCapturing === 'boolean') {
-      interviewSyncStore.setCapturingStatus(isCapturing, userId);
+      await syncStore.setCapturingStatus(isCapturing, userId);
     } else if (action === 'LOG' && typeof text === 'string') {
       try {
         const logPath = '/tmp/ghostboard_stt.log';
@@ -137,10 +137,10 @@ export async function POST(req: NextRequest) {
         fs.appendFileSync(logPath, `${new Date().toISOString()} ${safeText}\n`);
       } catch {}
     } else if (action === 'CLEAR') {
-      interviewSyncStore.clear(userId);
+      await syncStore.clear(userId);
     }
 
-    const state = interviewSyncStore.getState(userId);
+    const state = await syncStore.getState(userId);
     return NextResponse.json({
       success: true,
       lastUpdated: state.lastUpdated,
@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
       isPanic: !!state.isPanic,
       connectedDevices: state.connectedDevices,
     });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ success: false, error: (err as { message?: string })?.message }, { status: 500 });
   }
 }

@@ -1,0 +1,89 @@
+# Local full-stack deployment check: web (production image) + PostgreSQL + Redis (with Upstash-compatible REST proxy).
+#
+#   cp .env.example .env     # fill in API keys (DATABASE_URL / UPSTASH_* are overridden below)
+#   docker compose up --build
+#   -> http://localhost:3001
+#
+# The web container runs NODE_ENV=production, so the fail-fast guards are active:
+# migrations are applied by docker-entrypoint.sh, memory DB / simulators are disabled.
+name: ghostboard
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghostboard-web:local
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3001}:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "8080"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ghostboard}:${POSTGRES_PASSWORD:-ghostboard}@postgres:5432/${POSTGRES_DB:-ghostboard}?schema=public
+      # @upstash/redis speaks REST -> served locally by the serverless-redis-http proxy in front of Redis
+      UPSTASH_REDIS_REST_URL: http://redis-http:80
+      UPSTASH_REDIS_REST_TOKEN: ${LOCAL_REDIS_REST_TOKEN:-ghostboard_local_token}
+      ENABLE_PROD_SIMULATOR: ${ENABLE_PROD_SIMULATOR:-false}
+      ALLOW_MEMORY_DB: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis-http:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ghostboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ghostboard}
+      POSTGRES_DB: ${POSTGRES_DB:-ghostboard}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Upstash-compatible REST API on top of the local Redis (lets @upstash/redis work offline)
+  redis-http:
+    image: hiett/serverless-redis-http:latest
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${LOCAL_REDIS_REST_TOKEN:-ghostboard_local_token}
+      SRH_CONNECTION_STRING: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${REDIS_HTTP_PORT:-8079}:80"
+
+volumes:
+  postgres_data:
+  redis_data:

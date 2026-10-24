@@ -3,7 +3,7 @@
 export function dispatchSyncUpdate(
   broadcastChannel: BroadcastChannel | null, 
   action: string, 
-  payload: any
+  payload: Record<string, unknown>
 ) {
   // 1. Local broadcast (for detached HUDs on the same computer)
   if (broadcastChannel) {

@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { InterviewQAItem } from '@/types/interview';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
+import type { TabAudioCapture } from '@/lib/tabAudioCapture';
 
 interface UseScreenshotAIOptions {
   speechLanguageRef: React.MutableRefObject<string>;
   outputLanguageRef: React.MutableRefObject<string>;
   candidateProfileRef: React.MutableRefObject<CandidateProfile>;
-  tabCaptureRef: React.MutableRefObject<any>;
+  tabCaptureRef: React.RefObject<TabAudioCapture | { stream?: MediaStream | null; getStream?: () => MediaStream | null } | null>;
   setInterviewQAs: React.Dispatch<React.SetStateAction<InterviewQAItem[]>>;
   setActiveQAId: (id: string) => void;
   isFrozenRef: React.MutableRefObject<boolean>;
@@ -46,7 +47,7 @@ export function useScreenshotAI({
     if (!videoTrack) return null;
 
     try {
-      const imageCapture = new (window as any).ImageCapture(videoTrack);
+      const imageCapture = new (window as unknown as { ImageCapture: new (track: MediaStreamTrack) => { grabFrame: () => Promise<ImageBitmap> } }).ImageCapture(videoTrack);
       const bitmap = await imageCapture.grabFrame();
 
       const canvas = document.createElement('canvas');
@@ -64,7 +65,16 @@ export function useScreenshotAI({
     return null;
   };
 
-  const analyzeScreenshotData = (data: any) => {
+  const analyzeScreenshotData = (data: {
+    quickAnswer?: string;
+    question?: string;
+    startHook?: string;
+    hints?: string[];
+    tag?: string;
+    codeSnippet?: string;
+    deliveryTip?: string;
+    [key: string]: unknown;
+  }) => {
     if (data?.quickAnswer) {
       const now = Date.now();
       const finalQA: InterviewQAItem = {
@@ -160,9 +170,9 @@ export function useScreenshotAI({
           : '📸 Знімок екрана оброблено!',
         { id: toastId }
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err.message || 'Помилка аналізу екрана', { id: toastId });
+      toast.error((err as { message?: string })?.message || 'Помилка аналізу екрана', { id: toastId });
     } finally {
       setIsAnalyzingScreenshot(false);
     }

@@ -32,7 +32,7 @@ export function getClientIp(req: NextRequest): string {
   }
 
   // Next.js socket connection IP
-  const nextIp = (req as any).ip;
+  const nextIp = (req as unknown as { ip?: string }).ip;
   if (nextIp && isValidIp(nextIp)) {
     return nextIp;
   }
@@ -100,7 +100,7 @@ export interface RateLimitResult {
 }
 
 const inMemoryStore: Map<string, { count: number; resetAt: number }> =
-  ((globalThis as any).__ghostboardRateLimitStore ??= new Map<string, { count: number; resetAt: number }>());
+  ((globalThis as unknown as { __ghostboardRateLimitStore?: Map<string, { count: number; resetAt: number }> }).__ghostboardRateLimitStore ??= new Map<string, { count: number; resetAt: number }>());
 
 // Prevent memory leak by cleaning up expired entries periodically
 setInterval(() => {
@@ -144,7 +144,7 @@ export async function checkRateLimit(
     return { allowed: false, remaining: 0, limit, retryAfterSec };
   }
 
-  const windowString = `${Math.ceil(windowMs / 1000)} s` as any;
+  const windowString = `${Math.ceil(windowMs / 1000)} s` as Parameters<typeof Ratelimit.slidingWindow>[1];
   const ratelimit = new Ratelimit({
     redis,
     limiter: Ratelimit.slidingWindow(limit, windowString),

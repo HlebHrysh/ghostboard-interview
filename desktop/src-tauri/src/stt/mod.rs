@@ -1,6 +1,7 @@
 pub mod deepgram;
 pub mod normalizer;
 
+use crate::ipc::events::HudEvent;
 use crate::stt::deepgram::{DeepgramClient, TranscriptToken};
 use crate::stt::normalizer::normalize_technical_speech;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ pub struct SttOrchestrator {
     interlocutor_client: Arc<Mutex<Option<DeepgramClient>>>,
     candidate_client: Arc<Mutex<Option<DeepgramClient>>>,
     transcript_tx: mpsc::Sender<TranscriptToken>,
+    status_tx: std::sync::Mutex<Option<mpsc::UnboundedSender<HudEvent>>>,
 }
 
 impl SttOrchestrator {
@@ -21,25 +23,50 @@ impl SttOrchestrator {
             interlocutor_client: Arc::new(Mutex::new(None)),
             candidate_client: Arc::new(Mutex::new(None)),
             transcript_tx,
+            status_tx: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Registers a sink receiving `HudEvent::SttStatus` connection lifecycle events.
+    pub fn set_status_sink(&self, tx: mpsc::UnboundedSender<HudEvent>) {
+        let mut guard = match self.status_tx.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        *guard = Some(tx);
+    }
+
+    fn status_sink(&self) -> Option<mpsc::UnboundedSender<HudEvent>> {
+        match self.status_tx.lock() {
+            Ok(g) => g.clone(),
+            Err(p) => p.into_inner().clone(),
         }
     }
 
     /// Initializes and starts the Deepgram live WebSocket connection.
     pub async fn start(&self, api_key: &str, endpoint_url: Option<&str>) -> Result<(), String> {
         let (raw_tx, mut raw_rx) = mpsc::channel::<TranscriptToken>(100);
+        let sink = self.status_sink();
 
         // 1. Connect Interlocutor STT stream (tagged "interlocutor")
-        let interlocutor_client =
-            DeepgramClient::connect_with_speaker(api_key, endpoint_url, "interlocutor", raw_tx.clone()).await?;
+        let interlocutor_client = DeepgramClient::connect_supervised(
+            api_key,
+            endpoint_url,
+            "interlocutor",
+            raw_tx.clone(),
+            sink.clone(),
+        )
+        .await?;
 
         // 2. Connect Candidate STT stream (tagged "candidate")
-        let candidate_client = match DeepgramClient::connect_with_speaker(api_key, endpoint_url, "candidate", raw_tx).await {
-            Ok(c) => Some(c),
-            Err(e) => {
-                eprintln!("[SttOrchestrator] Candidate STT connection fallback: {}", e);
-                None
-            }
-        };
+        let candidate_client =
+            match DeepgramClient::connect_supervised(api_key, endpoint_url, "candidate", raw_tx, sink).await {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    tracing::warn!(target: "ghostboard::stt", "Candidate STT connection fallback: {}", e);
+                    None
+                }
+            };
 
         // Task reading raw tokens from Deepgram and applying technical phonetic normalization
         let out_tx = self.transcript_tx.clone();

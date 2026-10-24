@@ -50,21 +50,18 @@ pub fn create_fallback_capture(width: u32, height: u32) -> Result<ScreenCaptureR
 }
 
 fn raw_screen_capture() -> Option<ScreenCaptureResult> {
-    let screens = screenshots::Screen::all().ok()?;
-    if screens.is_empty() {
-        return None;
-    }
-    let primary = screens
+    let monitors = xcap::Monitor::all().ok()?;
+    let primary = monitors
         .iter()
-        .find(|s| s.display_info.is_primary)
-        .unwrap_or(&screens[0]);
+        .find(|m| m.is_primary().unwrap_or(false))
+        .or_else(|| monitors.first())?;
 
-    let img = primary.capture().ok()?;
+    let img = primary.capture_image().ok()?;
     let width = img.width();
     let height = img.height();
-    let raw_bytes = img.as_raw();
+    let raw_bytes = img.into_raw();
 
-    let png_bytes = encode_rgba_to_png(raw_bytes, width, height).ok()?;
+    let png_bytes = encode_rgba_to_png(&raw_bytes, width, height).ok()?;
     let base64_png = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
     Some(ScreenCaptureResult {
         base64_png,
@@ -73,7 +70,7 @@ fn raw_screen_capture() -> Option<ScreenCaptureResult> {
     })
 }
 
-/// Captures the primary or active display using the native `screenshots` crate.
+/// Captures the primary or active display using the native `xcap` crate.
 /// If hardware capture fails (e.g. headless CI, missing display server, Wayland permission denied,
 /// or compositor deadlock), safely times out after 1500ms and returns a clean fallback without crashing.
 pub fn capture_screen_native() -> ScreenCaptureResult {
@@ -86,19 +83,19 @@ pub fn capture_screen_native() -> ScreenCaptureResult {
     match rx.recv_timeout(Duration::from_millis(1500)) {
         Ok(Ok(Some(res))) => res,
         Ok(Ok(None)) => {
-            eprintln!("[ScreenCapture] Display capture returned empty or failed. Using fallback.");
+            tracing::warn!(target: "ghostboard::window", "Display capture returned empty or failed. Using fallback.");
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
         Ok(Err(_panic)) => {
-            eprintln!("[ScreenCapture] Display capture driver panicked. Using fallback.");
+            tracing::warn!(target: "ghostboard::window", "Display capture driver panicked. Using fallback.");
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            eprintln!("[ScreenCapture] Display capture timed out (unpermitted Wayland / headless). Using fallback.");
+            tracing::warn!(target: "ghostboard::window", "Display capture timed out (unpermitted Wayland / headless). Using fallback.");
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-            eprintln!("[ScreenCapture] Capture thread disconnected. Using fallback.");
+            tracing::warn!(target: "ghostboard::window", "Capture thread disconnected. Using fallback.");
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
     }

@@ -9,8 +9,6 @@ import {
   setWindowOpacity,
   alignToActiveDisplay,
   panicHide,
-  triggerManualAnswer,
-  clearSession,
   exportMarkdown,
   startCopilotStream,
   setupWindowCompatibilityShim,
@@ -24,22 +22,24 @@ describe('Milestone 5: Awwwards-Grade Glassmorphic Eyeline Teleprompter HUD & Ta
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete (globalThis as any).__TAURI_INTERNALS__;
-    delete (globalThis as any).__TAURI__;
-    delete (globalThis as any).isTauri;
-    delete (globalThis as any).ghostboard;
-    delete (globalThis as any).desktopAPI;
+    const g = globalThis as unknown as Record<string, unknown>;
+    delete g.__TAURI_INTERNALS__;
+    delete g.__TAURI__;
+    delete g.isTauri;
+    delete g.ghostboard;
+    delete g.desktopAPI;
   });
 
   describe('1. Tauri Bridge & IPC Contracts', () => {
     it('accurately identifies Tauri vs non-Tauri environments', () => {
       expect(isTauriEnvironment()).toBe(false);
 
-      (globalThis as any).__TAURI_INTERNALS__ = {};
+      const g = globalThis as unknown as Record<string, unknown>;
+      g.__TAURI_INTERNALS__ = {};
       expect(isTauriEnvironment()).toBe(true);
 
-      delete (globalThis as any).__TAURI_INTERNALS__;
-      (globalThis as any).isTauri = true;
+      delete g.__TAURI_INTERNALS__;
+      g.isTauri = true;
       expect(isTauriEnvironment()).toBe(true);
     });
 
@@ -85,8 +85,9 @@ describe('Milestone 5: Awwwards-Grade Glassmorphic Eyeline Teleprompter HUD & Ta
     it('initializes global window compatibility shim for legacy callers', () => {
       setupWindowCompatibilityShim();
 
-      const ghostboard = (globalThis as any).ghostboard;
-      const desktopAPI = (globalThis as any).desktopAPI;
+      const g = globalThis as unknown as Record<string, Record<string, unknown>>;
+      const ghostboard = g.ghostboard;
+      const desktopAPI = g.desktopAPI;
 
       expect(ghostboard).toBeDefined();
       expect(desktopAPI).toBeDefined();

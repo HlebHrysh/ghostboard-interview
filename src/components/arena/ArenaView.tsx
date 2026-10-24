@@ -190,7 +190,7 @@ export function ArenaView() {
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(false);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isListeningVoice, setIsListeningVoice] = useState<boolean>(false);
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<{ stop: () => void; start?: () => void; [key: string]: unknown } | null>(null);
   const sandboxAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // Evaluations history
@@ -340,7 +340,8 @@ export function ArenaView() {
     }
 
     if (typeof window === 'undefined') return;
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as unknown as { SpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onstart: () => void; onresult: (event: { results: Array<Array<{ transcript: string }>> }) => void; onerror: () => void; onend: () => void; start: () => void; stop: () => void }; webkitSpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onstart: () => void; onresult: (event: { results: Array<Array<{ transcript: string }>> }) => void; onerror: () => void; onend: () => void; start: () => void; stop: () => void } }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => { continuous: boolean; interimResults: boolean; lang: string; onstart: () => void; onresult: (event: { results: Array<Array<{ transcript: string }>> }) => void; onerror: () => void; onend: () => void; start: () => void; stop: () => void } }).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       toast.info(a.voiceNotSupported || 'Розпізнавання голосу не підтримується браузером.');
@@ -358,7 +359,7 @@ export function ArenaView() {
         toast.info(a.voiceListeningToast || 'Слухаємо вашу відповідь...');
       };
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: { results: Array<Array<{ transcript: string }>> }) => {
         let transcript = '';
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript + ' ';
@@ -429,7 +430,7 @@ export function ArenaView() {
       } else {
         toast.error(data?.error || a.sessionCreateError);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       toast.error(a.serverConnectError);
     } finally {
       setIsLoading(false);

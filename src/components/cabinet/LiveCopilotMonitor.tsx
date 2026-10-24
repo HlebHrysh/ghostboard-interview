@@ -109,7 +109,7 @@ export function LiveCopilotMonitor({ locale, userEmail }: LiveCopilotMonitorProp
         if (res.ok) {
           const data = await res.json();
           if (data.qas && data.qas.length > 0) {
-            const latest = data.qas.find((q: any) => q.id === data.activeId) || data.qas[0];
+            const latest = data.qas.find((q: { id?: string }) => q.id === data.activeId) || data.qas[0];
             if (latest) {
               setActiveQA({
                 id: latest.id,

@@ -79,6 +79,19 @@ pub enum HudEvent {
         message: String,
     },
 
+    /// Deepgram socket lifecycle: "connected" | "reconnecting" | "failed".
+    #[serde(rename = "sttStatus")]
+    SttStatus {
+        speaker: String,
+        status: String,
+        #[serde(default)]
+        attempt: u32,
+        #[serde(default)]
+        retry_in_ms: u64,
+        #[serde(default)]
+        message: Option<String>,
+    },
+
     #[serde(rename = "authChanged")]
     AuthChanged {
         authenticated: bool,
@@ -96,6 +109,17 @@ pub enum HudEvent {
     #[serde(rename = "planUpdated")]
     PlanUpdated {
         plan: String,
+    },
+
+    #[serde(rename = "updateStatus")]
+    UpdateStatus {
+        status: String,
+        #[serde(default)]
+        progress: Option<f32>,
+        #[serde(default)]
+        version: Option<String>,
+        #[serde(default)]
+        message: Option<String>,
     },
 }
 
@@ -200,6 +224,22 @@ mod tests {
         assert!(json.contains(r#""level":65.5"#));
 
         let deserialized: HudEvent = serde_json::from_str(&json).expect("deserialize audioLevel");
+        assert_eq!(event, deserialized);
+    }
+
+    #[test]
+    fn test_hud_event_serde_update_status() {
+        let event = HudEvent::UpdateStatus {
+            status: "downloading".to_string(),
+            progress: Some(0.45),
+            version: Some("1.3.0".to_string()),
+            message: Some("Downloading package...".to_string()),
+        };
+        let json = serde_json::to_string(&event).expect("serialize updateStatus");
+        assert!(json.contains(r#""type":"updateStatus""#));
+        assert!(json.contains(r#""status":"downloading""#));
+
+        let deserialized: HudEvent = serde_json::from_str(&json).expect("deserialize updateStatus");
         assert_eq!(event, deserialized);
     }
 }

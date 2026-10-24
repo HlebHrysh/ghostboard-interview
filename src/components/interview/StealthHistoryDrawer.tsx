@@ -62,7 +62,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.history) && data.history.length > 0) {
-            const apiSessions: SavedPastSession[] = data.history.map((h: any) => ({
+            const apiSessions: SavedPastSession[] = data.history.map((h: { id: string; title?: string; timestamp?: number | string; durationSec?: number; questionsCount?: number; items?: unknown[] }) => ({
               id: h.id,
               title: h.title || t.tabCurrent,
               timestamp: Number(h.timestamp) || Date.now(),

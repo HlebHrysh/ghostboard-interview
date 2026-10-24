@@ -20,6 +20,17 @@ import {
 import Link from "next/link";
 import { toast } from "sonner";
 
+interface SessionQAItem {
+  id?: string;
+  question?: string;
+  tag?: string;
+  hook?: string;
+  quickAnswer?: string;
+  hints?: string[];
+  codeSnippet?: string;
+  [key: string]: unknown;
+}
+
 interface SessionItem {
   id: string;
   userId: string;
@@ -28,7 +39,7 @@ interface SessionItem {
   timestamp: number;
   durationSec: number;
   questionsCount: number;
-  items: any[];
+  items: SessionQAItem[];
   isPublic?: boolean;
   publicSlug?: string | null;
 }
@@ -86,8 +97,8 @@ export default function AdminSessions() {
         const d = await res.json();
         toast.error(d.error || "Не вдалося видалити сесію");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Помилка видалення");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || "Помилка видалення");
     } finally {
       setIsDeleting(false);
     }
@@ -223,7 +234,7 @@ export default function AdminSessions() {
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setPrivacyFilter(tab.key as any)}
+              onClick={() => setPrivacyFilter(tab.key as "all" | "public" | "private")}
               className={`px-3 py-1.5 rounded-xl uppercase font-bold text-[10px] tracking-wider transition-all cursor-pointer whitespace-nowrap ${
                 privacyFilter === tab.key
                   ? "bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.3)]"
@@ -362,7 +373,7 @@ export default function AdminSessions() {
               </h4>
 
               {Array.isArray(inspectingSession.items) && inspectingSession.items.length > 0 ? (
-                inspectingSession.items.map((qa: any, idx: number) => (
+                inspectingSession.items.map((qa: SessionQAItem, idx: number) => (
                   <div
                     key={qa.id || idx}
                     className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-2 text-xs"

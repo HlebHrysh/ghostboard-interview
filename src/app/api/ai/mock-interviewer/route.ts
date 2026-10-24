@@ -133,7 +133,7 @@ Return ONLY a valid JSON object matching this schema:
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message }, { status: 500 });
   }
 }

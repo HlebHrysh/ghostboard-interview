@@ -28,7 +28,7 @@ export interface DualStreamRequestPayload {
     experienceLevel?: string;
     customBio?: string;
     techStack?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
   outputLanguage?: string;
   authToken?: string | null;
@@ -198,7 +198,7 @@ export class DualStreamClient {
   constructor(serverBaseUrl?: string) {
     if (serverBaseUrl !== undefined && serverBaseUrl !== '') {
       this.serverBaseUrl = serverBaseUrl;
-    } else if (typeof window !== 'undefined' && Boolean((window as any).__TAURI_INTERNALS__)) {
+    } else if (typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__)) {
       this.serverBaseUrl = 'https://ghostboard.ai';
     } else {
       this.serverBaseUrl = serverBaseUrl || '';
@@ -329,7 +329,7 @@ export class DualStreamClient {
           body: JSON.stringify(preparedPayload),
           signal: abortController.signal,
         });
-      } catch (fetchErr: any) {
+      } catch (_fetchErr: unknown) {
         if (this.aborted || abortController.signal.aborted) {
           throw new Error('Stream aborted by user action');
         }
@@ -510,13 +510,14 @@ export class DualStreamClient {
 
       callbacks.onComplete?.(finalOutput);
       return finalOutput;
-    } catch (err: any) {
-      if (this.aborted || abortController.signal.aborted || err.message?.includes('aborted')) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (this.aborted || abortController.signal.aborted || errMsg.includes('aborted')) {
         this.isStreaming = false;
         throw new Error('Stream aborted by user action');
       }
 
-      console.warn('[DualStreamClient] Stream encountered error, generating fallback:', err.message);
+      console.warn('[DualStreamClient] Stream encountered error, generating fallback:', errMsg);
       return await this.generateHeuristicFallback(
         preparedPayload,
         startTime,

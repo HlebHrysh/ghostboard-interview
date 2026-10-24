@@ -145,7 +145,7 @@ export async function GET(req: NextRequest) {
 
     clearOAuthCookie(response);
     return response;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('[GitHub OAuth Callback Exception]', err);
     const redirectUrl = new URL('/auth/login', baseUrl);
     redirectUrl.searchParams.set('error', 'server_error');

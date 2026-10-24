@@ -26,8 +26,36 @@ export interface TabCaptureResult {
   hasTabAudio: boolean;
 }
 
+interface SpeechRecognitionResultItem {
+  transcript: string;
+  confidence?: number;
+}
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionResultItem;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+}
+
 export class TabAudioCapture {
-  private stream: MediaStream | null = null;
+  public stream: MediaStream | null = null;
   private micStream: MediaStream | null = null;
   private audioContext: AudioContext | null = null;
   
@@ -49,14 +77,14 @@ export class TabAudioCapture {
   // Dedicated STT instances
   private deepgramClient: DeepgramLiveClient | null = null;
   private candidateDeepgramClient: DeepgramLiveClient | null = null;
-  private candidateSpeechRecognition: any = null;
-  private webSpeechRecognition: any = null;
+  private candidateSpeechRecognition: SpeechRecognitionLike | null = null;
+  private webSpeechRecognition: SpeechRecognitionLike | null = null;
 
   private isCapturing = false;
   private isMicActive = false;
   private isDeepgramConfigured = false;
   private currentOptions: TabCaptureOptions | null = null;
-  private chunkTimeout: any = null;
+  private chunkTimeout: ReturnType<typeof setTimeout> | null = null;
   private isLoopActive = false;
 
   public getStream(): MediaStream | null {
@@ -89,7 +117,7 @@ export class TabAudioCapture {
 
     // 1. Create/resume AudioContext synchronously during user click to guarantee running state in Chrome
     if (typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!this.audioContext || this.audioContext.state === 'closed') {
         this.audioContext = new AudioCtx();
       }
@@ -120,9 +148,10 @@ export class TabAudioCapture {
             selfBrowserSurface: 'exclude',
             systemAudio: 'include',
             surfaceSwitching: 'include',
-          } as any);
-        } catch (displayErr: any) {
-          if (displayErr.name === 'NotAllowedError' || displayErr.name === 'AbortError') {
+          } as unknown as DisplayMediaStreamOptions);
+        } catch (displayErr: unknown) {
+          const dErr = displayErr as { name?: string; message?: string };
+          if (dErr.name === 'NotAllowedError' || dErr.name === 'AbortError') {
             console.warn('[TabCapture] User dismissed getDisplayMedia dialog. Falling back to default microphone.');
             if (typeof window !== 'undefined') {
               window.dispatchEvent(
@@ -138,7 +167,7 @@ export class TabAudioCapture {
                 video: true,
                 audio: true,
               });
-            } catch (retryErr: any) {
+            } catch (retryErr: unknown) {
               console.warn('[TabCapture] Fallback getDisplayMedia cancelled or failed. Using mic instead.', retryErr);
               if (typeof window !== 'undefined') {
                 window.dispatchEvent(
@@ -217,7 +246,7 @@ export class TabAudioCapture {
 
       // Set up Dual-Channel Web Audio pipeline for mixing, separate metering & isolated transcription
       if (typeof window !== 'undefined') {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
         if (!this.audioContext || this.audioContext.state === 'closed') {
           this.audioContext = new AudioCtx();
         }
@@ -479,7 +508,7 @@ export class TabAudioCapture {
         isMicIncluded: this.isMicActive,
         hasTabAudio,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.stopCapture();
       throw err;
     }
@@ -621,7 +650,7 @@ export class TabAudioCapture {
         selfBrowserSurface: 'exclude',
         systemAudio: 'include',
         surfaceSwitching: 'include',
-      } as any);
+      } as unknown as DisplayMediaStreamOptions);
 
       const tracks = newDisplayStream.getAudioTracks();
       if (tracks.length === 0) {
@@ -714,7 +743,8 @@ export class TabAudioCapture {
 
   private startCandidateWebSpeechFallback(options?: TabCaptureOptions) {
     if (typeof window === 'undefined' || this.candidateSpeechRecognition) return;
-    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRec = (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition;
     if (!SpeechRec) return;
 
     try {
@@ -737,7 +767,7 @@ export class TabAudioCapture {
       };
       recognition.lang = langMap[options?.speechLanguage || 'uk'] || 'uk-UA';
 
-      recognition.onresult = (event: any) => {
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
         let interim = '';
         let finalStr = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -754,7 +784,7 @@ export class TabAudioCapture {
         }
       };
 
-      recognition.onerror = (e: any) => {
+      recognition.onerror = (e: { error: string }) => {
         if (e.error !== 'no-speech') {
           console.warn('[TabAudioCapture] Candidate Web Speech warning:', e);
         }

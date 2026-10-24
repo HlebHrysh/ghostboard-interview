@@ -39,9 +39,9 @@ export async function POST(req: NextRequest) {
       clientType,
       timestamp: Date.now(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || 'Heartbeat failed' },
+      { error: (error as { message?: string })?.message || 'Heartbeat failed' },
       { status: 500 }
     );
   }

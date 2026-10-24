@@ -6,6 +6,7 @@ pub mod auth;
 pub mod ipc;
 pub mod llm;
 pub mod stt;
+pub mod updater;
 pub mod window;
 
 use std::sync::Arc;
@@ -380,6 +381,7 @@ pub fn spawn_copilot_pipeline(
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut last_audio_error_at: Option<std::time::Instant> = None;
 
         loop {
             interval.tick().await;
@@ -390,7 +392,27 @@ pub fn spawn_copilot_pipeline(
                     Err(poisoned) => poisoned.into_inner(),
                 };
                 if engine.is_running() {
-                    engine.poll_and_process().ok()
+                    match engine.poll_and_process() {
+                        Ok(t) => {
+                            last_audio_error_at = None;
+                            Some(t)
+                        }
+                        Err(e) => {
+                            // Report at most once every 5s so a persistent failure can't flood the HUD
+                            let should_report = last_audio_error_at
+                                .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
+                                .unwrap_or(true);
+                            if should_report {
+                                last_audio_error_at = Some(std::time::Instant::now());
+                                tracing::error!(target: "ghostboard::audio", "poll_and_process error: {}", e);
+                                hud_for_audio.broadcast(HudEvent::Error {
+                                    code: "AUDIO_PIPELINE_ERROR".to_string(),
+                                    message: format!("Audio processing error: {}", e),
+                                });
+                            }
+                            None
+                        }
+                    }
                 } else {
                     None
                 }
@@ -457,6 +479,13 @@ pub fn spawn_copilot_pipeline(
 // ============================================================================
 
 fn main() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .try_init();
+
     #[cfg(target_os = "linux")]
     {
         // Workaround for WebKitGTK Wayland DMA-BUF / DRM syncobj protocol error
@@ -481,9 +510,11 @@ fn main() {
     tauri::Builder::default()
         .plugin(
             tauri_plugin_single_instance::init(|app, args, cwd| {
-                eprintln!(
-                    "[SingleInstance] Secondary instance launched with args: {:?}, cwd: {}",
-                    args, cwd
+                tracing::info!(
+                    target: "ghostboard::main",
+                    args = ?args,
+                    cwd = %cwd,
+                    "Secondary instance launched"
                 );
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
@@ -492,7 +523,7 @@ fn main() {
                 }
                 for arg in &args {
                     if arg.starts_with("copilot://") {
-                        eprintln!("[SingleInstance] Handling copilot:// deep-link: {}", arg);
+                        tracing::info!(target: "ghostboard::main", deep_link = %arg, "Handling copilot:// deep-link");
                         let _ = app.emit("deep-link://new-url", vec![arg.clone()]);
                         let _ = app.emit("copilot://deep-link", arg.clone());
 
@@ -524,7 +555,7 @@ fn main() {
                                             });
                                         }
                                         Err(e) => {
-                                            eprintln!("[Auth] Callback handling error: {}", e);
+                                            tracing::error!(target: "ghostboard::auth", "Callback handling error: {}", e);
                                         }
                                     }
                                 });
@@ -542,6 +573,7 @@ fn main() {
             }),
         )
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(audio_state.clone())
         .manage(hud_state.clone())
         .manage(stt_orchestrator.clone())
@@ -652,12 +684,23 @@ fn main() {
                     }
                 });
 
+                // Forward Deepgram connection lifecycle (reconnecting / connected / failed) to the HUD
+                let (stt_status_tx, mut stt_status_rx) =
+                    tokio::sync::mpsc::unbounded_channel::<HudEvent>();
+                stt_orchestrator.set_status_sink(stt_status_tx);
+                let hud_for_stt_status = hud_state.clone();
+                tokio::spawn(async move {
+                    while let Some(ev) = stt_status_rx.recv().await {
+                        hud_for_stt_status.broadcast(ev);
+                    }
+                });
+
                 // Auto-connect Deepgram if DEEPGRAM_API_KEY is present
                 if let Ok(key) = std::env::var("DEEPGRAM_API_KEY") {
                     let stt_clone = stt_orchestrator.clone();
                     tokio::spawn(async move {
                         if let Err(e) = stt_clone.start(&key, None).await {
-                            eprintln!("[Deepgram] Auto-connection notice: {}", e);
+                            tracing::warn!(target: "ghostboard::stt", "Deepgram auto-connection notice: {}", e);
                         }
                     });
                 }
@@ -695,7 +738,9 @@ fn main() {
             get_auth_state,
             get_access_token,
             capture_screen,
-            logout
+            logout,
+            crate::updater::check_for_updates,
+            crate::updater::install_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running Ghostboard desktop application");

@@ -22,10 +22,10 @@ export async function GET(req: NextRequest) {
         'Cache-Control': 'no-store, max-age=0',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Admin Metrics API Error]:', error);
     return NextResponse.json(
-      { error: error?.message || 'Failed to fetch executive metrics' },
+      { error: (error as { message?: string })?.message || 'Failed to fetch executive metrics' },
       { status: 500 }
     );
   }

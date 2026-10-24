@@ -11,8 +11,26 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { getScorecardTranslations } from '@/lib/scorecardI18n';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 
+export interface ScorecardItem {
+  id?: string;
+  question?: string;
+  tag?: string;
+  quickAnswer?: string;
+  hints?: string[];
+  codeSnippet?: string;
+  confidenceScore?: number;
+}
+
 interface ScorecardClientViewProps {
-  session: any | null;
+  session: {
+    isPublic?: boolean;
+    title?: string;
+    items?: ScorecardItem[];
+    questionsCount?: number;
+    durationSec?: number;
+    timestamp?: number;
+    [key: string]: unknown;
+  } | null;
   slug: string;
 }
 
@@ -47,10 +65,10 @@ export function ScorecardClientView({ session, slug }: ScorecardClientViewProps)
     );
   }
 
-  const rawItems = Array.isArray(session.items) ? session.items : [];
+  const rawItems: ScorecardItem[] = Array.isArray(session.items) ? session.items : [];
   const questionsCount = session.questionsCount || rawItems.length || 1;
 
-  const avgConfidence = rawItems.reduce((acc: number, item: any) => acc + (item.confidenceScore || 90), 0) / (rawItems.length || 1);
+  const avgConfidence = rawItems.reduce((acc: number, item: ScorecardItem) => acc + (item.confidenceScore || 90), 0) / (rawItems.length || 1);
   const baseScore = Math.min(Math.max(Math.round(avgConfidence), 75), 98);
 
   const dateLocaleMap: Record<string, string> = {
@@ -81,7 +99,7 @@ export function ScorecardClientView({ session, slug }: ScorecardClientViewProps)
       stressResilience: Math.max(baseScore - 2, 82),
       thinkingSpeed: Math.min(baseScore + 3, 98),
     },
-    dateStr: new Date(session.timestamp).toLocaleDateString(dateLocaleMap[locale] || 'en-US', {
+    dateStr: new Date(session.timestamp || Date.now()).toLocaleDateString(dateLocaleMap[locale] || 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -162,7 +180,7 @@ export function ScorecardClientView({ session, slug }: ScorecardClientViewProps)
               </h2>
 
               <div className="space-y-3">
-                {rawItems.map((item: any, idx: number) => (
+                {rawItems.map((item: ScorecardItem, idx: number) => (
                   <div
                     key={item.id || idx}
                     className="p-5 rounded-2xl bg-zinc-950/80 border border-white/10 hover:border-white/30 transition-all space-y-3 backdrop-blur-sm"

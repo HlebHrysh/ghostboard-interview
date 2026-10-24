@@ -1,11 +1,15 @@
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import { assertMemoryDbAllowed, failDbInProduction } from './envGuard';
+import { logger } from './logger';
+
+const log = logger.child({ component: 'serverDb' });
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 export const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
-export interface DbUser {
+export interface UserRecord {
   id: string;
   email: string;
   name?: string | null;
@@ -14,34 +18,48 @@ export interface DbUser {
   trialQuestionsUsed?: number;
   stripeCustomerId?: string | null;
   resumeContext?: string | null;
-  candidateProfile?: any;
+  candidateProfile?: Prisma.JsonValue;
   passwordHash?: string | null;
   isBanned?: boolean;
   lastActiveAt?: Date | null;
   createdAt: Date;
 }
+export type DbUser = UserRecord;
 
 export type DeviceType = 'web' | 'desktop' | 'phone';
 
-export interface DbSession {
+export interface SessionRecord {
   token: string;
   userId: string;
   deviceType?: string;
   createdAt: Date;
   expiresAt: Date;
 }
+export type DbSession = SessionRecord;
 
-export interface DbSavedSession {
+export interface HistoryRecord {
   id: string;
   userId: string;
   title: string;
   timestamp: number;
   durationSec: number;
   questionsCount: number;
-  items: any;
+  items: Prisma.JsonValue;
   isPublic?: boolean;
   publicSlug?: string | null;
 }
+export type DbSavedSession = HistoryRecord;
+
+export interface PaymentRecord {
+  id: string;
+  userId: string;
+  email: string;
+  plan: string;
+  amountCents: number;
+  timestamp: number;
+  status: string;
+}
+export type DbPayment = PaymentRecord;
 
 // In-memory fallback store for offline/local development without DATABASE_URL
 const g = globalThis as unknown as {
@@ -51,14 +69,35 @@ const g = globalThis as unknown as {
   memHistory?: Map<string, DbSavedSession[]>;
   memHistoryById?: Map<string, DbSavedSession>;
   memPublicScorecards?: Map<string, DbSavedSession>;
+  memPayments?: Map<string, DbPayment>;
 };
 
-const memUsersByEmail = g.memUsersByEmail || (g.memUsersByEmail = new Map<string, DbUser>());
-const memUsersById = g.memUsersById || (g.memUsersById = new Map<string, DbUser>());
-const memSessions = g.memSessions || (g.memSessions = new Map<string, DbSession>());
-const memHistory = g.memHistory || (g.memHistory = new Map<string, DbSavedSession[]>());
-const memHistoryById = g.memHistoryById || (g.memHistoryById = new Map<string, DbSavedSession>());
-const memPublicScorecards = g.memPublicScorecards || (g.memPublicScorecards = new Map<string, DbSavedSession>());
+/**
+ * In-memory stores are a dev/test convenience only. In production, when DATABASE_URL is missing
+ * (and ALLOW_MEMORY_DB !== 'true') any access throws a critical EnvConfigError so user data is
+ * never silently kept in container memory. When DATABASE_URL is set the maps stay accessible
+ * (read-only in practice: writes only happen on the DB-failure fallback paths, which are guarded
+ * separately by failDbInProduction()).
+ */
+function guardMemoryMap<K, V>(name: string, map: Map<K, V>): Map<K, V> {
+  return new Proxy(map, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        if (!process.env.DATABASE_URL) assertMemoryDbAllowed(name);
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+}
+
+const memUsersByEmail = guardMemoryMap('memUsersByEmail', g.memUsersByEmail || (g.memUsersByEmail = new Map<string, DbUser>()));
+const memUsersById = guardMemoryMap('memUsersById', g.memUsersById || (g.memUsersById = new Map<string, DbUser>()));
+const memSessions = guardMemoryMap('memSessions', g.memSessions || (g.memSessions = new Map<string, DbSession>()));
+const memHistory = guardMemoryMap('memHistory', g.memHistory || (g.memHistory = new Map<string, DbSavedSession[]>()));
+const memHistoryById = guardMemoryMap('memHistoryById', g.memHistoryById || (g.memHistoryById = new Map<string, DbSavedSession>()));
+const memPublicScorecards = guardMemoryMap('memPublicScorecards', g.memPublicScorecards || (g.memPublicScorecards = new Map<string, DbSavedSession>()));
 
 export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -90,7 +129,8 @@ export async function setUserPassword(userId: string, password: string): Promise
     try {
       await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
       return;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -103,7 +143,8 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
   if (process.env.DATABASE_URL) {
     try {
       return await prisma.user.findUnique({ where: { email: normalized } });
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback to in-memory store if DB is unreachable
     }
   }
@@ -114,7 +155,8 @@ export async function getUserById(id: string): Promise<DbUser | null> {
   if (process.env.DATABASE_URL) {
     try {
       return await prisma.user.findUnique({ where: { id } });
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback to in-memory store
     }
   }
@@ -143,7 +185,8 @@ export async function createUser(
           role: role || 'Python Backend Developer',
         },
       });
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback to in-memory
     }
   }
@@ -184,7 +227,8 @@ export async function updateUserPlan(userId: string, plan: string): Promise<void
         data: { plan },
       });
       return;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -212,7 +256,8 @@ export async function updateUser(
         where: { id: userId },
         data,
       });
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -252,7 +297,8 @@ export async function recordUserActivity(userId: string): Promise<void> {
         data: { lastActiveAt: nowDate },
       });
       return;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -278,7 +324,9 @@ export async function resetUserSessions(userId: string): Promise<number> {
     try {
       const res = await prisma.session.deleteMany({ where: { userId } });
       count = res.count;
-    } catch {}
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+    }
   }
   for (const [token, session] of memSessions.entries()) {
     if (session.userId === userId) {
@@ -297,7 +345,8 @@ export async function deleteUser(userId: string): Promise<boolean> {
       await prisma.session.deleteMany({ where: { userId } }).catch(() => {});
       await prisma.user.delete({ where: { id: userId } });
       return true;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -333,7 +382,8 @@ export async function createSession(
           expiresAt,
         },
       });
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -373,7 +423,8 @@ export async function listUserSessions(userId: string, currentToken?: string): P
         orderBy: { createdAt: 'desc' },
       });
       fromDb = true;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -406,7 +457,8 @@ export async function revokeUserSession(userId: string, publicId: string): Promi
     try {
       const rows = await prisma.session.findMany({ where: { userId }, select: { token: true } });
       dbTokens = rows.map((r) => r.token);
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -431,7 +483,8 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
         select: { token: true },
       });
       dbTokens = rows.map((r) => r.token);
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -456,7 +509,8 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
       if (session && session.expiresAt > now) {
         return session.user;
       }
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -480,7 +534,7 @@ export async function deleteSession(token: string): Promise<void> {
 
 export async function saveInterviewSession(
   userId: string,
-  sessionData: { title?: string; durationSec: number; items: any[] }
+  sessionData: { title?: string; durationSec: number; items: unknown[] }
 ): Promise<DbSavedSession> {
   const now = Date.now();
   const title = sessionData.title || `Співбесіда від ${new Date().toLocaleDateString('uk-UA')}`;
@@ -497,14 +551,15 @@ export async function saveInterviewSession(
           timestamp: now,
           durationSec,
           questionsCount,
-          items,
+          items: items as unknown as Prisma.InputJsonValue,
         },
       });
       return {
         ...newEntry,
         timestamp: Number(newEntry.timestamp),
       };
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -516,7 +571,7 @@ export async function saveInterviewSession(
     timestamp: now,
     durationSec,
     questionsCount,
-    items,
+    items: items as unknown as Prisma.JsonValue,
   };
   memHistoryById.set(entry.id, entry);
   const list = memHistory.get(userId) || [];
@@ -533,15 +588,16 @@ export async function makeSessionPublic(historyId: string, slug: string): Promis
         data: { isPublic: true, publicSlug: slug },
       });
       return true;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
 
   const mem = memHistoryById.get(historyId);
   if (mem) {
-    (mem as any).isPublic = true;
-    (mem as any).publicSlug = slug;
+    mem.isPublic = true;
+    mem.publicSlug = slug;
     memPublicScorecards.set(slug, mem);
     return true;
   }
@@ -560,7 +616,8 @@ export async function getPublicScorecard(slug: string): Promise<DbSavedSession |
           timestamp: Number(history.timestamp),
         };
       }
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -579,7 +636,8 @@ export async function getUserInterviewSessions(userId: string): Promise<DbSavedS
         ...item,
         timestamp: Number(item.timestamp),
       }));
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -594,7 +652,8 @@ export async function deleteSavedSession(sessionId: string): Promise<boolean> {
     try {
       await prisma.history.delete({ where: { id: sessionId } });
       return true;
-    } catch {
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
       // Fallback
     }
   }
@@ -615,23 +674,15 @@ export async function deleteSavedSession(sessionId: string): Promise<boolean> {
 }
 
 
-export interface DbPayment {
-  id: string;
-  userId: string;
-  email: string;
-  plan: string;
-  amountCents: number;
-  timestamp: number;
-  status: string;
-}
-
-const memPayments: Map<string, DbPayment> = (g as any).memPayments || ((g as any).memPayments = new Map<string, DbPayment>());
+const memPayments: Map<string, DbPayment> = guardMemoryMap('memPayments', g.memPayments || (g.memPayments = new Map<string, DbPayment>()));
 
 export async function getAllUsers(): Promise<DbUser[]> {
   if (process.env.DATABASE_URL) {
     try {
       return await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
-    } catch {}
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+    }
   }
   return Array.from(memUsersById.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
@@ -641,7 +692,9 @@ export async function getAllSessions(): Promise<DbSavedSession[]> {
     try {
       const items = await prisma.history.findMany({ orderBy: { timestamp: 'desc' } });
       return items.map((item) => ({ ...item, timestamp: Number(item.timestamp) }));
-    } catch {}
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+    }
   }
   return Array.from(memHistoryById.values()).sort((a, b) => b.timestamp - a.timestamp);
 }
@@ -669,8 +722,12 @@ export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): 
         status: created.status,
         timestamp: Number(created.timestamp),
       };
-    } catch (err: any) {
-      console.warn('[serverDb.logPayment] Prisma payment save failed, using memory fallback:', err?.message);
+    } catch (err: unknown) {
+      failDbInProduction(err);
+      log.warn('[serverDb.logPayment] Prisma payment save failed, using memory fallback:', {
+        userId: payment.userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -698,32 +755,42 @@ export async function getAllPayments(): Promise<DbPayment[]> {
         status: p.status,
         timestamp: Number(p.timestamp),
       }));
-    } catch (err: any) {
-      console.warn('[serverDb.getAllPayments] Prisma findMany failed, using memory fallback:', err?.message);
+    } catch (err: unknown) {
+      failDbInProduction(err);
+      log.warn('[serverDb.getAllPayments] Prisma findMany failed, using memory fallback:', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   return Array.from(memPayments.values()).sort((a: DbPayment, b: DbPayment) => b.timestamp - a.timestamp);
 }
 
-export async function updateUserCandidateProfile(userId: string, candidateProfile: any): Promise<void> {
+export async function updateUserCandidateProfile(
+  userId: string,
+  candidateProfile: Prisma.InputJsonValue | Record<string, unknown>
+): Promise<void> {
   if (process.env.DATABASE_URL) {
     try {
       await prisma.user.update({
         where: { id: userId },
-        data: { candidateProfile },
+        data: { candidateProfile: candidateProfile as Prisma.InputJsonValue },
       });
       return;
-    } catch (err: any) {
-      console.warn('[serverDb.updateUserCandidateProfile] Prisma update failed:', err?.message);
+    } catch (err: unknown) {
+      failDbInProduction(err);
+      log.warn('[serverDb.updateUserCandidateProfile] Prisma update failed:', {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   const memUser = memUsersById.get(userId);
   if (memUser) {
-    memUser.candidateProfile = candidateProfile;
+    memUser.candidateProfile = candidateProfile as Prisma.JsonValue;
   }
 }
 
-export async function getUserCandidateProfile(userId: string): Promise<any | null> {
+export async function getUserCandidateProfile(userId: string): Promise<Prisma.JsonValue | null> {
   if (process.env.DATABASE_URL) {
     try {
       const user = await prisma.user.findUnique({
@@ -731,8 +798,12 @@ export async function getUserCandidateProfile(userId: string): Promise<any | nul
         select: { candidateProfile: true },
       });
       return user?.candidateProfile ?? null;
-    } catch (err: any) {
-      console.warn('[serverDb.getUserCandidateProfile] Prisma select failed:', err?.message);
+    } catch (err: unknown) {
+      failDbInProduction(err);
+      log.warn('[serverDb.getUserCandidateProfile] Prisma select failed:', {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   const memUser = memUsersById.get(userId);
@@ -747,7 +818,9 @@ export async function incrementUserTrialQuestions(userId: string): Promise<numbe
         data: { trialQuestionsUsed: { increment: 1 } },
       });
       return user.trialQuestionsUsed;
-    } catch {}
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+    }
   }
   const memUser = memUsersById.get(userId);
   if (memUser) {
@@ -765,7 +838,9 @@ export async function updateUserResumeContext(userId: string, context: string): 
         data: { resumeContext: context },
       });
       return;
-    } catch {}
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+    }
   }
   const memUser = memUsersById.get(userId);
   if (memUser) {

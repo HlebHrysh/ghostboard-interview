@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       simulated: true,
       message: 'Керування підпискою в симуляторі',
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Portal session failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Portal session failed' }, { status: 500 });
   }
 }

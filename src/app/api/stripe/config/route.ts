@@ -24,8 +24,8 @@ function updateEnvFile(keyName: string, value: string) {
       newLines.push(`${keyName}=${value}`);
     }
     fs.writeFileSync(envPath, newLines.join('\n') + '\n', 'utf8');
-  } catch (err: any) {
-    console.warn(`[updateEnvFile] Could not persist to .env.local (${err?.message}). Running in-memory.`);
+  } catch (err: unknown) {
+    console.warn(`[updateEnvFile] Could not persist to .env.local (${(err as { message?: string })?.message}). Running in-memory.`);
   }
   process.env[keyName] = value;
 }
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: 'Налаштування Stripe успішно оновлено в .env.local',
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Помилка збереження конфігурації' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Помилка збереження конфігурації' }, { status: 500 });
   }
 }

@@ -1,10 +1,15 @@
 import { Resend } from 'resend';
+import { assertSimulatorAllowed } from './envGuard';
+import { logger } from './logger';
 
 const resend = new Resend(process.env.RESEND_API_KEY || 're_dummy_key');
+const log = logger.child({ component: 'mail' });
 
 export async function sendRetentionEmail(email: string, name: string = 'Кандидат') {
   if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY is not set. Mocking email to:', email);
+    // Throws EnvConfigError in production unless ENABLE_PROD_SIMULATOR=true
+    assertSimulatorAllowed('Email delivery (mock sender, RESEND_API_KEY is not set)');
+    log.warn('RESEND_API_KEY is not set. Mocking email to recipient', { email });
     return { success: true };
   }
 
@@ -29,13 +34,13 @@ export async function sendRetentionEmail(email: string, name: string = 'Канд
     });
 
     if (error) {
-      console.error('Failed to send email via Resend:', error);
+      log.error('Failed to send email via Resend', { email }, error);
       return { success: false, error };
     }
 
     return { success: true, data };
   } catch (error) {
-    console.error('Resend Exception:', error);
+    log.error('Resend Exception', { email }, error);
     return { success: false, error };
   }
 }

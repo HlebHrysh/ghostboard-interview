@@ -118,8 +118,8 @@ export default function AdminSystem() {
         setGeminiResult({ error: data.error || "Тест провалився" });
         toast.error(data.error || "Помилка тестування Gemini");
       }
-    } catch (e: any) {
-      setGeminiResult({ error: e.message });
+    } catch (e: unknown) {
+      setGeminiResult({ error: (e as { message?: string })?.message });
       toast.error("Мережева помилка при тестуванні Gemini");
     } finally {
       setTestingGemini(false);
@@ -143,8 +143,8 @@ export default function AdminSystem() {
         setDeepgramResult({ error: data.error || "Тест провалився" });
         toast.error(data.error || "Помилка Deepgram");
       }
-    } catch (e: any) {
-      setDeepgramResult({ error: e.message });
+    } catch (e: unknown) {
+      setDeepgramResult({ error: (e as { message?: string })?.message });
       toast.error("Мережева помилка Deepgram");
     } finally {
       setTestingDeepgram(false);
@@ -165,8 +165,8 @@ export default function AdminSystem() {
       } else {
         toast.error(data.error || "Не вдалося очистити store");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Помилка");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || "Помилка");
     } finally {
       setClearingSync(false);
     }

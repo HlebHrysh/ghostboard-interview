@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserBySessionToken } from '@/lib/serverDb';
 import { registerOrUpdateDesktopNode } from '@/lib/desktopFleetStore';
 import { getClientIp } from '@/lib/rateLimit';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore } from '@/lib/interviewSyncStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,12 +49,12 @@ export async function POST(req: NextRequest) {
     });
 
     // Sync desktop connection state to interviewSyncStore
-    interviewSyncStore.registerDevice('desktop', true, userId);
+    await syncStore.registerDevice('desktop', true, userId);
     if (isCapturing) {
-      interviewSyncStore.setCapturingStatus(true, userId);
+      await syncStore.setCapturingStatus(true, userId);
     }
 
-    const userSync = interviewSyncStore.getState(userId);
+    const userSync = await syncStore.getState(userId);
 
     return NextResponse.json({
       success: true,
@@ -68,9 +68,9 @@ export async function POST(req: NextRequest) {
         nativeLanguage: userSync.nativeLanguage || 'uk',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return NextResponse.json(
-      { error: error?.message || 'Heartbeat failed', code: 'HEARTBEAT_ERROR' },
+      { error: (error as { message?: string })?.message || 'Heartbeat failed', code: 'HEARTBEAT_ERROR' },
       { status: 500 }
     );
   }

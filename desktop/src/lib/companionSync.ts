@@ -314,8 +314,8 @@ export async function requestPairingSession(
         };
       }
     }
-  } catch (err: any) {
-    console.warn('[companionSync] Failed to fetch pairing session from server, using local fallback:', err?.message || err);
+  } catch (err: unknown) {
+    console.warn('[companionSync] Failed to fetch pairing session from server, using local fallback:', err instanceof Error ? err.message : String(err));
   }
 
   // Graceful offline/local fallback

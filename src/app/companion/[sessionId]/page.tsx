@@ -39,13 +39,13 @@ function CompanionContent({ params }: PageProps) {
 
   // Screen WakeLock API: prevents phone screen from turning off during the interview
   useEffect(() => {
-    let wakeLock: any = null;
+    let wakeLock: { release: () => Promise<void> } | null = null;
     const requestWakeLock = async () => {
       try {
         if ('wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
+          wakeLock = await (navigator as unknown as { wakeLock: { request: (type: string) => Promise<{ release: () => Promise<void> }> } }).wakeLock.request('screen');
         }
-      } catch (err) {
+      } catch {
         // Silently ignore if not permitted
       }
     };
@@ -61,7 +61,7 @@ function CompanionContent({ params }: PageProps) {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (wakeLock) wakeLock.release();
+      if (wakeLock) void wakeLock.release();
     };
   }, []);
 
@@ -132,7 +132,7 @@ function CompanionContent({ params }: PageProps) {
 
             if (data.qas && Array.isArray(data.qas)) {
               setQas(data.qas);
-              const active = data.qas.find((q: any) => q.id === data.activeId) || data.qas[0];
+              const active = data.qas.find((q: { id?: string }) => q.id === data.activeId) || data.qas[0];
               if (active) setActiveQA(active);
             }
           }
@@ -147,7 +147,7 @@ function CompanionContent({ params }: PageProps) {
   }, [token, sessionId]);
 
   // Remote Action Dispatcher: sends commands from phone to desktop and web
-  const sendAction = async (action: string, payload: Record<string, any> = {}) => {
+  const sendAction = async (action: string, payload: Record<string, unknown> = {}) => {
     if (!token) return;
     try {
       await fetch(`/api/ai/interview-sync?token=${encodeURIComponent(token)}`, {

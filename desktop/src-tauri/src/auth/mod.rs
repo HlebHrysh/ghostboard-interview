@@ -52,7 +52,7 @@ impl AuthManager {
         let start = std::time::Instant::now();
         let loaded = self.keyring_store.load()?;
         let elapsed = start.elapsed();
-        eprintln!("[AuthManager] Cold load from OS Keyring completed in {:?}", elapsed);
+        tracing::info!(target: "ghostboard::auth", elapsed = ?elapsed, "Cold load from OS Keyring completed");
 
         if let Some(session) = loaded {
             let now_ms = SystemTime::now()
@@ -62,7 +62,7 @@ impl AuthManager {
 
             // Check if token expired or expires within 60s
             if now_ms + 60_000 >= session.expires_at_ms {
-                eprintln!("[AuthManager] Access token near expiration, initiating background refresh rotation");
+                tracing::info!(target: "ghostboard::auth", "Access token near expiration, initiating background refresh rotation");
                 match token_service::refresh_access_token(&session.refresh_token, None).await {
                     Ok(refreshed) => {
                         let _ = self.keyring_store.save(&refreshed);
@@ -72,7 +72,7 @@ impl AuthManager {
                         return Ok(Some(refreshed));
                     }
                     Err(e) => {
-                        eprintln!("[AuthManager] Refresh token rotation notice: {}", e);
+                        tracing::warn!(target: "ghostboard::auth", "Refresh token rotation notice: {}", e);
                     }
                 }
             }

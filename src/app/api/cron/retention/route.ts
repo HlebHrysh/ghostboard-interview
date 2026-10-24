@@ -76,8 +76,8 @@ export async function GET(req: NextRequest) {
       success: true,
       message: `Processed retention cron job. Sent ${sentCount} emails out of ${usersToEmail.length} candidates.`,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Retention Cron Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
+    return NextResponse.json({ error: (error as { message?: string })?.message || 'Internal error' }, { status: 500 });
   }
 }

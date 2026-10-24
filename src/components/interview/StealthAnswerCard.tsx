@@ -283,7 +283,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
               <button
                 key={btn.key}
                 type="button"
-                onClick={() => onRefineQA(activeQA.id, btn.key as any)}
+                onClick={() => onRefineQA(activeQA.id, btn.key as 'under_the_hood' | 'code' | 'shorter' | 're_angle')}
                 disabled={isCopilotGenerating}
                 className="px-2.5 py-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
               >

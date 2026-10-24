@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
       await updateUserCandidateProfile(user.id, candidateProfile);
     }
     return NextResponse.json({ success: true });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message }, { status: 500 });
   }
 }

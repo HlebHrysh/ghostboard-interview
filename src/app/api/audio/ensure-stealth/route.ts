@@ -48,12 +48,12 @@ async function handleEnsureAudio() {
       message: 'Virtual sinks disabled. Ghostboard captures directly from default system audio device.',
       running: false,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     return NextResponse.json({
       success: true,
       disabled: true,
       running: false,
-      error: err?.message,
+      error: (err as { message?: string })?.message,
     });
   }
 }

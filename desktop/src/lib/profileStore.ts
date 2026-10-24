@@ -404,7 +404,7 @@ export const POPULAR_TECH_SUGGESTIONS = [
 /**
  * Normalizes input seniority string into safe CandidateLevel enum.
  */
-export function normalizeCandidateLevel(level: any): CandidateLevel {
+export function normalizeCandidateLevel(level: unknown): CandidateLevel {
   if (!level || typeof level !== 'string') return 'senior';
   const clean = level.trim().toLowerCase();
   if (clean.includes('principal') || clean.includes('staff') || clean.includes('architect')) {
@@ -569,11 +569,11 @@ export async function syncProfileToBackend(
     }
 
     return { success: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn('[profileStore] Network error syncing profile to backend:', err);
     return {
       success: false,
-      error: err.message || 'Network error syncing profile',
+      error: err instanceof Error ? err.message : 'Network error syncing profile',
     };
   }
 }
@@ -714,45 +714,45 @@ export async function parseResumePdf(
     }
 
     return mapParsedApiResponseToProfile(data);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn('[profileStore] Error calling resume parser API:', err);
     return {
       success: false,
-      error: err.message || 'Network error processing resume PDF',
+      error: err instanceof Error ? err.message : 'Network error processing resume PDF',
     };
   }
 }
 
-function mapParsedApiResponseToProfile(data: any): {
+function mapParsedApiResponseToProfile(data: Record<string, unknown>): {
   success: boolean;
   profile: Partial<CandidateProfile>;
   modelUsed?: string;
 } {
-  const p = data.profile || {};
-  const techStack: string[] = Array.isArray(p.techStack) ? p.techStack : [];
+  const p = (data.profile || {}) as Record<string, unknown>;
+  const techStack: string[] = Array.isArray(p.techStack) ? (p.techStack as string[]) : [];
   const level = normalizeCandidateLevel(p.level);
 
   const petProjects: PetProject[] = Array.isArray(p.petProjects)
-    ? p.petProjects.map((item: any, idx: number) => ({
+    ? (p.petProjects as Array<Record<string, unknown>>).map((item, idx: number) => ({
         id: `parsed_proj_${Date.now()}_${idx}`,
-        name: item.name || item.title || `Project #${idx + 1}`,
-        description: item.description || '',
-        keyHighlight: item.keyHighlight || item.keyAchievement || '',
+        name: (item.name as string) || (item.title as string) || `Project #${idx + 1}`,
+        description: (item.description as string) || '',
+        keyHighlight: (item.keyHighlight as string) || (item.keyAchievement as string) || '',
       }))
     : [];
 
   return {
     success: true,
-    modelUsed: data.modelUsed,
+    modelUsed: typeof data.modelUsed === 'string' ? data.modelUsed : undefined,
     profile: {
-      role: p.role || DEFAULT_CANDIDATE_PROFILE.role,
+      role: (typeof p.role === 'string' && p.role) || DEFAULT_CANDIDATE_PROFILE.role,
       experienceLevel: level,
       techStack: techStack.length > 0 ? techStack : DEFAULT_CANDIDATE_PROFILE.techStack,
       primaryStack: techStack.length > 0 ? techStack.join(', ') : DEFAULT_CANDIDATE_PROFILE.primaryStack,
-      customBio: p.cvContext || p.summary || '',
+      customBio: (typeof p.cvContext === 'string' && p.cvContext) || (typeof p.summary === 'string' && p.summary) || '',
       petProjects,
-      summary: p.summary || '',
-      cvContext: p.cvContext || '',
+      summary: typeof p.summary === 'string' ? p.summary : '',
+      cvContext: typeof p.cvContext === 'string' ? p.cvContext : '',
     },
   };
 }

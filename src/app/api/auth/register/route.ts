@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     });
 
     return response;
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Error during register:', err);
     return NextResponse.json({ error: 'Registration failed', code: 'SERVER_ERROR' }, { status: 500 });
   }

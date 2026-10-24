@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore, isRedisSyncConfigured } from '@/lib/interviewSyncStore';
 import { getSessionUser } from '@/lib/serverDb';
 import { checkRateLimit } from '@/lib/rateLimit';
 
@@ -30,18 +30,18 @@ export async function GET(req: NextRequest) {
   }
 
   const userId = user.id;
-  interviewSyncStore.registerDevice(deviceType, true, userId);
+  await syncStore.registerDevice(deviceType, true, userId);
 
   let lastSentUpdate = 0;
   let lastFrozenState = false;
   let lastPanicState = false;
 
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
       const encoder = new TextEncoder();
 
       // Send initial latest state
-      const initial = interviewSyncStore.getState(userId);
+      const initial = await syncStore.getState(userId);
       lastFrozenState = !!initial.isFrozen;
       lastPanicState = !!initial.isPanic;
 
@@ -71,10 +71,14 @@ export async function GET(req: NextRequest) {
         )
       );
 
-      // Interval polling loop pushing SSE updates (300ms for high responsiveness)
-      const interval = setInterval(() => {
+      // Interval polling loop pushing SSE updates (300ms locally; 1s over Redis to spare the REST quota)
+      const pollIntervalMs = isRedisSyncConfigured() ? 1000 : 300;
+      let tickInFlight = false;
+      const interval = setInterval(async () => {
+        if (tickInFlight) return;
+        tickInFlight = true;
         try {
-          const state = interviewSyncStore.getState(userId);
+          const state = await syncStore.getState(userId);
 
           // Push freeze state change immediately
           if (state.isFrozen !== lastFrozenState) {
@@ -119,14 +123,16 @@ export async function GET(req: NextRequest) {
           }
         } catch {
           clearInterval(interval);
-          interviewSyncStore.registerDevice(deviceType, false, userId);
+          void syncStore.registerDevice(deviceType, false, userId).catch(() => {});
           try { controller.close(); } catch {}
+        } finally {
+          tickInFlight = false;
         }
-      }, 300);
+      }, pollIntervalMs);
 
       req.signal.addEventListener('abort', () => {
         clearInterval(interval);
-        interviewSyncStore.registerDevice(deviceType, false, userId);
+        void syncStore.registerDevice(deviceType, false, userId).catch(() => {});
         try { controller.close(); } catch {}
       });
     },

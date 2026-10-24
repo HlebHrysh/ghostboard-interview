@@ -250,7 +250,7 @@ Read the provided resume and return structured data strictly matching this JSON 
 
         // Normalize petProjects field (handling keyProjects or petProjects)
         if (!rawJson.petProjects && Array.isArray(rawJson.keyProjects)) {
-          rawJson.petProjects = rawJson.keyProjects.map((p: any, idx: number) => {
+          rawJson.petProjects = rawJson.keyProjects.map((p: Record<string, unknown> | string, idx: number) => {
             if (typeof p === 'string') {
               return {
                 name: `System Project #${idx + 1}`,
@@ -292,10 +292,10 @@ Read the provided resume and return structured data strictly matching this JSON 
       { error: result.error || 'Failed to parse resume document.' },
       { status: 500 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[API resume/parse] Unexpected error:', error);
     return NextResponse.json(
-      { error: error.message || 'Internal server error processing resume.' },
+      { error: (error as { message?: string })?.message || 'Internal server error processing resume.' },
       { status: 500 }
     );
   }

@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     let totalQuestions = 0;
 
     for (const session of recentHistory) {
-      const items = Array.isArray(session.items) ? (session.items as any[]) : [];
+      const items = Array.isArray(session.items) ? (session.items as Array<Record<string, unknown>>) : [];
       for (const item of items) {
         if (totalQuestions > 20) break; // limit to 20 questions to save context window
         if (item && item.question && (item.answer || item.quickAnswer)) {
@@ -102,7 +102,7 @@ ${qaContext}
     
     if (!isPro) {
       // Free users get the summary, but scores and detailed tips are hidden
-      radarData.skills = radarData.skills.map((skill: any) => ({
+      radarData.skills = radarData.skills.map((skill: { name: string; [key: string]: unknown }) => ({
         name: skill.name,
         score: 'Приховано (PRO)',
         expertComment: 'Заблоковано в безкоштовній версії',
@@ -118,8 +118,8 @@ ${qaContext}
       data: radarData
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Analytics Radar Error:', error);
-    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
+    return NextResponse.json({ error: (error as { message?: string })?.message || 'Internal error' }, { status: 500 });
   }
 }

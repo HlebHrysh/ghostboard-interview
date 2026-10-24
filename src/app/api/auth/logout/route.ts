@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     });
 
     return response;
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Logout failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Logout failed' }, { status: 500 });
   }
 }

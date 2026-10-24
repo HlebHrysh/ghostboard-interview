@@ -29,7 +29,7 @@
       }
     ],
     "security": {
-      "csp": null,
+      "csp": "default-src 'self' ipc: http://ipc.localhost tauri://localhost; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://localhost:3001 ws://localhost:3001 https://ghostboard.ai wss://ghostboard.ai https://api.deepgram.com wss://api.deepgram.com https://api.openai.com https://api.groq.com https://api.anthropic.com https://generativelanguage.googleapis.com; img-src 'self' asset: http://asset.localhost data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; script-src 'self' blob:",
       "capabilities": ["default"]
     }
   },
@@ -113,6 +113,13 @@
       "desktop": {
         "schemes": ["copilot"]
       }
+    },
+    "updater": {
+      "endpoints": [
+        "https://ghostboard.ai/api/desktop/updates/{{target}}/{{arch}}/{{current_version}}",
+        "https://github.com/ghostboard-ai/ghostboard/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlFRDVEMEYyOTU1QkQxQTcKUldSQlZ1b0I2K2tJRHc1aCtPcG5yTzF6M3V3Q1VCS21zMGN1a1lYdURPekpWNGtCenUvd1dLRWkK"
     }
   }
 }

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { callGeminiWithFallback, FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
 import { normalizeTechnicalSpeech, detectQuestionLanguage, isolateTargetQuestionHeuristics } from '@/lib/techSpeechNormalizer';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
-import { interviewSyncStore } from '@/lib/interviewSyncStore';
+import { syncStore } from '@/lib/interviewSyncStore';
 
 export const CopilotPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000, 'Question exceeds maximum length'),
@@ -170,7 +170,7 @@ export async function POST(req: NextRequest) {
       ? candidateProfile.techStack.join(', ')
       : 'TypeScript, JavaScript, React, Next.js, Node.js, Python, PostgreSQL, Docker, REST API, Git';
     const petProjectsStr = Array.isArray(candidateProfile?.petProjects) && candidateProfile.petProjects.length > 0
-      ? candidateProfile.petProjects.map((p: any) => `- ${p.name}: ${p.description} (Key highlight: ${p.keyHighlight})`).join('\n')
+      ? candidateProfile.petProjects.map((p: { name?: string; description?: string; keyHighlight?: string }) => `- ${p.name}: ${p.description} (Key highlight: ${p.keyHighlight})`).join('\n')
       : '- Scalable Production Platform: Modern stack with automated CI/CD, database indexing, and clean service architecture';
     const customContextStr = candidateProfile?.customContext || 'Software Engineer with deep understanding of CS fundamentals, architecture patterns, performance optimization and production reliability.';
     
@@ -432,7 +432,7 @@ Return ONLY valid JSON matching this schema:
 
           // Synchronize to the user's multi-device room; a sync failure must never break the answer
           try {
-            interviewSyncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id);
+            await syncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id);
           } catch (syncErr) {
             console.warn('Interview sync failed:', syncErr);
           }

@@ -110,8 +110,8 @@ export default function AdminUsers() {
         const d = await res.json();
         toast.error(d.error || "Не вдалося оновити користувача");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Помилка збереження");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || "Помилка збереження");
     } finally {
       setIsSubmitting(false);
     }
@@ -145,8 +145,8 @@ export default function AdminUsers() {
       } else {
         toast.error(data.error || "Не вдалося створити користувача");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Помилка при створенні");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || "Помилка при створенні");
     } finally {
       setIsSubmitting(false);
     }
@@ -167,8 +167,8 @@ export default function AdminUsers() {
         const d = await res.json();
         toast.error(d.error || "Помилка видалення");
       }
-    } catch (e: any) {
-      toast.error(e.message || "Помилка видалення");
+    } catch (e: unknown) {
+      toast.error((e as { message?: string })?.message || "Помилка видалення");
     } finally {
       setIsSubmitting(false);
     }
@@ -303,7 +303,7 @@ export default function AdminUsers() {
           <span className="text-zinc-500 text-[10px] uppercase hidden lg:inline">Сортувати:</span>
           <select
             value={sortBy}
-            onChange={(e: any) => setSortBy(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortBy(e.target.value as 'newest' | 'sessions' | 'duration')}
             className="bg-black/40 border border-white/10 text-zinc-300 rounded-xl px-3 py-2 text-xs font-mono outline-none focus:border-white/50 cursor-pointer"
           >
             <option value="newest">Найновіші</option>

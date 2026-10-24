@@ -308,7 +308,7 @@ Return ONLY valid JSON:
       let totalOverall = 0;
 
       if (roundEvaluations.length > 0) {
-        roundEvaluations.forEach((r: any) => {
+        roundEvaluations.forEach((r: { scores?: Record<string, number>; score?: number }) => {
           avgAcc += r.scores?.technicalAccuracy || 75;
           avgArch += r.scores?.architecturalVision || 75;
           avgComm += r.scores?.communication || 75;
@@ -427,7 +427,7 @@ ${targetDirective}`;
 
       // Cache directly in global memory map for immediate zero-lag public resolution
       if (typeof globalThis !== 'undefined') {
-        const g = globalThis as any;
+        const g = globalThis as unknown as { memPublicScorecards?: Map<string, unknown> };
         if (!g.memPublicScorecards) g.memPublicScorecards = new Map();
         g.memPublicScorecards.set(slug, historyEntry);
       }
@@ -440,8 +440,8 @@ ${targetDirective}`;
     }
 
     return NextResponse.json({ error: 'Невідома дія (action).' }, { status: 400 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Arena API error:', err);
-    return NextResponse.json({ error: err.message || 'Внутрішня помилка сервера' }, { status: 500 });
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Внутрішня помилка сервера' }, { status: 500 });
   }
 }

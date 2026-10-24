@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { isProdSimulatorAllowed } from '@/lib/envGuard';
 
 interface PlanConfig {
   name: string;
@@ -119,7 +120,9 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { planId = 'pro_ua_monthly', billingCycle = 'monthly', successUrl, cancelUrl, simulate = false } = body;
+    const { planId = 'pro_ua_monthly', billingCycle = 'monthly', successUrl, cancelUrl, simulate: simulateRequested = false } = body;
+    // Client-supplied `simulate` is ignored in production unless ENABLE_PROD_SIMULATOR=true
+    const simulate = !!simulateRequested && isProdSimulatorAllowed();
 
     const planConfig = getPlanConfig(planId, billingCycle);
     const stripeKey = process.env.STRIPE_SECRET_KEY?.trim();
@@ -171,6 +174,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url: session.url, mode: 'stripe' });
     }
 
+    // Production guard: never route real customers to the fake payment gateway
+    if (!isProdSimulatorAllowed()) {
+      console.error('[Stripe Checkout] STRIPE_SECRET_KEY is missing/invalid in production; simulator is disabled.');
+      return NextResponse.json(
+        {
+          error:
+            'Payments are not configured on this server: set a valid STRIPE_SECRET_KEY (or ENABLE_PROD_SIMULATOR=true to explicitly allow the simulator).',
+          code: 'ENV_CONFIG_ERROR',
+        },
+        { status: 503 }
+      );
+    }
+
     // 2. Interactive Payment Simulator Gateway
     // Allows testing the complete payment cycle locally without active Stripe keys
     const simulatorParams = new URLSearchParams({
@@ -193,7 +209,7 @@ export async function POST(req: NextRequest) {
       plan: planConfig,
       message: 'Перехід до платіжного шлюзу Ghostboard Simulator',
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Checkout failed' }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as { message?: string })?.message || 'Checkout failed' }, { status: 500 });
   }
 }

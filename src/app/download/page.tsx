@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   AlertCircle,
   Check,
+  ChevronDown,
+  Apple,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { UnifiedNavbar } from '@/components/ui/UnifiedNavbar';
@@ -656,337 +658,235 @@ export default function DownloadPage() {
       <SubpageStripesContainer pattern="blueprint" className="flex-1 pt-28 pb-20 px-4 sm:px-6">
         <main className="max-w-6xl mx-auto space-y-16">
           {/* Hero Section */}
-          <section className="text-center space-y-6 max-w-3xl mx-auto">
+          <section className="text-center space-y-4 max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-zinc-300 text-xs font-mono font-semibold">
               <EyeOff className="w-3.5 h-3.5" />
               100% НЕВИДИМИЙ ДЛЯ ZOOM, GOOGLE MEET, TEAMS ТА DISCORD
             </div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-white leading-tight">
-              Ghostboard Desktop <br />
+            <h1 className="text-3xl sm:text-5xl md:text-6xl font-black tracking-tight text-white leading-tight">
+              Ghostboard <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-zinc-200 via-white to-zinc-400">
-                Стелс-суфлер нового покоління
+                Центр встановлення
               </span>
             </h1>
 
-            <p className="text-base sm:text-lg text-zinc-400 leading-relaxed">
-              Скачайте міні-додаток (~10 МБ), який працює прямо з коробки: автоматично виключається із захоплення екрана на рівні драйверів ОС, чує співрозмовника з динаміків без віртуальних кабелів і синхронізується з вашим акаунтом і смартфоном.
+            <p className="text-sm sm:text-base text-zinc-400 leading-relaxed max-w-2xl mx-auto">
+              Оберіть формат роботи: десктопний додаток із захистом від скріншерінгу, розширення для LeetCode або мобільний екран Eyeline.
             </p>
-
-            <div className="pt-2 flex justify-center">
-              <SmartDownloadButton />
-            </div>
           </section>
 
-        {/* Download Buttons Matrix — Hardware Specs Modules */}
+        {/* First-Screen Ecosystem Grid: 3 Pillars */}
         <section className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Windows */}
-            <div
-              onClick={() => {
-                setActiveTab('win');
-                setActiveGuideTab('win');
-              }}
-              className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
-                activeTab === 'win'
-                  ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
-                  : 'hover:border-white/20'
-              }`}
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-zinc-200">
-                    <Laptop className="w-5 h-5" />
-                  </div>
-                  {detectedOs === 'win' ? (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/15 text-white border border-white/30 font-semibold uppercase">
-                      Detected OS
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 text-zinc-400 border border-white/10 uppercase">
-                      x86_64 / arm64
-                    </span>
-                  )}
+          {/* Block 1: Ghostboard Desktop Hero Card */}
+          <div className="bento-card p-6 sm:p-8 bg-gradient-to-br from-white/[0.04] via-zinc-950/80 to-black border border-white/10 relative overflow-hidden">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-xl">
+                <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-semibold">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>БЛОК 1: ДЕСКТОПНИЙ КЛІЄНТ • v1.2.0</span>
                 </div>
-
-                <div>
-                  <h3 className="text-xl font-bold text-white font-mono">Windows 10 / 11</h3>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Hardware exclusion via <code className="text-white font-mono">WDA_EXCLUDEFROMCAPTURE</code>
-                  </p>
-                </div>
-
-                {/* Hardware Spec Module Table */}
-                <div className="py-3 border-y border-white/[0.06] font-mono text-[11px] space-y-1.5 text-zinc-400">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">BINARY</span>
-                    <span className="text-zinc-300">Portable .exe</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">LOOPBACK</span>
-                    <span className="text-zinc-300">Direct WASAPI</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">LATENCY</span>
-                    <span className="text-zinc-200">~14ms local</span>
-                  </div>
-                </div>
-
-                <ul className="space-y-1.5 text-xs text-zinc-300 font-sans">
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>100% invisible on Full Screen share</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>No virtual audio cables required</span>
-                  </li>
-                </ul>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  Ghostboard Desktop
+                </h2>
+                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                  Апаратне виключення із захоплення екрана (<code className="font-mono text-zinc-200">WDA_EXCLUDEFROMCAPTURE</code> / <code className="font-mono text-zinc-200">NSWindowSharingNone</code>), прямий системний loopback аудіо та плаваючий стелс-HUD.
+                </p>
               </div>
 
-              <div className="pt-6">
+              {/* Smart Download Button with auto-detected OS */}
+              <div className="shrink-0 flex flex-col items-start md:items-end gap-2">
+                <SmartDownloadButton />
+              </div>
+            </div>
+
+            {/* Architecture Quick Switcher in one compact row */}
+            <div className="mt-6 pt-5 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+              <span className="text-zinc-400 font-medium">Швидке завантаження для інших платформ:</span>
+              <div className="flex flex-wrap items-center gap-2">
                 <a
                   href="/api/download?os=win"
-                  onClick={() => {
-                    toast.success('Завантаження інсталятора Ghostboard для Windows...');
-                  }}
-                  className={`${activeTab === 'win' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
+                  onClick={() => toast.success('Завантаження для Windows...')}
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 hover:border-white/25 text-zinc-300 hover:text-white transition-colors"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download for Windows (.exe)</span>
+                  Windows (.exe)
                 </a>
-                <p className="text-[11px] text-center text-zinc-500 mt-2 font-mono">Build 1.2.0 • NSIS Installer • 64-bit</p>
-              </div>
-            </div>
-
-            {/* macOS */}
-            <div
-              onClick={() => {
-                setActiveTab('mac');
-                setActiveGuideTab('mac');
-              }}
-              className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
-                activeTab === 'mac'
-                  ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
-                  : 'hover:border-white/20'
-              }`}
-            >
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-zinc-200">
-                    <Monitor className="w-5 h-5" />
-                  </div>
-                  {detectedOs === 'mac' ? (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/15 text-white border border-white/30 font-semibold uppercase">
-                      Detected OS
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 text-zinc-400 border border-white/10 uppercase">
-                      Universal
-                    </span>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="text-xl font-bold text-white font-mono">macOS 12+</h3>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    Protected with <code className="text-white font-mono">NSWindowSharingNone</code>
-                  </p>
-                </div>
-
-                {/* Hardware Spec Module Table */}
-                <div className="py-3 border-y border-white/[0.06] font-mono text-[11px] space-y-1.5 text-zinc-400">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">BINARY</span>
-                    <span className="text-zinc-300">Apple Silicon &amp; Intel</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">SILICON</span>
-                    <span className="text-zinc-300">M1/M2/M3/M4 &amp; Intel</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">NOTCH DOCK</span>
-                    <span className="text-zinc-200">Eyeline anchor</span>
-                  </div>
-                </div>
-
-                <ul className="space-y-1.5 text-xs text-zinc-300 font-sans">
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>Immune to ScreenCaptureKit</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>Pins directly under screen notch</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="pt-6 space-y-2">
                 <a
                   href="/api/download?os=mac-arm64"
-                  onClick={() => {
-                    toast.success('Завантаження Ghostboard для Apple Silicon (M1-M4)...');
-                  }}
-                  className={`${activeTab === 'mac' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
+                  onClick={() => toast.success('Завантаження для Apple Silicon...')}
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 hover:border-white/25 text-zinc-300 hover:text-white transition-colors"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download Apple Silicon (M1-M4)</span>
+                  macOS Apple Silicon (.dmg)
                 </a>
-                <div className="text-center">
-                  <a
-                    href="/api/download?os=mac-intel"
-                    onClick={() => {
-                      toast.success('Завантаження Ghostboard для Intel Mac...');
-                    }}
-                    className="text-[11px] text-zinc-400 hover:text-white underline font-mono transition-colors"
-                  >
-                    Download Intel Core (x64) .dmg
-                  </a>
-                </div>
-                <p className="text-[11px] text-center text-zinc-500 font-mono">Build 1.2.0 • Notarized .dmg</p>
+                <a
+                  href="/api/download?os=mac-intel"
+                  onClick={() => toast.success('Завантаження для Intel Mac...')}
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 hover:border-white/25 text-zinc-300 hover:text-white transition-colors"
+                >
+                  macOS Intel (.dmg)
+                </a>
+                <a
+                  href="/api/download?os=linux"
+                  onClick={() => toast.success('Завантаження AppImage...')}
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 hover:border-white/25 text-zinc-300 hover:text-white transition-colors"
+                >
+                  Linux (.AppImage)
+                </a>
+                <a
+                  href="/api/download?os=linux-deb"
+                  onClick={() => toast.success('Завантаження .deb...')}
+                  className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/10 hover:border-white/25 text-zinc-300 hover:text-white transition-colors"
+                >
+                  Debian/Ubuntu (.deb)
+                </a>
               </div>
             </div>
 
-            {/* Linux */}
-            <div
-              onClick={() => {
-                setActiveTab('linux');
-                setActiveGuideTab('linux');
-              }}
-              className={`bento-card p-6 sm:p-8 flex flex-col justify-between cursor-pointer transition-all duration-300 relative ${
-                activeTab === 'linux'
-                  ? 'border-white/30 shadow-[0_0_40px_rgba(255,255,255,0.08)] ring-1 ring-white/20'
-                  : 'hover:border-white/20'
-              }`}
-            >
+            {/* SHA-256 Accordion */}
+            <details className="group/hashes mt-4 pt-3 border-t border-white/[0.06]">
+              <summary className="cursor-pointer list-none flex items-center justify-between text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors">
+                <span className="flex items-center gap-2">
+                  <Lock className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Перевірити контрольні суми SHA-256 (Release Checksums)</span>
+                </span>
+                <ChevronDown className="w-4 h-4 text-zinc-500 transition-transform group-open/hashes:rotate-180" />
+              </summary>
+              <div className="mt-3 space-y-2 font-mono text-xs text-zinc-400 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-black/40 border border-white/[0.06]">
+                  <span className="text-zinc-300 text-[11px]">Windows (Ghostboard-Setup-1.2.0.exe)</span>
+                  <code className="text-[11px] text-zinc-400 break-all select-all">e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</code>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-black/40 border border-white/[0.06]">
+                  <span className="text-zinc-300 text-[11px]">macOS ARM64 (Ghostboard-1.2.0-arm64.dmg)</span>
+                  <code className="text-[11px] text-zinc-400 break-all select-all">ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad</code>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 p-2 rounded-lg bg-black/40 border border-white/[0.06]">
+                  <span className="text-zinc-300 text-[11px]">Linux x64 (Ghostboard-1.2.0-x64.AppImage)</span>
+                  <code className="text-[11px] text-zinc-400 break-all select-all">ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb</code>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          {/* Block 2 & Block 3: 2-Column Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Block 2: Chrome Extension for LeetCode */}
+            <div id="extension" className="bento-card p-6 sm:p-7 flex flex-col justify-between scroll-mt-24 border-amber-500/20 bg-gradient-to-br from-amber-950/15 via-zinc-950 to-black">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-zinc-200">
-                    <Zap className="w-5 h-5" />
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-xs font-semibold">
+                    <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                    <span>БЛОК 2: CHROME EXTENSION</span>
                   </div>
-                  {detectedOs === 'linux' ? (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/15 text-white border border-white/30 font-semibold uppercase">
-                      Detected OS
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 text-zinc-400 border border-white/10 uppercase">
-                      x86_64
-                    </span>
-                  )}
+                  <kbd className="kbd-obsidian text-amber-300 font-mono text-xs">Alt + Shift + G</kbd>
                 </div>
 
                 <div>
-                  <h3 className="text-xl font-bold text-white font-mono">Linux</h3>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    PipeWire &amp; X11 override-redirect
+                  <h3 className="text-xl font-bold text-white font-mono">LeetCode Copilot</h3>
+                  <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                    Миттєвий парсинг умови задачі, тест-кейсів та сигнатур функцій безпосередньо з DOM без потреби в OCR.
                   </p>
                 </div>
 
-                {/* Hardware Spec Module Table */}
-                <div className="py-3 border-y border-white/[0.06] font-mono text-[11px] space-y-1.5 text-zinc-400">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">PACKAGE</span>
-                    <span className="text-zinc-300">AppImage / tar.gz</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">DISTROS</span>
-                    <span className="text-zinc-300">Ubuntu, Arch, Fedora</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-500">RAM USAGE</span>
-                    <span className="text-zinc-200">&lt; 35 MB resident</span>
-                  </div>
+                {/* 3 Short Setup Steps */}
+                <div className="p-3.5 rounded-xl bg-black/40 border border-white/[0.08] space-y-2">
+                  <span className="text-[11px] font-mono text-zinc-400 uppercase font-semibold block">Встановлення за 30 секунд:</span>
+                  <ol className="space-y-1.5 text-xs text-zinc-300 list-decimal pl-4 font-sans">
+                    <li>Відкрийте <code className="text-amber-300 font-mono bg-white/5 px-1 py-0.5 rounded">chrome://extensions</code> та увімкніть «Режим розробника».</li>
+                    <li>Завантажте та розпакуйте архів розширення Ghostboard.</li>
+                    <li>Натисніть «Load unpacked» та вкажіть розпаковану папку.</li>
+                  </ol>
                 </div>
-
-                <ul className="space-y-1.5 text-xs text-zinc-300 font-sans">
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>Standalone single-file AppImage</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <span className="chrome-check"><CheckCircle2 className="w-3 h-3 text-white" /></span>
-                    <span>Minimal CPU footprint (&lt; 0.5%)</span>
-                  </li>
-                </ul>
               </div>
 
-              <div className="pt-6 space-y-2">
+              <div className="pt-5 mt-4 border-t border-white/[0.08] flex items-center gap-3">
                 <a
-                  href="/api/download?os=linux"
-                  onClick={() => {
-                    toast.success('Завантаження Ghostboard AppImage для Linux...');
-                  }}
-                  className={`${activeTab === 'linux' ? 'btn-resend-primary' : 'btn-resend-glass'} w-full text-xs font-mono py-3 justify-center gap-2`}
+                  href="/api/download?os=extension"
+                  onClick={() => toast.success('Завантаження Chrome Extension...')}
+                  className="btn-resend-glass !py-2.5 !px-4 text-xs font-mono flex items-center gap-2 cursor-pointer flex-1 justify-center"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download AppImage (.AppImage)</span>
+                  <Download className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Завантажити (.zip)</span>
                 </a>
-                <div className="text-center">
-                  <a
-                    href="/api/download?os=linux-deb"
-                    onClick={() => {
-                      toast.success('Завантаження Ghostboard .deb для Ubuntu/Debian...');
-                    }}
-                    className="text-[11px] text-zinc-400 hover:text-white underline font-mono transition-colors"
-                  >
-                    Download Debian / Ubuntu (.deb)
-                  </a>
-                </div>
-                <p className="text-[11px] text-center text-zinc-500 font-mono">Build 1.2.0 • Standalone Linux x64</p>
+                <Link
+                  href="/interview"
+                  className="btn-resend-primary !py-2.5 !px-4 text-xs font-mono flex items-center gap-2 cursor-pointer flex-1 justify-center"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Тестувати в HUD</span>
+                </Link>
               </div>
             </div>
-          </div>
 
-          {/* SHA-256 Verification Hash Accordion */}
-          <div className="bento-card p-4 sm:p-5">
-            <button
-              type="button"
-              onClick={() => setShowHashes(!showHashes)}
-              className="w-full flex items-center justify-between text-xs font-mono text-zinc-400 hover:text-white transition-colors cursor-pointer"
-            >
-              <span className="flex items-center gap-2 font-semibold">
-                <Lock className="w-3.5 h-3.5 text-zinc-400" />
-                <span>SHA-256 Checksums &amp; Verification Hashes</span>
-              </span>
-              <span className="text-zinc-500 text-[11px]">
-                {showHashes ? 'Hide hashes ▲' : 'Verify release checksums ▼'}
-              </span>
-            </button>
-
-            {showHashes && (
-              <div className="mt-4 pt-4 border-t border-white/[0.08] space-y-3 font-mono text-xs text-zinc-400">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>Windows (Ghostboard-Setup-1.2.0.exe)</span>
-                    <span>SHA-256</span>
+            {/* Block 3: Mobile Eyeline Companion */}
+            <div className="bento-card p-6 sm:p-7 flex flex-col justify-between border-emerald-500/20 bg-gradient-to-br from-emerald-950/15 via-zinc-950 to-black">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono text-xs font-semibold">
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>БЛОК 3: EYELINE COMPANION</span>
                   </div>
-                  <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
-                    e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    OLED Black
+                  </span>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>macOS Apple Silicon (Ghostboard-1.2.0-arm64.dmg)</span>
-                    <span>SHA-256</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
-                    ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
-                  </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white font-mono">Мобільний Eyeline-екран</h3>
+                  <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                    Поставте смартфон прямо під вебкамеру. Нуль підозр від скріншерінгу, читання підказок без відведення погляду.
+                  </p>
                 </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-zinc-500">
-                    <span>Linux AppImage (Ghostboard-1.2.0-x64.AppImage)</span>
-                    <span>SHA-256</span>
+                <div className="flex flex-col sm:flex-row items-center gap-4 p-3.5 rounded-xl bg-black/40 border border-white/[0.08]">
+                  <div className="p-2 bg-white rounded-xl shrink-0 shadow-lg">
+                    {qrCodeDataUri ? (
+                      <img src={qrCodeDataUri} alt="Phone QR Pairing" className="w-20 h-20" />
+                    ) : (
+                      <div className="w-20 h-20 bg-zinc-100 flex items-center justify-center text-zinc-400 text-[10px]">
+                        Генерація QR...
+                      </div>
+                    )}
                   </div>
-                  <div className="p-2 rounded-lg bg-transparent/60 border border-white/[0.08] text-[11px] text-zinc-300 break-all select-all">
-                    ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb
+                  <div className="space-y-1.5 text-xs text-zinc-300 w-full">
+                    <span className="text-[11px] font-mono text-zinc-400 uppercase font-semibold block">Токен швидкого пейрінгу:</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        readOnly
+                        value={pairingToken || 'usr_session_auth_ready'}
+                        className="bg-white/5 border border-white/10 rounded-lg font-mono text-[11px] text-zinc-300 px-2 py-1 w-full outline-none"
+                      />
+                      <button
+                        onClick={handleCopyToken}
+                        className="btn-resend-glass !py-1 !px-2.5 text-xs shrink-0 cursor-pointer"
+                        title="Скопіювати токен"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            )}
+
+              <div className="pt-5 mt-4 border-t border-white/[0.08] flex items-center justify-between gap-3">
+                <Link
+                  href={companionUrl || '/companion/live'}
+                  target="_blank"
+                  className="text-xs font-mono text-zinc-400 hover:text-white flex items-center gap-1 hover:underline"
+                >
+                  <span>Відкрити в браузері</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </Link>
+                <button
+                  onClick={handleLaunchApp}
+                  className="btn-resend-primary !py-2.5 !px-4 text-xs font-mono flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Запустити в App</span>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1223,131 +1123,48 @@ export default function DownloadPage() {
           )}
         </section>
 
-        {/* 1-Click Pairing & Phone Companion Hub */}
-        <section className="bg-gradient-to-br from-zinc-950 to-black rounded-3xl border border-white/10 p-8 sm:p-10 space-y-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 pb-6 border-b border-white/[0.08]">
-            <div>
-              <div className="inline-flex items-center gap-2 text-xs font-mono text-zinc-300 font-bold uppercase mb-1">
-                <Sparkles className="w-3.5 h-3.5" />
-                Єдина система акаунтів & Синхронізація
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
-                Підключення в 1 клік (ПК + Телефон + Веб)
-              </h2>
-              <p className="text-sm text-zinc-400 mt-1 max-w-xl">
-                Коли вам ставлять питання, відповідь зʼявляється одночасно на всіх ваших пристроях з мінімальною затримкою.
-              </p>
-            </div>
-
-            <button
-              onClick={handleLaunchApp}
-              className="btn-resend-primary !py-3 !px-6 text-sm shrink-0 cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.15)]"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span>Запустити Ghostboard App</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-            {/* Left: Token & Deep Link info */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2 font-mono">
-                <Laptop className="w-5 h-5 text-zinc-300" />
-                Швидкий пейрінг для компʼютера
-              </h3>
-              <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                Якщо ви вже запустили завантажений десктопний додаток, натисніть кнопку вище або скопіюйте одноразовий токен сесії:
-              </p>
-
-              <div className="flex items-center gap-2 p-2 bg-transparent/60 border border-white/[0.08] rounded-xl">
-                <input
-                  type="text"
-                  readOnly
-                  value={pairingToken || 'usr_session_auth_ready'}
-                  className="bg-transparent font-mono text-xs text-zinc-300 px-2 py-1 w-full outline-none"
-                />
-                <button
-                  onClick={handleCopyToken}
-                  className="btn-resend-glass !py-1.5 !px-3 text-xs shrink-0 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>{isCopied ? 'Скопійовано!' : 'Копіювати'}</span>
-                </button>
-              </div>
-
-              <div className="p-4 rounded-xl bg-transparent/40 border border-white/[0.08] space-y-2 text-xs text-zinc-400">
-                <span className="font-semibold text-zinc-300 block font-mono">Гарячі клавіші у додатку:</span>
-                <div className="grid grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="flex items-center gap-1.5"><kbd className="kbd-obsidian">Space</kbd> <span>Заморозка</span></div>
-                  <div className="flex items-center gap-1.5"><kbd className="kbd-obsidian">Esc</kbd> <span>Панік-щит</span></div>
-                  <div className="flex items-center gap-1.5"><kbd className="kbd-obsidian">Ctrl</kbd><kbd className="kbd-obsidian">Alt</kbd><kbd className="kbd-obsidian">H</kbd> <span>Приховати</span></div>
-                  <div className="flex items-center gap-1.5"><kbd className="kbd-obsidian">Ctrl</kbd><kbd className="kbd-obsidian">Alt</kbd><kbd className="kbd-obsidian">T</kbd> <span>Click-through</span></div>
+        {/* Feature Comparison Table: Web vs App Collapsible */}
+        <section className="pt-4">
+          <details className="group/table bento-card p-6 sm:p-8 space-y-4 rounded-3xl border border-white/10 bg-zinc-950/60 transition-all">
+            <summary className="cursor-pointer list-none flex items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="inline-flex items-center gap-2 text-xs font-mono text-zinc-400 font-semibold uppercase">
+                  <span>Матриця можливостей</span>
                 </div>
-              </div>
-            </div>
-
-            {/* Right: Phone QR Code */}
-            <div className="flex flex-col sm:flex-row items-center gap-6 p-6 rounded-2xl bg-transparent/50 border border-white/[0.08]">
-              <div className="p-3 bg-white rounded-2xl shadow-xl shrink-0">
-                {qrCodeDataUri ? (
-                  <img src={qrCodeDataUri} alt="Phone QR Pairing" className="w-36 h-36" />
-                ) : (
-                  <div className="w-36 h-36 bg-zinc-100 flex items-center justify-center text-zinc-400 text-xs">
-                    Генерація QR...
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-2 text-center sm:text-left">
-                <div className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-300 font-bold">
-                  <Smartphone className="w-4 h-4" />
-                  ДРУГИЙ ЕКРАН З ТЕЛЕФОНУ
-                </div>
-                <h4 className="text-base font-bold text-white">Відскануйте камеру смартфону</h4>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  Поставте телефон прямо під веб-камеру. Повний імунітет до скріншерінгу, чорний OLED-режим і зачитування без відведення очей.
+                <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2">
+                  <span>Порівняти можливості Web та Desktop версій</span>
+                </h3>
+                <p className="text-xs sm:text-sm text-zinc-400">
+                  {comp.subtitle}
                 </p>
-                <Link
-                  href={companionUrl || '/companion/live'}
-                  target="_blank"
-                  className="inline-flex items-center gap-1 text-xs text-zinc-300 hover:text-white hover:underline font-mono pt-1"
-                >
-                  Відкрити екран телефону у новій вкладці <ChevronRight className="w-3 h-3" />
-                </Link>
               </div>
-            </div>
-          </div>
-        </section>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/10 text-xs font-mono text-zinc-300 shrink-0">
+                <span className="hidden sm:inline">Показати таблицю</span>
+                <ChevronDown className="w-4 h-4 text-zinc-400 transition-transform group-open/table:rotate-180" />
+              </div>
+            </summary>
 
-        {/* Feature Comparison Table: Web vs App */}
-        <section className="space-y-6">
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white">{comp.title}</h2>
-            <p className="text-sm text-zinc-400">
-              {comp.subtitle}
-            </p>
-          </div>
-
-          <div className="overflow-x-auto rounded-2xl border border-white/[0.08] bg-zinc-950/60">
-            <table className="w-full text-left text-xs sm:text-sm">
-              <thead className="bg-zinc-900/80 text-zinc-400 font-mono text-[11px] uppercase border-b border-white/[0.08]">
-                <tr>
-                  <th className="py-3.5 px-4 sm:px-6">{comp.thFeature}</th>
-                  <th className="py-3.5 px-4 sm:px-6">{comp.thWeb}</th>
-                  <th className="py-3.5 px-4 sm:px-6 text-white font-bold">{comp.thApp}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.06] text-zinc-300">
-                {comp.rows.map((row, idx) => (
-                  <tr key={idx}>
-                    <td className="py-3.5 px-4 sm:px-6 font-medium text-white">{row.feature}</td>
-                    <td className={`py-3.5 px-4 sm:px-6 ${row.webHighlight ? 'text-zinc-200 font-semibold' : 'text-zinc-500'}`}>{row.web}</td>
-                    <td className="py-3.5 px-4 sm:px-6 text-white font-bold">{row.app}</td>
+            <div className="overflow-x-auto rounded-2xl border border-white/[0.08] bg-black/60 mt-6 pt-2">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-zinc-900/80 text-zinc-400 font-mono text-[11px] uppercase border-b border-white/[0.08]">
+                  <tr>
+                    <th className="py-3.5 px-4 sm:px-6">{comp.thFeature}</th>
+                    <th className="py-3.5 px-4 sm:px-6">{comp.thWeb}</th>
+                    <th className="py-3.5 px-4 sm:px-6 text-white font-bold">{comp.thApp}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-white/[0.06] text-zinc-300">
+                  {comp.rows.map((row, idx) => (
+                    <tr key={idx}>
+                      <td className="py-3.5 px-4 sm:px-6 font-medium text-white">{row.feature}</td>
+                      <td className={`py-3.5 px-4 sm:px-6 ${row.webHighlight ? 'text-zinc-200 font-semibold' : 'text-zinc-500'}`}>{row.web}</td>
+                      <td className="py-3.5 px-4 sm:px-6 text-white font-bold">{row.app}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </section>
         </main>
       </SubpageStripesContainer>

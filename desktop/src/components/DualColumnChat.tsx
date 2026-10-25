@@ -12,7 +12,9 @@ import {
   Search,
   Cpu,
   ChevronDown,
+  ChevronUp,
   Scale,
+  Maximize2,
 } from 'lucide-react';
 import type { DialogueMessage } from '../lib/audioEngine';
 import type { StructuredAnswerOutput } from '../lib/streamClient';
@@ -183,6 +185,48 @@ function renderFormattedInlineText(text: string): React.ReactNode {
   });
 }
 
+/**
+ * Renders pillars with bold anchor keywords at the beginning (Rule of 2 Seconds).
+ */
+function renderPillarWithAnchor(text: string): React.ReactNode {
+  if (text.includes('**')) {
+    return renderFormattedInlineText(text);
+  }
+  const colonIdx = text.indexOf(':');
+  if (colonIdx > 0 && colonIdx <= 45) {
+    const anchor = text.slice(0, colonIdx);
+    const rest = text.slice(colonIdx);
+    return (
+      <>
+        <strong className="font-bold text-white tracking-tight mr-1">{anchor}</strong>
+        <span className="text-zinc-200">{rest}</span>
+      </>
+    );
+  }
+  const dashMatch = text.match(/^([^-—]{3,35})\s*[-—]\s*(.*)$/);
+  if (dashMatch) {
+    return (
+      <>
+        <strong className="font-bold text-white tracking-tight">{dashMatch[1]}</strong>
+        <span className="text-zinc-400 mx-1">—</span>
+        <span className="text-zinc-200">{dashMatch[2]}</span>
+      </>
+    );
+  }
+  const words = text.split(' ');
+  if (words.length > 3) {
+    const anchor = words.slice(0, 3).join(' ');
+    const rest = ' ' + words.slice(3).join(' ');
+    return (
+      <>
+        <strong className="font-bold text-white tracking-tight">{anchor}</strong>
+        <span className="text-zinc-200">{rest}</span>
+      </>
+    );
+  }
+  return <span className="text-zinc-200">{text}</span>;
+}
+
 export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   dialogueMessages,
   liveInterlocutorText,
@@ -196,6 +240,9 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
   const [copiedHook, setCopiedHook] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isFocusMode, setIsFocusMode] = useState(false);
+  const [fontSize, setFontSize] = useState(15);
+  const [isCodeExpanded, setIsCodeExpanded] = useState(true);
 
   // Proximity scroll references & states
   const dialogueContainerRef = useRef<HTMLDivElement | null>(null);
@@ -279,8 +326,8 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
 
   return (
     <div className="grid grid-cols-12 gap-3 h-full overflow-hidden select-text relative min-h-0">
-      {/* ── LEFT COLUMN: Live Dialogue Stream (45% width on desktop) ── */}
-      <div className="col-span-5 flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0">
+      {/* ── LEFT COLUMN: Live Dialogue Stream (condensed in Focus Mode) ── */}
+      <div className={`${isFocusMode ? 'col-span-3' : 'col-span-5'} transition-all duration-300 ease-out flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
         {/* Subtle Ambient Radial Mesh Glow */}
         <div className="pointer-events-none absolute -top-24 -left-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
 
@@ -298,6 +345,18 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             </span>
           </div>
         </div>
+
+        {/* Focus Mode Condensed Live Ticker */}
+        {isFocusMode && (
+          <div className="px-3 py-2 bg-cyan-950/20 border-b border-cyan-500/20 text-xs">
+            <div className="flex items-center gap-1.5 mb-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan-400 font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Live Ticker
+            </div>
+            <p className="truncate italic text-zinc-300 text-[11px]">
+              {liveInterlocutorText || (dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1].text : 'Очікуємо репліку...')}
+            </p>
+          </div>
+        )}
 
         {/* Search bar within dialogue */}
         <div className="px-3 py-2 border-b border-white/[0.05] bg-black/20">
@@ -453,8 +512,8 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
         </AnimatePresence>
       </div>
 
-      {/* ── RIGHT COLUMN: Streaming AI Answers (58% width on desktop) ── */}
-      <div className="col-span-7 flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0">
+      {/* ── RIGHT COLUMN: Streaming AI Answers (75% width in Focus Mode) ── */}
+      <div className={`${isFocusMode ? 'col-span-9' : 'col-span-7'} transition-all duration-300 ease-out flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
         {/* Subtle Ambient Radial Mesh Glow */}
         <div className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-tr from-cyan-500/10 via-transparent to-violet-500/10 rounded-full blur-3xl" />
 
@@ -479,8 +538,41 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
           </div>
 
           <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400">
+            {/* Focus Mode button */}
+            <button
+              onClick={() => setIsFocusMode((prev) => !prev)}
+              className={`px-2 py-0.5 rounded text-[10px] font-mono flex items-center gap-1 transition-all cursor-pointer ${
+                isFocusMode
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-bold shadow-[0_0_10px_rgba(6,182,212,0.2)]'
+                  : 'bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white border border-white/10'
+              }`}
+              title="Focus Mode (75% Teleprompter Width)"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>Focus</span>
+            </button>
+
+            {/* Typography Controls */}
+            <div className="flex items-center gap-0.5 bg-white/5 border border-white/10 rounded p-0.5">
+              <button
+                onClick={() => setFontSize((s) => Math.max(12, s - 1))}
+                className="px-1 py-0.2 rounded hover:bg-white/10 text-zinc-400 hover:text-white font-bold cursor-pointer"
+                title="Зменшити шрифт"
+              >
+                A-
+              </button>
+              <span className="w-4 text-center text-zinc-300">{fontSize}</span>
+              <button
+                onClick={() => setFontSize((s) => Math.min(22, s + 1))}
+                className="px-1 py-0.2 rounded hover:bg-white/10 text-zinc-400 hover:text-white font-bold cursor-pointer"
+                title="Збільшити шрифт"
+              >
+                A+
+              </button>
+            </div>
+
             {activeAnswer && (
-              <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">
+              <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5 hidden sm:inline">
                 TTFT: <span className="text-emerald-400 font-semibold">{activeAnswer.ttftMs}ms</span>
               </span>
             )}
@@ -552,6 +644,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
         <div
           ref={answerContainerRef}
           onScroll={handleAnswerScroll}
+          style={{ fontSize }}
           className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-white/20 relative min-h-0"
         >
           {!activeAnswer && !isStreaming ? (
@@ -564,21 +657,21 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             </div>
           ) : (
             <>
-              {/* PHASE 1: Spoken Start Hook with Spring Typewriter */}
+              {/* PHASE 1: Spoken Start Hook with Spring Typewriter (Rule of 2 Seconds) */}
               {activeAnswer?.hook && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={SPRING_PHYSICS}
-                  className="p-3.5 rounded-xl bg-gradient-to-br from-amber-500/10 via-amber-500/[0.04] to-transparent border border-amber-500/30 shadow-[0_0_20px_rgba(245,158,11,0.06)] relative group"
+                  className="p-4 rounded-xl bg-gradient-to-br from-amber-500/15 via-amber-500/[0.05] to-transparent border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.08)] relative group"
                 >
-                  <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
-                      <Zap className="w-3 h-3" /> Фаза 1: Голосовий старт (Hook)
+                      <Zap className="w-3.5 h-3.5" /> Фаза 1: Голосовий старт (Hook)
                     </span>
                     <button
                       onClick={() => handleCopy(activeAnswer.hook)}
-                      className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-all"
+                      className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-all cursor-pointer"
                       title="Копіювати"
                     >
                       {copiedHook ? (
@@ -588,38 +681,38 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                       )}
                     </button>
                   </div>
-                  <p className="text-sm font-medium text-amber-100/90 leading-snug">
-                    "<SpringTypewriter text={activeAnswer.hook} isStreaming={isStreaming && !activeAnswer.pillars.length} />"
+                  <p className="text-base sm:text-lg font-semibold text-amber-50 leading-relaxed tracking-tight">
+                    &ldquo;<SpringTypewriter text={activeAnswer.hook} isStreaming={isStreaming && !activeAnswer.pillars.length} />&rdquo;
                   </p>
                 </motion.div>
               )}
 
-              {/* PHASE 2: Core Pillars */}
+              {/* PHASE 2: Core Pillars (Spacious with Anchor Keyword Bolding) */}
               {activeAnswer?.pillars && activeAnswer.pillars.length > 0 && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={SPRING_PHYSICS}
-                  className="space-y-2"
+                  className="space-y-2.5"
                 >
                   <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold flex items-center gap-1.5 px-1">
                     <Layers className="w-3 h-3" /> Фаза 2: Ключові тези (Pillars)
                   </span>
 
-                  <div className="grid grid-cols-1 gap-2">
+                  <div className="grid grid-cols-1 gap-2.5">
                     {activeAnswer.pillars.map((pillar, idx) => (
                       <motion.div
                         key={idx}
                         initial={{ opacity: 0, x: -8 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.04, ...SPRING_PHYSICS }}
-                        className="p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-xs leading-relaxed text-zinc-200 flex items-start gap-2.5 transition-all"
+                        className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-xs sm:text-sm leading-relaxed text-zinc-200 flex items-start gap-2.5 transition-all"
                       >
-                        <span className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 border border-cyan-500/20">
+                        <span className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 border border-cyan-500/20 mt-0.5">
                           {idx + 1}
                         </span>
                         <div className="flex-1 text-zinc-200">
-                          {renderFormattedInlineText(pillar)}
+                          {renderPillarWithAnchor(pillar)}
                         </div>
                       </motion.div>
                     ))}
@@ -627,7 +720,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                 </motion.div>
               )}
 
-              {/* PHASE 3: Deep Dive & Code Blocks (Streaming Resilient, Zero CLS) */}
+              {/* PHASE 3: Deep Dive & Code Blocks (Collapsible, Zero CLS) */}
               {deepDiveSections.length > 0 && (
                 <div className="space-y-3">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-1.5 px-1">
@@ -645,12 +738,20 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                           className="rounded-xl overflow-hidden border border-white/[0.1] bg-[#050607] relative group"
                         >
                           <div className="px-3.5 py-1.5 bg-white/[0.03] border-b border-white/[0.08] flex items-center justify-between">
-                            <span className="text-[10px] font-mono text-zinc-400 uppercase font-semibold">
-                              {section.language}
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsCodeExpanded((p) => !p)}
+                              className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-300 hover:text-white uppercase font-semibold cursor-pointer"
+                            >
+                              <span>{section.language}</span>
+                              <span className="text-zinc-500 font-normal">
+                                ({section.content.split('\n').length} рядків)
+                              </span>
+                              {isCodeExpanded ? <ChevronUp className="w-3 h-3 text-zinc-400" /> : <ChevronDown className="w-3 h-3 text-zinc-400" />}
+                            </button>
                             <button
                               onClick={() => handleCopy(section.content, idx)}
-                              className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[10px] font-mono flex items-center gap-1 transition-all"
+                              className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[10px] font-mono flex items-center gap-1 transition-all cursor-pointer"
                             >
                               {copiedCodeIndex === idx ? (
                                 <>
@@ -664,12 +765,14 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                             </button>
                           </div>
 
-                          <pre className="p-3 text-[11px] font-mono leading-relaxed text-emerald-200/90 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10">
-                            <code>{section.content}</code>
-                            {section.isStreaming && (
-                              <span className="inline-block w-1.5 h-3.5 ml-1 bg-cyan-400 animate-pulse align-middle" />
-                            )}
-                          </pre>
+                          {isCodeExpanded && (
+                            <pre className="p-3 text-[11px] font-mono leading-relaxed text-emerald-200/90 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10 max-h-[300px]">
+                              <code>{section.content}</code>
+                              {section.isStreaming && (
+                                <span className="inline-block w-1.5 h-3.5 ml-1 bg-cyan-400 animate-pulse align-middle" />
+                              )}
+                            </pre>
+                          )}
                         </motion.div>
                       );
                     }

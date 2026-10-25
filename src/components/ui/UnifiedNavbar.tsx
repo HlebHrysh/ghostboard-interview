@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { GhostDetectiveLogo } from './GhostDetectiveLogo';
-import { ArrowRight, Sparkles, Menu, X, Sliders, User } from 'lucide-react';
+import { ArrowRight, Sparkles, Menu, X, User } from 'lucide-react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { LangDropdown } from './LangDropdown';
 import { ResendMegaMenu } from './nav/ResendMegaMenu';
@@ -38,8 +38,9 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
 
   const navLinks = [
     { href: '/#features', label: t.nav.features },
-    { href: '/download', label: 'Desktop App' },
     { href: '/mock-interview', label: t.nav.arena },
+    { href: '/download', label: locale === 'ua' ? 'Завантажити' : 'Download' },
+    { href: '/download#extension', label: 'LeetCode Extension' },
     { href: '/pricing', label: t.nav.pricing },
     { href: '/guide', label: t.nav.guide },
   ];
@@ -77,17 +78,6 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
         <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Language Dropdown */}
           <LangDropdown />
-
-          {/* Desktop Settings */}
-          <Link
-            href="/settings"
-            className="hidden sm:inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-white/10 bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 text-xs font-medium text-zinc-300 hover:text-white backdrop-blur-md transition-all cursor-pointer active:scale-95 select-none"
-            title={t.nav.settings}
-            aria-label={t.nav.settings}
-          >
-            <Sliders className="w-3.5 h-3.5 text-zinc-400" />
-            <span>{t.nav.settings}</span>
-          </Link>
 
           <ThemeToggle />
 
@@ -175,12 +165,12 @@ export const UnifiedNavbar: React.FC<UnifiedNavbarProps> = ({ showLinks = true }
                 <span>🔊 Sound Check</span>
               </Link>
               <Link
-                href="/settings"
+                href="/profile"
                 onClick={() => setMobileMenuOpen(false)}
                 className="p-3 rounded-2xl bg-zinc-900/60 border border-white/[0.06] text-zinc-300 text-xs flex items-center justify-center gap-1.5"
               >
-                <Sliders className="w-3.5 h-3.5 text-amber-400" />
-                <span>{t.nav.settings}</span>
+                <User className="w-3.5 h-3.5 text-zinc-300" />
+                <span>{locale === 'ua' ? 'Профіль' : 'Profile'}</span>
               </Link>
             </div>
 

@@ -16,10 +16,13 @@ import {
   Clock,
   Award,
   Cpu,
-  Flame,
   ArrowLeft,
   Settings2,
   FastForward,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Flame,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { HologramScorecard3D, ScorecardData } from '@/components/arena/HologramScorecard3D';
@@ -196,6 +199,7 @@ export function ArenaView() {
   // Evaluations history
   const [roundEvaluations, setRoundEvaluations] = useState<RoundEvaluation[]>([]);
   const [currentRoundEvaluation, setCurrentRoundEvaluation] = useState<RoundEvaluation | null>(null);
+  const [showStaffBenchmarkAnswer, setShowStaffBenchmarkAnswer] = useState<boolean>(false);
 
   // Final scorecard result
   const [finalScorecard, setFinalScorecard] = useState<ScorecardData | null>(null);
@@ -573,6 +577,7 @@ export function ArenaView() {
 
   // ── Action: Proceed to Next Round or Finalize ─────────────────────────────
   const handleProceedNext = async () => {
+    setShowStaffBenchmarkAnswer(false);
     if (currentIndex + 1 < questions.length) {
       const nextIdx = currentIndex + 1;
       setCurrentIndex(nextIdx);
@@ -969,20 +974,32 @@ export function ArenaView() {
                 <div className="flex items-center gap-3">
                   <InterviewerVoiceWave isSpeaking={isSpeaking} />
 
-                  <button
-                    type="button"
-                    onClick={() => speakQuestion(activeQuestion.question)}
-                    disabled={isAudioMuted}
-                    className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
-                      isAudioMuted
-                        ? 'bg-zinc-900 border-white/5 text-zinc-500 cursor-not-allowed opacity-60'
-                        : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10 hover:border-white/20'
-                    }`}
-                    title={isAudioMuted ? 'Звук вимкнено' : 'Повторити озвучку'}
-                  >
-                    <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
-                    <span>Озвучити знову</span>
-                  </button>
+                  {isSpeaking ? (
+                    <button
+                      type="button"
+                      onClick={() => stopSpeaking()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-mono font-bold text-xs flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] transition-all cursor-pointer active:scale-95 animate-pulse"
+                      title="Пропустити озвучку та перейти до відповіді"
+                    >
+                      <Zap className="w-3.5 h-3.5 fill-black" />
+                      <span>Пропустити озвучку → Відповідати одразу</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => speakQuestion(activeQuestion.question)}
+                      disabled={isAudioMuted}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-medium flex items-center gap-2 transition-all cursor-pointer active:scale-95 ${
+                        isAudioMuted
+                          ? 'bg-zinc-900 border-white/5 text-zinc-500 cursor-not-allowed opacity-60'
+                          : 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border-white/10 hover:border-white/20'
+                      }`}
+                      title={isAudioMuted ? 'Звук вимкнено' : 'Повторити озвучку'}
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
+                      <span>Озвучити знову</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1179,13 +1196,34 @@ export function ArenaView() {
                 </div>
               </div>
 
-              {/* Staff Reference Answer */}
+              {/* Staff Reference Answer (Collapsible Accordion) */}
               {currentRoundEvaluation.staffEngineerAnswer && (
-                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 text-xs leading-relaxed mb-6">
-                  <span className="font-mono text-zinc-300 font-bold block mb-1 uppercase text-[10px]">
-                    💡 Еталонна відповідь Staff Engineer
-                  </span>
-                  <p className="text-zinc-300">{currentRoundEvaluation.staffEngineerAnswer}</p>
+                <div className="mb-6 rounded-2xl bg-white/[0.03] border border-white/10 overflow-hidden transition-all">
+                  <button
+                    type="button"
+                    onClick={() => setShowStaffBenchmarkAnswer((prev) => !prev)}
+                    className="w-full p-4 flex items-center justify-between text-left hover:bg-white/[0.05] transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">💡</span>
+                      <span className="font-mono text-xs font-semibold text-zinc-300 group-hover:text-white transition-colors">
+                        Показати еталонну відповідь Staff-інженера
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-zinc-300 text-xs font-mono">
+                      <span>{showStaffBenchmarkAnswer ? 'Згорнути' : 'Розгорнути'}</span>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform duration-200 ${
+                          showStaffBenchmarkAnswer ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </div>
+                  </button>
+                  {showStaffBenchmarkAnswer && (
+                    <div className="px-4 pb-4 pt-1 border-t border-white/5 text-xs leading-relaxed text-zinc-300">
+                      <p className="whitespace-pre-wrap">{currentRoundEvaluation.staffEngineerAnswer}</p>
+                    </div>
+                  )}
                 </div>
               )}
 

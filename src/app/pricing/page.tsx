@@ -198,6 +198,19 @@ export default function PricingPage() {
                   <span className="text-4xl font-bold text-white font-mono">$0</span>
                   <span className="text-xs text-zinc-500 font-mono">{p.plans.free.period}</span>
                 </div>
+
+                {/* Explicit Free Trial Limits Box */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-5 font-mono text-[11px] space-y-1 text-amber-300">
+                  <div className="font-bold flex items-center gap-1.5 uppercase tracking-wide">
+                    <span>{locale === 'ua' ? '⚡ Ліміти Free Trial:' : '⚡ Free Trial Limits:'}</span>
+                  </div>
+                  <ul className="space-y-0.5 text-zinc-300 font-sans text-xs">
+                    <li>• <strong>{locale === 'ua' ? '1 пробна сесія' : '1 trial session'}</strong> {locale === 'ua' ? 'тривалістю до 15 хвилин' : 'up to 15 minutes'}</li>
+                    <li>• <strong>{locale === 'ua' ? 'До 5 AI-відповідей' : 'Up to 5 AI answers'}</strong> {locale === 'ua' ? 'на реальні запитання' : 'to live interview questions'}</li>
+                    <li>• <strong>$0</strong> {locale === 'ua' ? 'без прив’язки банківської картки' : 'no credit card required'}</li>
+                  </ul>
+                </div>
+
                 <ul className="space-y-3 text-xs text-zinc-300 font-sans mb-8">
                   {p.plans.free.features.map((feat, i) => (
                     <li key={i} className={`flex items-center gap-2.5 ${feat.startsWith('✕') ? 'text-zinc-500' : ''}`}>
@@ -371,6 +384,19 @@ export default function PricingPage() {
             <Link href="/auth/signup" className="btn-resend-primary text-xs font-mono !py-3.5 !px-8 shadow-[0_0_30px_rgba(255,255,255,0.2)]">
               <span>{p.ctaBottom.btn}</span>
             </Link>
+
+            {/* Developer Payment Simulator (Visible in non-production environments only) */}
+            {process.env.NODE_ENV !== 'production' && (
+              <div className="flex justify-center mt-6">
+                <Link
+                  href="/checkout/simulator?planId=pro_ua_monthly&targetPlan=pro&name=Ghostboard%20Pro%20Pass&amount=1500&price=%2415"
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-amber-500/10 border border-dashed border-amber-500/30 text-amber-300 font-mono text-[11px] hover:bg-amber-500/20 transition-all"
+                >
+                  <Zap className="w-3 h-3" />
+                  <span>[Dev Only] Checkout Simulator</span>
+                </Link>
+              </div>
+            )}
           </div>
         </main>
       </MonochromeStripesCanvas>

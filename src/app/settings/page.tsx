@@ -4,12 +4,26 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  Check, ExternalLink, ArrowLeft,
-  Shield, Mic, Globe, Monitor, Apple, Server,
-  Sliders, Key, Volume2, Sparkles, Zap, ArrowRight, RefreshCw,
-  CreditCard, ChevronDown, ChevronUp, Lock, User
+  Check,
+  ArrowLeft,
+  Shield,
+  Mic,
+  Monitor,
+  Apple,
+  Server,
+  Sliders,
+  Sparkles,
+  Zap,
+  ArrowRight,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  User,
+  Radio,
+  Cpu,
+  Volume2,
 } from "lucide-react";
-import { ROLE_PRESETS, CandidateProfile, getStoredCandidateProfile } from "@/components/CandidateProfileModal";
+import { CandidateProfile, getStoredCandidateProfile } from "@/components/CandidateProfileModal";
 import { UnifiedNavbar } from "@/components/ui/UnifiedNavbar";
 import { UnifiedFooter } from "@/components/ui/UnifiedFooter";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
@@ -41,26 +55,18 @@ const PLATFORM_ICONS: Record<Platform, React.ReactNode> = {
 export default function SettingsPage() {
   const { locale, setLocale, t } = useLocale();
   const s = getSettingsTranslations(locale);
+  const isUa = locale === "ua";
+
   const [platform, setPlatform] = useState<Platform>("linux");
   const [speechLang, setSpeechLang] = useState<string>("uk");
   const [outputLang, setOutputLang] = useState<string>("uk");
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
-  const [isUpgrading, setIsUpgrading] = useState(false);
   const [userPlan, setUserPlan] = useState<string>("free");
-  const [stripeConfig, setStripeConfig] = useState<{
-    isConfigured: boolean;
-    mode: 'live' | 'test' | 'sandbox';
-    maskedSecretKey: string | null;
-    maskedPublishableKey: string | null;
-    maskedWebhookSecret: string | null;
-  } | null>(null);
-
-  const [inputSecretKey, setInputSecretKey] = useState('');
-  const [inputPublKey, setInputPublKey] = useState('');
-  const [inputWebhookSec, setInputWebhookSec] = useState('');
-  const [isSavingStripe, setIsSavingStripe] = useState(false);
-  const [showStripeForm, setShowStripeForm] = useState(false);
   const [showAudioGuide, setShowAudioGuide] = useState(false);
+
+  // AI Copilot Technical Modes
+  const [aiMode, setAiMode] = useState<"fast" | "deep">("fast");
+  const [conciseMode, setConciseMode] = useState<boolean>(true);
 
   useEffect(() => {
     // OS detection
@@ -73,99 +79,48 @@ export default function SettingsPage() {
       const sl = localStorage.getItem("ghostboard_speech_language");
       const ol = localStorage.getItem("ghostboard_output_language");
       const storedPlan = localStorage.getItem("ghostboard_plan") || "free";
+      const storedAiMode = (localStorage.getItem("ghostboard_ai_mode") as "fast" | "deep") || "fast";
+      const storedConcise = localStorage.getItem("ghostboard_concise_mode") !== "false";
+
       if (sl) setSpeechLang(sl);
       if (ol) setOutputLang(ol);
       setUserPlan(storedPlan);
+      setAiMode(storedAiMode);
+      setConciseMode(storedConcise);
       setProfile(getStoredCandidateProfile());
     } catch {}
-
-    fetch('/api/stripe/config')
-      .then((res) => res.json())
-      .then((data) => setStripeConfig(data))
-      .catch(() => {});
   }, []);
 
-  const handleSetPlan = (plan: string) => {
+  const handleSetAiMode = (mode: "fast" | "deep") => {
+    setAiMode(mode);
     try {
-      localStorage.setItem("ghostboard_plan", plan);
-      setUserPlan(plan);
-      if (plan === "lifetime") {
-        toast.success(s.toastLifetime);
-      } else if (plan === "pro") {
-        toast.success(s.toastPro);
-      } else {
-        toast.info(s.toastFree);
-      }
-    } catch {
-      toast.error(t.common.error);
-    }
+      localStorage.setItem("ghostboard_ai_mode", mode);
+      toast.success(
+        isUa
+          ? mode === "fast"
+            ? "Увімкнено Fast Mode (sub-1.2s відповіді)"
+            : "Увімкнено Deep Mode (поглиблений Staff-дизайн)"
+          : mode === "fast"
+          ? "Fast Mode active (sub-1.2s answers)"
+          : "Deep Mode active (Staff-level architecture)"
+      );
+    } catch {}
   };
 
-  const handleUpgradeStripe = async () => {
-    setIsUpgrading(true);
+  const handleToggleConcise = (val: boolean) => {
+    setConciseMode(val);
     try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: "pro_ua_monthly" }),
-      });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.success(s.toastStripeActivated);
-      }
-    } catch {
-      toast.error(s.toastPaymentError);
-    } finally {
-      setIsUpgrading(false);
-    }
-  };
-
-  const handleManageSubscription = async () => {
-    try {
-      const res = await fetch('/api/stripe/portal', { method: 'POST' });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        toast.info(s.toastPortalOpened);
-      }
-    } catch {
-      toast.error(s.toastPortalError);
-    }
-  };
-
-  const handleSaveStripeKeys = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingStripe(true);
-    try {
-      const res = await fetch('/api/stripe/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          secretKey: inputSecretKey || undefined,
-          publishableKey: inputPublKey || undefined,
-          webhookSecret: inputWebhookSec || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message || s.toastKeysSaved);
-        const fresh = await fetch('/api/stripe/config').then((r) => r.json());
-        setStripeConfig(fresh);
-        setShowStripeForm(false);
-        setInputSecretKey('');
-        setInputPublKey('');
-        setInputWebhookSec('');
-      } else {
-        toast.error(data.error || s.toastKeysError);
-      }
-    } catch {
-      toast.error(s.toastNetworkError);
-    } finally {
-      setIsSavingStripe(false);
-    }
+      localStorage.setItem("ghostboard_concise_mode", String(val));
+      toast.success(
+        isUa
+          ? val
+            ? "Concise Mode увімкнено (короткі буллети STAR)"
+            : "Детальний режим увімкнено"
+          : val
+          ? "Concise Mode enabled (bullet points)"
+          : "Detailed explanation mode enabled"
+      );
+    } catch {}
   };
 
   const saveLangPrefs = () => {
@@ -186,12 +141,13 @@ export default function SettingsPage() {
 
       <SubpageStripesContainer pattern="blueprint" className="flex-1 py-10 px-4 sm:px-6">
         <main className="max-w-3xl mx-auto w-full">
-          {/* Detective Sub-header strip */}
+          {/* Sub-header navigation strip */}
           <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/[0.08]">
             <div className="flex items-center gap-3">
               <Link
                 href="/interview"
                 className="p-2 rounded-xl bg-zinc-900/80 border border-white/10 text-zinc-400 hover:text-white transition-colors cursor-pointer hover:border-white/20"
+                title="Назад до суфлера"
               >
                 <ArrowLeft className="w-4 h-4" />
               </Link>
@@ -203,7 +159,11 @@ export default function SettingsPage() {
                     {s.title}
                   </h1>
                 </div>
-                <p className="text-xs text-zinc-500 font-mono mt-0.5">{s.subtitle}</p>
+                <p className="text-xs text-zinc-500 font-mono mt-0.5">
+                  {isUa
+                    ? "Технічні параметри ШІ, налаштування мов та loopback аудіо"
+                    : "Copilot AI parameters, language models & audio routing"}
+                </p>
               </div>
             </div>
 
@@ -214,7 +174,7 @@ export default function SettingsPage() {
                 title="Перейти в профіль / Profile"
               >
                 <User className="w-3.5 h-3.5 text-zinc-300" />
-                <span className="hidden sm:inline">Профіль</span>
+                <span className="hidden sm:inline">{isUa ? "Профіль" : "Profile"}</span>
               </Link>
 
               <Link
@@ -227,428 +187,426 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* ── Section 1: Subscription & Payment Gateway ── */}
-          <Section title={s.planSectionTitle}>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0e0e14] border border-white/10 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white font-mono">
-                      {userPlan === "lifetime"
-                        ? "Ghostboard Lifetime Founder Pass"
-                        : userPlan === "pro"
-                        ? "Ghostboard Pro Pass"
-                        : "Free Trial Demo"}
-                    </span>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
-                        userPlan === "lifetime"
-                          ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
-                          : userPlan === "pro"
-                          ? "bg-white/15 text-white border border-white/30"
-                          : "bg-amber-400/15 text-amber-400 border border-amber-400/30"
-                      }`}
-                    >
-                      {userPlan === "lifetime"
-                        ? "LIFETIME VIP"
-                        : userPlan === "pro"
-                        ? s.unlimitedBadge
-                        : s.limitBadge}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 mt-1">
-                    {userPlan === "lifetime"
-                      ? t.settings.subscriptionLifetime
-                      : userPlan === "pro"
-                      ? t.settings.subscriptionPro
-                      : t.settings.subscriptionFree}
-                  </p>
-                </div>
-
-                {/* Action buttons */}
+          {/* ── Section 1: Subscription Summary & Profile Link ── */}
+          <Section title={isUa ? "Тариф та Доступ" : "Plan & Billing"}>
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#0e0e14] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
                 <div className="flex items-center gap-2">
-                  {userPlan === "free" ? (
-                    <button
-                      onClick={handleUpgradeStripe}
-                      disabled={isUpgrading}
-                      className="btn-resend-primary text-xs font-mono !py-2 !px-3.5 flex items-center gap-1.5 shadow-[0_0_25px_rgba(255,255,255,0.2)] cursor-pointer"
-                    >
-                      <Zap className="w-3.5 h-3.5 fill-black" />
-                      <span>{isUpgrading ? t.settings.upgrading : t.settings.upgradeBtn}</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleManageSubscription}
-                      className="btn-resend-glass text-xs font-mono !py-2 !px-3 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CreditCard className="w-3.5 h-3.5 text-zinc-300" />
-                      <span>{t.settings.manageSubscription}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Trial / Active Info Bar */}
-              {userPlan === "free" ? (
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs font-mono text-amber-300 flex items-center justify-between">
-                  <span>⏱️ {s.freeLimitText}</span>
-                  <Link href="/pricing" className="text-white underline font-bold hover:text-zinc-300">
-                    {s.plansPricingLink}
-                  </Link>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-300 flex items-center justify-between">
-                  <span className="flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-400" />
-                    <span>{s.unlimitedDesc}</span>
+                  <span className="text-sm font-bold text-white font-mono">
+                    {userPlan === "lifetime"
+                      ? "Ghostboard Lifetime Founder Pass"
+                      : userPlan === "pro"
+                      ? "Ghostboard Pro Pass"
+                      : "Free Trial Demo"}
                   </span>
-                  <Link href="/pricing" className="text-zinc-400 hover:text-white text-[11px] underline">
-                    {s.viewAllPlansLink}
-                  </Link>
-                </div>
-              )}
-            </div>
-
-            {/* Stripe Gateway & Key Configuration Box (Admin & Dev Only) */}
-            {process.env.NODE_ENV !== 'production' && (
-              <div className="p-4 rounded-2xl bg-zinc-950 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Lock className="w-4 h-4 text-zinc-300" />
-                  <span className="text-xs font-bold text-white font-mono uppercase tracking-wider">
-                    {s.stripeTitle} <span className="text-[10px] text-zinc-500 font-normal">[Dev Only]</span>
+                  <span
+                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
+                      userPlan === "lifetime"
+                        ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
+                        : userPlan === "pro"
+                        ? "bg-white/15 text-white border border-white/30"
+                        : "bg-amber-400/15 text-amber-400 border border-amber-400/30"
+                    }`}
+                  >
+                    {userPlan === "lifetime" ? "VIP PASS" : userPlan === "pro" ? "PRO" : "FREE DEMO"}
                   </span>
                 </div>
-                <span
-                  className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                    stripeConfig?.isConfigured
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                      : "bg-amber-400/15 text-amber-300 border border-amber-400/30"
-                  }`}
-                >
-                  {stripeConfig?.isConfigured
-                    ? `🟢 ${stripeConfig.mode === 'live' ? 'Live Stripe' : 'Test Stripe API'}`
-                    : s.stripeSandboxBadge}
-                </span>
+                <p className="text-xs text-zinc-400 leading-relaxed font-sans">
+                  {isUa
+                    ? "Управління підпискою, способами оплати, пристроями та лімітами перенесено до вашого Командного Центру."
+                    : "Subscription management, payment portal, active devices, and limits are managed in your Command Center."}
+                </p>
               </div>
 
-              <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-                {stripeConfig?.isConfigured
-                  ? s.stripeConnectedDesc(stripeConfig.maskedSecretKey || '')
-                  : s.stripeSandboxDesc}
-              </p>
-
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Link
-                  href="/pricing"
-                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white hover:text-black border border-white/15 text-xs font-mono text-zinc-200 transition-all cursor-pointer inline-flex items-center gap-1.5"
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>{s.testPricingLink}</span>
-                </Link>
-
-                <button
-                  type="button"
-                  onClick={() => setShowStripeForm((p) => !p)}
-                  className="px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-xs font-mono text-zinc-400 hover:text-white transition-all cursor-pointer flex items-center gap-1"
-                >
-                  <span>{showStripeForm ? s.hideFormBtn : s.configureKeysBtn}</span>
-                  {showStripeForm ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              {/* Collapsible Stripe API Keys Form */}
-              {showStripeForm && (
-                <form onSubmit={handleSaveStripeKeys} className="pt-3 mt-3 border-t border-white/10 space-y-3 animate-in fade-in duration-200">
-                  <div>
-                    <label className="block text-[11px] font-mono text-zinc-400 uppercase mb-1">
-                      {s.secretKeyLabel}
-                    </label>
-                    <input
-                      type="password"
-                      value={inputSecretKey}
-                      onChange={(e) => setInputSecretKey(e.target.value)}
-                      placeholder={stripeConfig?.maskedSecretKey || "sk_test_..."}
-                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-white/40 focus:ring-1 focus:ring-white/20 text-white font-mono text-xs focus:outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-mono text-zinc-400 uppercase mb-1">
-                      {s.webhookSecLabel}
-                    </label>
-                    <input
-                      type="password"
-                      value={inputWebhookSec}
-                      onChange={(e) => setInputWebhookSec(e.target.value)}
-                      placeholder={stripeConfig?.maskedWebhookSecret || "whsec_..."}
-                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-white/40 focus:ring-1 focus:ring-white/20 text-white font-mono text-xs focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="flex justify-end pt-1">
-                    <button
-                      type="submit"
-                      disabled={isSavingStripe || (!inputSecretKey && !inputWebhookSec)}
-                      className="btn-resend-primary text-xs font-mono !py-2 !px-4 cursor-pointer disabled:opacity-40"
-                    >
-                      {isSavingStripe ? s.savingKeysBtn : s.saveKeysBtn}
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-          )}
-        </Section>
-
-        {/* ── Section 2: Candidate Profile ── */}
-        <Section title={s.profileTitle}>
-          <div className="p-4 rounded-xl bg-black/40 border border-white/5 space-y-3">
-            <div>
-              <span className="text-[11px] font-mono text-zinc-500 uppercase">{s.roleLabel}:</span>
-              <div className="text-sm font-bold text-white font-mono mt-0.5">
-                {profile?.role || "Python Backend Developer"}
-              </div>
-            </div>
-
-            {profile?.techStack && profile.techStack.length > 0 && (
-              <div>
-                <span className="text-[11px] font-mono text-zinc-500 uppercase block mb-1.5">{s.stackLabel}:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {profile.techStack.slice(0, 10).map((tech) => (
-                    <span key={tech} className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-zinc-300">
-                      {tech}
-                    </span>
-                  ))}
-                  {profile.techStack.length > 10 && (
-                    <span className="text-xs font-mono text-zinc-500 self-center">
-                      +{profile.techStack.length - 10} {s.moreTech(profile.techStack.length - 10)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="pt-2 border-t border-white/5 flex justify-between items-center">
-              <span className="text-xs text-zinc-500 font-mono">
-                {s.profileAiHint}
-              </span>
               <Link
-                href="/interview"
-                className="text-xs font-mono text-zinc-300 hover:text-white hover:underline flex items-center gap-1"
+                href="/profile?tab=security_billing"
+                className="btn-resend-glass text-xs font-mono !py-2.5 !px-4 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
               >
-                <span>{s.editCvBtn}</span>
+                <Shield className="w-3.5 h-3.5 text-zinc-300" />
+                <span>{isUa ? "Керувати у Профілі" : "Manage in Profile"}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </Link>
             </div>
-          </div>
-        </Section>
+          </Section>
 
-        {/* ── Section 3: Audio Setup ── */}
-        <Section title={s.audioSectionTitle}>
-          {/* OS Switcher */}
-          <div className="flex gap-1.5 p-1 bg-black/40 rounded-xl border border-white/5">
-            {(["linux", "windows", "macos"] as Platform[]).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPlatform(p)}
-                className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                  platform === p ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                {p === "linux" ? "🐧 Linux" : p === "windows" ? "🪟 Windows" : "🍎 macOS"}
-              </button>
-            ))}
-          </div>
-
-          {/* Collapsible guide */}
-          <button
-            type="button"
-            onClick={() => setShowAudioGuide((p) => !p)}
-            className="w-full flex items-center justify-between text-left mt-1 p-3 rounded-xl bg-black/30 border border-white/5 hover:border-white/15 transition-all cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              {PLATFORM_ICONS[platform]}
-              <span className="text-xs font-bold text-white font-mono">{guide.title}</span>
-            </div>
-            {showAudioGuide ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
-          </button>
-
-          {showAudioGuide && (
-            <div className="animate-in fade-in duration-200">
-              <ol className="space-y-2.5 mt-3">
-                {guide.steps.map((step, i) => (
-                  <li key={i} className="flex items-start gap-3 text-xs text-zinc-300 font-sans leading-relaxed">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-[10px] font-bold font-mono flex items-center justify-center mt-0.5">
-                      {i + 1}
-                    </span>
-                    {step}
-                  </li>
-                ))}
-              </ol>
-
-              {guide.link && (
-                <a
-                  href={guide.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 inline-flex items-center gap-1.5 text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  {guide.linkText}
-                </a>
-              )}
-            </div>
-          )}
-        </Section>
-
-        {/* ── Section 4: Language Preferences ── */}
-        <Section title={s.langSectionTitle}>
-          {/* Interface / site language */}
-          <div>
-            <label className="text-xs font-mono text-zinc-400 mb-3 block font-bold">
-              {s.interfaceLangLabel}
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {SUPPORTED_LOCALES.map((loc) => {
-                const meta = LOCALE_META[loc];
-                return (
+          {/* ── Section 2: AI Copilot Operation Modes ── */}
+          <Section title={isUa ? "Режими роботи ШІ (Copilot Engine)" : "AI Copilot Engine & Modes"}>
+            <div className="space-y-4">
+              {/* Fast vs Deep Mode Toggle */}
+              <div>
+                <label className="text-xs font-mono text-zinc-300 block font-bold mb-2">
+                  {isUa ? "Швидкість генерації та глибина (Latency vs Depth):" : "Generation Latency & Architecture Depth:"}
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
-                    key={loc}
-                    onClick={() => {
-                      setLocale(loc as SupportedLocale);
-                      toast.success(t.settings.interfaceLangSaved);
-                    }}
-                    className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border flex items-center gap-2 ${
-                      locale === loc
+                    type="button"
+                    onClick={() => handleSetAiMode("fast")}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer space-y-1.5 ${
+                      aiMode === "fast"
+                        ? "bg-white/[0.08] border-white/30 shadow-[0_0_20px_rgba(255,255,255,0.06)]"
+                        : "bg-black/40 border-white/[0.06] hover:border-white/15 text-zinc-400"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Zap className={`w-4 h-4 ${aiMode === "fast" ? "text-amber-400 fill-amber-400" : "text-zinc-500"}`} />
+                        <span className={`text-xs font-mono font-bold ${aiMode === "fast" ? "text-white" : "text-zinc-400"}`}>
+                          Fast Mode (Sub-1.2s)
+                        </span>
+                      </div>
+                      {aiMode === "fast" && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+                      {isUa
+                        ? "Миттєва генерація через Gemini 2.5 Flash. Оптимально для live-інтерв'ю без пауз."
+                        : "Sub-1.2s lightning response via Gemini Flash. Ideal for fast-paced live technical rounds."}
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSetAiMode("deep")}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer space-y-1.5 ${
+                      aiMode === "deep"
+                        ? "bg-white/[0.08] border-white/30 shadow-[0_0_20px_rgba(255,255,255,0.06)]"
+                        : "bg-black/40 border-white/[0.06] hover:border-white/15 text-zinc-400"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Cpu className={`w-4 h-4 ${aiMode === "deep" ? "text-sky-400" : "text-zinc-500"}`} />
+                        <span className={`text-xs font-mono font-bold ${aiMode === "deep" ? "text-white" : "text-zinc-400"}`}>
+                          Deep Reasoning (Staff-Level)
+                        </span>
+                      </div>
+                      {aiMode === "deep" && <Check className="w-3.5 h-3.5 text-emerald-400" />}
+                    </div>
+                    <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+                      {isUa
+                        ? "Глибоке системне проектування, аналіз компромісів (Trade-offs) та високонавантажених кейсів."
+                        : "Architectural deep-dive, distributed trade-offs, and high-load edge case scenarios."}
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Concise Mode Switcher */}
+              <div className="p-4 rounded-2xl bg-black/40 border border-white/[0.06] flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <span className="text-xs font-mono font-bold text-white block">
+                    {isUa ? "Concise Mode (Телесуфлер-буллети)" : "Concise Mode (Teleprompter Bullets)"}
+                  </span>
+                  <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
+                    {isUa
+                      ? "Форматує відповідь у короткі тези та опорні ключові фрази, які легко зачитувати без відведення очей від камери."
+                      : "Structures output into short bullet points and speaking triggers for natural eye contact."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleConcise(!conciseMode)}
+                  className={`w-12 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
+                    conciseMode ? "bg-white" : "bg-white/15"
+                  }`}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full transition-transform bg-black absolute top-1 ${
+                      conciseMode ? "right-1" : "left-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Hotkeys Quick Reference */}
+              <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-2">
+                <span className="text-[11px] font-mono font-bold text-zinc-400 uppercase block">
+                  {isUa ? "Швидкі комбінації клавіш:" : "Global Hotkeys Reference:"}
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs font-mono text-zinc-300">
+                  <div className="flex items-center gap-2">
+                    <kbd className="kbd-obsidian">Space</kbd>
+                    <span className="text-[11px] text-zinc-400">{isUa ? "Заморозка екрану" : "Freeze HUD"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <kbd className="kbd-obsidian">Esc</kbd>
+                    <span className="text-[11px] text-zinc-400">{isUa ? "Панік-щит" : "Panic Shield"}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <kbd className="kbd-obsidian">Alt + G</kbd>
+                    <span className="text-[11px] text-zinc-400">{isUa ? "Розпізнати LeetCode" : "LeetCode Solve"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Section>
+
+          {/* ── Section 3: Audio Routing & Loopback ── */}
+          <Section title={s.audioSectionTitle}>
+            {/* OS Switcher */}
+            <div className="flex gap-1.5 p-1 bg-black/40 rounded-xl border border-white/5">
+              {(["linux", "windows", "macos"] as Platform[]).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPlatform(p)}
+                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                    platform === p ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {p === "linux" ? "🐧 Linux" : p === "windows" ? "🪟 Windows" : "🍎 macOS"}
+                </button>
+              ))}
+            </div>
+
+            {/* Collapsible guide */}
+            <button
+              type="button"
+              onClick={() => setShowAudioGuide((p) => !p)}
+              className="w-full flex items-center justify-between text-left mt-1 p-3 rounded-xl bg-black/30 border border-white/5 hover:border-white/15 transition-all cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                {PLATFORM_ICONS[platform]}
+                <span className="text-xs font-bold text-white font-mono">{guide.title}</span>
+              </div>
+              {showAudioGuide ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
+            </button>
+
+            {showAudioGuide && (
+              <div className="animate-in fade-in duration-200">
+                <ol className="space-y-2.5 mt-3">
+                  {guide.steps.map((step, i) => (
+                    <li key={i} className="flex items-start gap-3 text-xs text-zinc-300 font-sans leading-relaxed">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-[10px] font-bold font-mono flex items-center justify-center mt-0.5">
+                        {i + 1}
+                      </span>
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+
+                {guide.link && (
+                  <a
+                    href={guide.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 inline-flex items-center gap-1.5 text-xs font-mono text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    {guide.linkText}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* Quick Sound Check Diagnostic Button */}
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5">
+              <span className="text-xs text-zinc-400 font-sans">
+                {isUa
+                  ? "Перевірте рівень вхідного сигналу та роботу мікрофона в один клік:"
+                  : "Verify microphone input level and latency test:"}
+              </span>
+
+              <Link
+                href="/interview?modal=soundcheck"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/15 border border-white/10 text-xs font-mono text-white transition-all cursor-pointer shrink-0"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>{isUa ? "Запустити Sound Check" : "Open Sound Check"}</span>
+              </Link>
+            </div>
+          </Section>
+
+          {/* ── Section 4: Language Preferences ── */}
+          <Section title={s.langSectionTitle}>
+            {/* Interface / site language */}
+            <div>
+              <label className="text-xs font-mono text-zinc-400 mb-3 block font-bold">
+                {s.interfaceLangLabel}
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {SUPPORTED_LOCALES.map((loc) => {
+                  const meta = LOCALE_META[loc];
+                  return (
+                    <button
+                      key={loc}
+                      type="button"
+                      onClick={() => {
+                        setLocale(loc as SupportedLocale);
+                        toast.success(t.settings.interfaceLangSaved);
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border flex items-center gap-2 ${
+                        locale === loc
+                          ? "bg-white text-black border-white"
+                          : "bg-black/30 border-white/[0.08] text-zinc-400 hover:border-white/20 hover:text-white"
+                      }`}
+                    >
+                      <span>{meta.flag}</span>
+                      <span>{meta.nativeName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* STT Language */}
+            <div>
+              <label className="text-xs font-mono text-zinc-400 mb-2.5 block font-bold">{s.speechLangLabel}</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {[
+                  { val: "uk", label: "🇺🇦 Українська" },
+                  { val: "en", label: "🇬🇧 English" },
+                  { val: "pl", label: "🇵🇱 Polski" },
+                  { val: "de", label: "🇩🇪 Deutsch" },
+                  { val: "fr", label: "🇫🇷 Français" },
+                  { val: "es", label: "🇪🇸 Español" },
+                  { val: "pt", label: "🇵🇹 Português" },
+                  { val: "it", label: "🇮🇹 Italiano" },
+                  { val: "cs", label: "🇨🇿 Čeština" },
+                  { val: "nl", label: "🇳🇱 Nederlands" },
+                  { val: "ru", label: "🇷🇺 Русский" },
+                  { val: "auto", label: `🌐 ${t.common.auto}` },
+                ].map((o) => (
+                  <button
+                    key={o.val}
+                    type="button"
+                    onClick={() => setSpeechLang(o.val)}
+                    className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
+                      speechLang === o.val
                         ? "bg-white text-black border-white"
                         : "bg-black/30 border-white/[0.08] text-zinc-400 hover:border-white/20 hover:text-white"
                     }`}
                   >
-                    <span>{meta.flag}</span>
-                    <span>{meta.nativeName}</span>
+                    {o.label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* STT Language */}
-          <div>
-            <label className="text-xs font-mono text-zinc-400 mb-2.5 block font-bold">{s.speechLangLabel}</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-              {[
-                { val: "uk", label: "🇺🇦 Українська" },
-                { val: "en", label: "🇬🇧 English" },
-                { val: "pl", label: "🇵🇱 Polski" },
-                { val: "de", label: "🇩🇪 Deutsch" },
-                { val: "fr", label: "🇫🇷 Français" },
-                { val: "es", label: "🇪🇸 Español" },
-                { val: "pt", label: "🇵🇹 Português" },
-                { val: "it", label: "🇮🇹 Italiano" },
-                { val: "cs", label: "🇨🇿 Čeština" },
-                { val: "nl", label: "🇳🇱 Nederlands" },
-                { val: "ru", label: "🇷🇺 Русский" },
-                { val: "auto", label: `🌐 ${t.common.auto}` },
-              ].map((o) => (
-                <button
-                  key={o.val}
-                  onClick={() => setSpeechLang(o.val)}
-                  className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
-                    speechLang === o.val
-                      ? "bg-white text-black border-white"
-                      : "bg-black/30 border-white/[0.08] text-zinc-400 hover:border-white/20 hover:text-white"
-                  }`}
+            {/* AI Output Language */}
+            <div>
+              <label className="text-xs font-mono text-zinc-400 mb-2.5 block font-bold">{s.outputLangLabel}</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {[
+                  { val: "uk", label: "🇺🇦 Українська" },
+                  { val: "en", label: "🇬🇧 English" },
+                  { val: "pl", label: "🇵🇱 Polski" },
+                  { val: "de", label: "🇩🇪 Deutsch" },
+                  { val: "fr", label: "🇫🇷 Français" },
+                  { val: "es", label: "🇪🇸 Español" },
+                  { val: "pt", label: "🇵🇹 Português" },
+                  { val: "it", label: "🇮🇹 Italiano" },
+                  { val: "cs", label: "🇨🇿 Čeština" },
+                  { val: "nl", label: "🇳🇱 Nederlands" },
+                  { val: "auto", label: `🌐 ${t.common.auto}` },
+                ].map((o) => (
+                  <button
+                    key={o.val}
+                    type="button"
+                    onClick={() => setOutputLang(o.val)}
+                    className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
+                      outputLang === o.val
+                        ? "bg-white text-black border-white"
+                        : "bg-black/30 border-white/[0.08] text-zinc-400 hover:border-white/20 hover:text-white"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={saveLangPrefs}
+              className="btn-resend-primary font-mono text-xs !py-2.5 !px-5 cursor-pointer"
+            >
+              {s.saveLangBtn}
+            </button>
+          </Section>
+
+          {/* ── Section 5: Candidate Profile Preview ── */}
+          <Section title={s.profileTitle}>
+            <div className="p-4 rounded-xl bg-black/40 border border-white/5 space-y-3">
+              <div>
+                <span className="text-[11px] font-mono text-zinc-500 uppercase">{s.roleLabel}:</span>
+                <div className="text-sm font-bold text-white font-mono mt-0.5">
+                  {profile?.role || "Software Engineer"}
+                </div>
+              </div>
+
+              {profile?.techStack && profile.techStack.length > 0 && (
+                <div>
+                  <span className="text-[11px] font-mono text-zinc-500 uppercase block mb-1.5">{s.stackLabel}:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {profile.techStack.slice(0, 10).map((tech) => (
+                      <span key={tech} className="px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 text-xs font-mono text-zinc-300">
+                        {tech}
+                      </span>
+                    ))}
+                    {profile.techStack.length > 10 && (
+                      <span className="text-xs font-mono text-zinc-500 self-center">
+                        +{profile.techStack.length - 10} {s.moreTech(profile.techStack.length - 10)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-white/5 flex justify-between items-center">
+                <span className="text-xs text-zinc-500 font-mono">
+                  {s.profileAiHint}
+                </span>
+                <Link
+                  href="/profile?tab=specialization"
+                  className="text-xs font-mono text-zinc-300 hover:text-white hover:underline flex items-center gap-1"
                 >
-                  {o.label}
-                </button>
-              ))}
+                  <span>{s.editCvBtn}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
-          </div>
+          </Section>
 
-          {/* AI Output Language */}
-          <div>
-            <label className="text-xs font-mono text-zinc-400 mb-2.5 block font-bold">{s.outputLangLabel}</label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {[
-                { val: "uk", label: "🇺🇦 Українська" },
-                { val: "en", label: "🇬🇧 English" },
-                { val: "pl", label: "🇵🇱 Polski" },
-                { val: "de", label: "🇩🇪 Deutsch" },
-                { val: "fr", label: "🇫🇷 Français" },
-                { val: "es", label: "🇪🇸 Español" },
-                { val: "pt", label: "🇵🇹 Português" },
-                { val: "it", label: "🇮🇹 Italiano" },
-                { val: "cs", label: "🇨🇿 Čeština" },
-                { val: "nl", label: "🇳🇱 Nederlands" },
-                { val: "auto", label: `🌐 ${t.common.auto}` },
-              ].map((o) => (
-                <button
-                  key={o.val}
-                  onClick={() => setOutputLang(o.val)}
-                  className={`py-2 px-3 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer border ${
-                    outputLang === o.val
-                      ? "bg-white text-black border-white"
-                      : "bg-black/30 border-white/[0.08] text-zinc-400 hover:border-white/20 hover:text-white"
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
+          {/* ── Section 6: System & Diagnostic ── */}
+          <Section title={s.systemTitle}>
+            <div className="space-y-2.5 text-xs font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">{s.systemVersion}</span>
+                <span className="text-zinc-300">2.5.0 Commercial Release</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">{s.systemAiCore}</span>
+                <span className="text-zinc-200">Gemini 2.5 Flash / Pro Hybrid Fallback</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">{s.systemStt}</span>
+                <span className="text-white">Deepgram Nova-3 (16kHz PCM)</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-500">{s.systemPhonetics}</span>
+                <span className="text-zinc-300">{s.phoneticsRuleCount}</span>
+              </div>
             </div>
-          </div>
 
-          <button
-            onClick={saveLangPrefs}
-            className="btn-resend-primary font-mono text-xs !py-2.5 !px-5 cursor-pointer"
-          >
-            {s.saveLangBtn}
-          </button>
-        </Section>
-
-
-        {/* ── Section 5: App Version ── */}
-        <Section title={s.systemTitle}>
-          <div className="space-y-2.5 text-xs font-mono">
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">{s.systemVersion}</span>
-              <span className="text-zinc-300">2.0.0 Commercial Release</span>
+            <div className="pt-3 border-t border-white/5 flex flex-wrap gap-4 text-xs font-mono">
+              <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                {s.navHome}
+              </Link>
+              <Link href="/privacy" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                Privacy Policy
+              </Link>
+              <Link href="/terms" className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                Terms of Service
+              </Link>
+              <Link href="/mock-interview" className="text-zinc-400 hover:text-white transition-colors">
+                {s.navMock}
+              </Link>
+              <Link href="/interview" className="text-zinc-200 hover:text-white hover:underline transition-colors">
+                {s.navCopilot}
+              </Link>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">{s.systemAiCore}</span>
-              <span className="text-zinc-200">Gemini 3.8 / 3.6 Flash Fallback Cascade</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">{s.systemStt}</span>
-              <span className="text-white">Deepgram Nova-3 (16kHz PCM)</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-zinc-500">{s.systemPhonetics}</span>
-              <span className="text-zinc-300">{s.phoneticsRuleCount}</span>
-            </div>
-          </div>
-
-          <div className="pt-3 border-t border-white/5 flex flex-wrap gap-4 text-xs font-mono">
-            <Link href="/" className="text-zinc-500 hover:text-zinc-300 transition-colors">
-              {s.navHome}
-            </Link>
-            <Link href="/privacy" className="text-zinc-500 hover:text-zinc-300 transition-colors">
-              Privacy Policy
-            </Link>
-            <Link href="/terms" className="text-zinc-500 hover:text-zinc-300 transition-colors">
-              Terms of Service
-            </Link>
-            <Link href="/mock-interview" className="text-zinc-400 hover:text-white transition-colors">
-              {s.navMock}
-            </Link>
-            <Link href="/sandbox" className="text-zinc-400 hover:text-white transition-colors">
-              Interview Arena
-            </Link>
-            <Link href="/interview" className="text-zinc-200 hover:text-white hover:underline transition-colors">
-              {s.navCopilot}
-            </Link>
-          </div>
-        </Section>
+          </Section>
         </main>
       </SubpageStripesContainer>
       <UnifiedFooter />

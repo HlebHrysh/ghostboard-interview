@@ -23,6 +23,7 @@ export interface CandidateProfile {
   techStack: string[];
   experienceLevel: CandidateLevel;
   customBio: string;
+  targetCompany?: string;
   resumeKeywords?: string[];
   petProjects?: PetProject[];
   summary?: string;

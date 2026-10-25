@@ -1,7 +1,5 @@
-'use client';
-
-import { ArenaView } from '@/components/arena/ArenaView';
+import { redirect } from 'next/navigation';
 
 export default function SandboxPage() {
-  return <ArenaView />;
+  redirect('/mock-interview');
 }

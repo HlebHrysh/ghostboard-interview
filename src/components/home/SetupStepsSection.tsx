@@ -2,29 +2,47 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Headphones, Sparkles, ArrowRight } from 'lucide-react';
+import { FileText, Headphones, Sparkles, ChevronDown } from 'lucide-react';
 import type { HomeTranslations } from '@/lib/homeI18n';
+import { useLocale } from '@/contexts/LocaleContext';
 
 interface Props {
   t: HomeTranslations;
 }
 
 export function SetupStepsSection({ t }: Props) {
+  const { locale } = useLocale();
+
+  const stepSummaries = [
+    locale === 'ua'
+      ? 'Адаптує відповіді під ваш реальний стек (Python, React, Go, System Design) та мову дзвінка.'
+      : 'Tailors answers to your actual tech stack and target interview vacancy language.',
+    locale === 'ua'
+      ? 'Чисте захоплення співрозмовника з динаміків або навушників без сторонніх ботів на дзвінку.'
+      : 'Crystal clear interviewer voice capture from speakers or headphones with zero meeting bots.',
+    locale === 'ua'
+      ? 'Отримуйте стислі тези за структурою STAR прямо під веб-камерою за 350 мс.'
+      : 'Receive concise STAR bullets directly beneath your webcam lens within 350ms.',
+  ];
+
   const steps = [
     {
       data: t.setup.step1,
+      summary: stepSummaries[0],
       icon: <FileText className="w-5 h-5 text-emerald-400" />,
-      accent: 'emerald',
+      techDetail: 'Local PDF parsing · Zero server resume storage · Instant vector context',
     },
     {
       data: t.setup.step2,
+      summary: stepSummaries[1],
       icon: <Headphones className="w-5 h-5 text-indigo-400" />,
-      accent: 'indigo',
+      techDetail: 'WASAPI Direct · CoreAudio Loopback · PipeWire null-sink · 0 driver installs',
     },
     {
       data: t.setup.step3,
+      summary: stepSummaries[2],
       icon: <Sparkles className="w-5 h-5 text-amber-400" />,
-      accent: 'amber',
+      techDetail: 'Deepgram Nova-3 16kHz PCM · Sub-400ms TTFT · STAR format constraints',
     },
   ];
 
@@ -70,16 +88,31 @@ export function SetupStepsSection({ t }: Props) {
                   {step.data.tag}
                 </div>
 
-                <h3 className="text-lg sm:text-xl font-bold text-white mb-3 tracking-tight">
+                <h3 className="text-lg sm:text-xl font-bold text-white mb-2 tracking-tight">
                   {step.data.title}
                 </h3>
 
-                <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
-                  {step.data.desc}
+                {/* Concise 1-sentence essence */}
+                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed mb-4">
+                  {step.summary}
                 </p>
+
+                {/* Progressive Disclosure: Under the hood */}
+                <details className="group/details mb-4 text-xs">
+                  <summary className="inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-300 cursor-pointer select-none font-mono transition-colors">
+                    <ChevronDown className="w-3.5 h-3.5 text-indigo-400 transition-transform group-open/details:rotate-180" />
+                    <span>{locale === 'ua' ? 'Під капотом (технічні деталі)' : 'Under the hood'}</span>
+                  </summary>
+                  <div className="mt-2 p-3 rounded-xl bg-black/40 border border-white/[0.06] text-zinc-400 text-xs space-y-1">
+                    <p>{step.data.desc}</p>
+                    <div className="text-[10px] font-mono text-indigo-300/80 pt-1">
+                      {step.techDetail}
+                    </div>
+                  </div>
+                </details>
               </div>
 
-              <div className="mt-8 pt-4 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono text-zinc-500">
+              <div className="mt-6 pt-4 border-t border-white/[0.04] flex items-center justify-between text-[11px] font-mono text-zinc-500">
                 <span>{step.data.pill}</span>
                 <span className="text-zinc-600">→</span>
               </div>

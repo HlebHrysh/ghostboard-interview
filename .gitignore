@@ -65,3 +65,8 @@ rust_out
 tests/empirical_*_stress
 tests/empirical_rms_stress
 tests/empirical_window_stress
+
+# Resume & personal documents
+*.pdf
+resume*
+*.log

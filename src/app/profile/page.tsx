@@ -9,10 +9,8 @@ import {
   ArrowLeft,
   Sparkles,
   Shield,
-  CreditCard,
-  Sliders,
-  ChevronRight,
   User,
+  Activity,
 } from "lucide-react";
 import {
   ROLE_PRESETS,
@@ -32,6 +30,7 @@ import { SubscriptionCard } from "@/components/cabinet/SubscriptionCard";
 import { DeviceManager, DeviceSession } from "@/components/cabinet/DeviceManager";
 import { SecuritySettings } from "@/components/cabinet/SecuritySettings";
 import { SpecializationTab } from "@/components/cabinet/SpecializationTab";
+import { SessionHistoryTab } from "@/components/cabinet/SessionHistoryTab";
 
 interface UserAccount {
   id: string;
@@ -41,14 +40,14 @@ interface UserAccount {
   role?: string | null;
 }
 
-type TabType = "security" | "billing" | "specialization";
+type TabType = "specialization" | "sessions" | "security_billing";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { locale } = useLocale();
   const t = getProfileTranslations(locale);
 
-  const [activeTab, setActiveTab] = useState<TabType>("security");
+  const [activeTab, setActiveTab] = useState<TabType>("specialization");
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<UserAccount | null>(null);
   const [candidateProfile, setCandidateProfile] = useState<CandidateProfile | null>(null);
@@ -209,11 +208,27 @@ export default function ProfilePage() {
       }
     } catch {}
 
-    // Load History Stats
+    reloadStats();
+    loadDevices();
+
+    // Check query params for deep-linked tab
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "sessions" || tabParam === "security_billing" || tabParam === "specialization") {
+        setActiveTab(tabParam as TabType);
+      }
+    } catch {}
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
+
+  const reloadStats = () => {
     fetch("/api/sessions/history")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!isMounted) return;
         if (data?.history && Array.isArray(data.history)) {
           setSessionCount(data.history.length);
           const qCount = data.history.reduce(
@@ -224,13 +239,7 @@ export default function ProfilePage() {
         }
       })
       .catch(() => {});
-
-    loadDevices();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [router]);
+  };
 
   // Role Preset Selection
   const handleSelectPreset = (presetKey: string) => {
@@ -334,19 +343,19 @@ export default function ProfilePage() {
 
   const tabs: Array<{ id: TabType; label: string; icon: React.ComponentType<{ className?: string }> }> = [
     {
-      id: "security",
-      label: locale === "ua" ? "Безпека та пристрої" : "Identity & Security",
-      icon: Shield,
-    },
-    {
-      id: "billing",
-      label: locale === "ua" ? "Тариф та білінг" : "Plan & Billing",
-      icon: CreditCard,
-    },
-    {
       id: "specialization",
-      label: locale === "ua" ? "Спеціалізація для ШІ" : "AI Specialization",
-      icon: Sliders,
+      label: locale === "ua" ? "ШІ-Профіль та Резюме" : "AI Profile & Resume",
+      icon: Sparkles,
+    },
+    {
+      id: "sessions",
+      label: locale === "ua" ? "Історія сесій та Скоркарди" : "Sessions & Scorecards",
+      icon: Activity,
+    },
+    {
+      id: "security_billing",
+      label: locale === "ua" ? "Підписка та Безпека" : "Subscription & Security",
+      icon: Shield,
     },
   ];
 
@@ -441,46 +450,6 @@ export default function ProfilePage() {
 
             {/* Tab Panes with Fluid Transitions */}
             <AnimatePresence mode="wait">
-              {activeTab === "security" && (
-                <motion.div
-                  key="security"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                  className="space-y-6"
-                >
-                  <DeviceManager
-                    devices={devices}
-                    loading={loadingDevices}
-                    locale={locale}
-                    onRefresh={loadDevices}
-                    onRevokeDevice={handleRevokeDevice}
-                    onRevokeAllOthers={handleRevokeAllOthers}
-                  />
-                  <SecuritySettings
-                    locale={locale}
-                    onPasswordChange={handlePasswordChange}
-                  />
-                </motion.div>
-              )}
-
-              {activeTab === "billing" && (
-                <motion.div
-                  key="billing"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <SubscriptionCard
-                    plan={user?.plan || "free"}
-                    locale={locale}
-                    onManageBilling={handleManageBilling}
-                  />
-                </motion.div>
-              )}
-
               {activeTab === "specialization" && (
                 <motion.div
                   key="specialization"
@@ -506,6 +475,51 @@ export default function ProfilePage() {
                     onResumeContextChange={(val) => setResumeContext(val)}
                     onSaveResumeContext={handleSaveResumeContext}
                   />
+                </motion.div>
+              )}
+
+              {activeTab === "sessions" && (
+                <motion.div
+                  key="sessions"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <SessionHistoryTab locale={locale} onRefreshStats={reloadStats} />
+                </motion.div>
+              )}
+
+              {activeTab === "security_billing" && (
+                <motion.div
+                  key="security_billing"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
+                >
+                  <div className="lg:col-span-5 space-y-6">
+                    <SubscriptionCard
+                      plan={user?.plan || "free"}
+                      locale={locale}
+                      onManageBilling={handleManageBilling}
+                    />
+                  </div>
+                  <div className="lg:col-span-7 space-y-6">
+                    <DeviceManager
+                      devices={devices}
+                      loading={loadingDevices}
+                      locale={locale}
+                      onRefresh={loadDevices}
+                      onRevokeDevice={handleRevokeDevice}
+                      onRevokeAllOthers={handleRevokeAllOthers}
+                    />
+                    <SecuritySettings
+                      locale={locale}
+                      onPasswordChange={handlePasswordChange}
+                    />
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

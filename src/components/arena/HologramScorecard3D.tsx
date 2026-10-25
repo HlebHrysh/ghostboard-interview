@@ -55,6 +55,9 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
 
   // ── 3D Card Interactive Tilt ───────────────────────────────────────────────
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) {
+      return;
+    }
     const card = cardRef.current;
     if (!card) return;
 
@@ -75,6 +78,9 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
   }, []);
 
   const handleMouseEnter = useCallback(() => {
+    if (typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches) {
+      return;
+    }
     const card = cardRef.current;
     if (!card) return;
     card.style.transition = 'transform 0.1s ease-out';
@@ -112,7 +118,8 @@ export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
         onMouseMove={handleMouseMove}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="group relative w-full rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-zinc-900/98 via-zinc-950/98 to-black border-2 border-white/15 hover:border-white/40 shadow-[0_32px_100px_rgba(0,0,0,0.95)] overflow-hidden select-none transition-transform duration-100 ease-out cursor-pointer"
+        style={{ touchAction: 'pan-y' }}
+        className="group relative w-full rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-zinc-900/98 via-zinc-950/98 to-black border-2 border-white/15 hover:border-white/40 shadow-[0_32px_100px_rgba(0,0,0,0.95)] overflow-hidden select-none transition-transform duration-100 ease-out cursor-pointer touch-pan-y"
       >
         {/* Dynamic Cursor Spotlight Effect */}
         <div

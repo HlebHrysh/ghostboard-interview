@@ -14,6 +14,7 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
+  Laptop,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ROLE_PRESETS } from "@/components/CandidateProfileModal";
@@ -39,10 +40,14 @@ export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [emailTakenError, setEmailTakenError] = useState(false);
+  const [isDesktopClient, setIsDesktopClient] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const search = new URLSearchParams(window.location.search);
+      if (search.get("client") === "desktop") {
+        setIsDesktopClient(true);
+      }
       const emailParam = search.get("email");
       if (emailParam) {
         setEmail(emailParam);
@@ -260,65 +265,82 @@ export default function SignupPage() {
         className="md:w-7/12 p-8 md:p-14 flex flex-col justify-center"
       >
         <div className="max-w-xl w-full mx-auto bento-card p-6 sm:p-9 bg-[#08080c]/90 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
+          {/* Desktop App Auth Indicator Banner */}
+          {isDesktopClient && (
+            <div className="mb-6 p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono space-y-1 text-cyan-300">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <Laptop className="w-4 h-4 text-cyan-400" />
+                <span>{locale === 'ua' ? 'Реєстрація для Ghostboard Desktop' : 'Sign Up for Ghostboard Desktop'}</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 font-sans leading-relaxed">
+                {locale === 'ua'
+                  ? 'Після створення акаунта токен автоматично передасться в десктопний додаток.'
+                  : 'After creating an account, your session token will automatically transfer to the desktop app.'}
+              </p>
+            </div>
+          )}
+
           {/* STEP 1: ROLE */}
           {step === 1 && (
-            <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="space-y-5 animate-in fade-in duration-300">
               <div>
                 <span className="text-[11px] font-mono text-zinc-300 uppercase tracking-wider">{t.stepIndicator(1, 3)}</span>
-                <h3 className="text-2xl font-black text-white mt-1">{t.roleStepTitle}</h3>
-                <p className="text-xs text-zinc-400 mt-1">{t.roleStepDesc}</p>
+                <h3 className="text-xl sm:text-2xl font-black text-white mt-1">{t.roleStepTitle}</h3>
+                <p className="text-xs text-zinc-400 mt-0.5">{t.roleStepDesc}</p>
               </div>
 
-              <div className="grid grid-cols-1 gap-2.5">
-                {t.roles.map((r) => (
-                  <button
-                    key={r.key}
-                    type="button"
-                    onClick={() => {
-                      setIsCustomRole(false);
-                      setSelectedRole(r.key);
-                    }}
-                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                      !isCustomRole && selectedRole === r.key
-                        ? "bg-white/10 border-white/40 shadow-[0_0_25px_rgba(255,255,255,0.08)]"
-                        : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3.5">
-                      <span className="text-2xl">{r.icon}</span>
-                      <div>
-                        <div className="text-sm font-bold text-white font-mono">{r.label}</div>
-                        <div className="text-xs text-zinc-400 font-sans mt-0.5">{r.desc}</div>
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {t.roles.map((r) => (
+                    <button
+                      key={r.key}
+                      type="button"
+                      onClick={() => {
+                        setIsCustomRole(false);
+                        setSelectedRole(r.key);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                        !isCustomRole && selectedRole === r.key
+                          ? "bg-white/10 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.08)] ring-1 ring-white/20"
+                          : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-xl shrink-0">{r.icon}</span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white font-mono truncate">{r.label}</div>
+                          <div className="text-[10px] text-zinc-400 font-sans truncate">{r.desc}</div>
+                        </div>
                       </div>
-                    </div>
-                    {!isCustomRole && selectedRole === r.key && <Check className="w-5 h-5 text-white" />}
-                  </button>
-                ))}
+                      {!isCustomRole && selectedRole === r.key && <Check className="w-4 h-4 text-white shrink-0" />}
+                    </button>
+                  ))}
+                </div>
 
                 {/* Custom Role / Job Title Card */}
                 <div
                   onClick={() => setIsCustomRole(true)}
-                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col gap-2.5 ${
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col gap-2 ${
                     isCustomRole
-                      ? "bg-white/10 border-white/40 shadow-[0_0_25px_rgba(255,255,255,0.08)]"
+                      ? "bg-white/10 border-white/40 shadow-[0_0_20px_rgba(255,255,255,0.08)] ring-1 ring-white/20"
                       : "bg-[#0d0d13] border-white/[0.08] hover:border-white/20"
                   }`}
                 >
                   <div className="flex items-center justify-between w-full">
-                    <div className="flex items-center gap-3.5">
-                      <span className="text-2xl">🎯</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl shrink-0">🎯</span>
                       <div>
-                        <div className="text-sm font-bold text-white font-mono">
+                        <div className="text-xs font-bold text-white font-mono">
                           {locale === "ua" ? "Власна посада / Вакансія" : "Custom Target Role / Vacancy"}
                         </div>
-                        <div className="text-xs text-zinc-400 font-sans mt-0.5">
+                        <div className="text-[10px] text-zinc-400 font-sans">
                           {locale === "ua"
-                            ? "Введіть точну назву вакансії або компанії, куди проходите співбесіду"
-                            : "Type the exact job title or company you are preparing to interview for"}
+                            ? "Введіть точну назву вакансії для персоналізованого контексту AI"
+                            : "Enter target job title for custom AI context"}
                         </div>
                       </div>
                     </div>
-                    {isCustomRole && <Check className="w-5 h-5 text-white" />}
+                    {isCustomRole && <Check className="w-4 h-4 text-white shrink-0" />}
                   </div>
 
                   {isCustomRole && (
@@ -333,7 +355,7 @@ export default function SignupPage() {
                             ? "Наприклад: Senior Golang Developer у FinTech або Lead AI Engineer"
                             : "e.g. Senior Golang Developer at FinTech or Lead AI Engineer"
                         }
-                        className="w-full bg-[#12121a] border border-white/15 focus:border-white/40 focus:ring-1 focus:ring-white/20 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none font-sans"
+                        className="w-full bg-[#12121a] border border-white/15 focus:border-white/40 focus:ring-1 focus:ring-white/20 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none font-sans"
                       />
                     </div>
                   )}

@@ -123,24 +123,33 @@ export function LandingHero({ t }: Props) {
           </span>
         </motion.h1>
 
-        {/* Subtitle */}
+        {/* Subtitle - 2 short punchy lines */}
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-6 text-base sm:text-xl text-zinc-400 max-w-2xl leading-relaxed font-normal"
+          className="mt-6 text-base sm:text-xl text-zinc-300 max-w-2xl leading-relaxed font-normal"
         >
-          {t.hero.subtitle}
+          <span className="block font-medium text-zinc-200">
+            {locale === 'ua'
+              ? 'Невидимий для рекрутерів телесуфлер на рівні ядра ОС.'
+              : 'Undetectable OS-level prompter for live technical interviews.'}
+          </span>
+          <span className="block text-zinc-400 mt-1">
+            {locale === 'ua'
+              ? 'Миттєві відповіді за твоїм резюме за 350 мс прямо під час дзвінка.'
+              : 'Instant resume-tailored answers in 350ms right under your webcam.'}
+          </span>
         </motion.p>
 
-        {/* Primary Actions: Smart OS-Aware CTA + Secondary Try Simulator */}
+        {/* Primary Actions: Exactly 2 Main Actions (Download Desktop & Launch in Browser) */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-          className="mt-10 flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto"
+          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto"
         >
-          {/* Smart OS-Aware Download Dropdown Button */}
+          {/* Action 1: Smart OS-Aware Download Dropdown Button */}
           <div className="relative w-full sm:w-auto">
             <div className="flex items-center rounded-xl bg-white text-zinc-950 shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:shadow-[0_0_50px_rgba(255,255,255,0.3)] transition-all">
               <a
@@ -218,37 +227,30 @@ export function LandingHero({ t }: Props) {
             )}
           </div>
 
-          {/* Secondary Action: Jump to Interactive Simulator */}
-          <a
-            href="#simulator"
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.08] border border-white/[0.12] text-sm font-medium text-zinc-200 hover:text-white transition-all backdrop-blur-md cursor-pointer"
+          {/* Action 2: Launch in Browser */}
+          <Link
+            href="/interview"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.15] text-sm font-semibold text-white transition-all backdrop-blur-md cursor-pointer hover:shadow-[0_0_30px_rgba(255,255,255,0.1)] active:scale-[0.98]"
           >
-            <span>{t.hero.ctaSecondary}</span>
+            <Sparkles className="w-4 h-4 text-emerald-400" />
+            <span>{locale === 'ua' ? 'Запустити в браузері' : 'Launch in Browser'}</span>
             <ChevronRight className="w-4 h-4 text-zinc-400" />
-          </a>
+          </Link>
         </motion.div>
 
-        {/* Safety Proof Subtext & Live Audio Check */}
+        {/* Safety Proof Subtext (Without redundant links) */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.4 }}
-          className="mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-zinc-500"
+          className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-zinc-400"
         >
-          <span className="inline-flex items-center gap-1.5 text-zinc-400">
+          <span className="inline-flex items-center gap-1.5 text-zinc-300">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             {t.hero.proofSafety}
           </span>
           <span className="text-zinc-700">•</span>
-          <Link
-            href="/interview"
-            className="inline-flex items-center gap-1 text-zinc-400 hover:text-zinc-200 transition-colors underline decoration-white/20 underline-offset-4"
-          >
-            <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
-            {t.hero.ctaSoundcheck}
-          </Link>
-          <span className="text-zinc-700">•</span>
-          <span className="text-zinc-500">{t.downloadCta.versionInfo}</span>
+          <span className="text-zinc-500 font-mono">{t.downloadCta.versionInfo}</span>
         </motion.div>
 
         {/* Proof Counters Matrix */}

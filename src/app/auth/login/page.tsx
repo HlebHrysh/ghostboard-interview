@@ -14,6 +14,7 @@ import {
   EyeOff,
   UserPlus,
   AlertTriangle,
+  Laptop,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
@@ -33,6 +34,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [userNotFound, setUserNotFound] = useState(false);
   const [notFoundEmail, setNotFoundEmail] = useState("");
+  const [isDesktopClient, setIsDesktopClient] = useState(false);
 
   const getDestination = () => {
     if (typeof window !== "undefined") {
@@ -51,6 +53,10 @@ export default function LoginPage() {
       const client = search.get("client");
       const redirectUri = search.get("redirect_uri");
       const stateParam = search.get("state");
+
+      if (client === "desktop") {
+        setIsDesktopClient(true);
+      }
 
       // Auto-redirect if already authenticated and requested by desktop
       if (client === "desktop" && redirectUri && stateParam) {
@@ -276,6 +282,21 @@ export default function LoginPage() {
               {t.portalDesc}
             </p>
           </div>
+
+          {/* Desktop App Auth Indicator Banner */}
+          {isDesktopClient && (
+            <div className="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono space-y-1 text-cyan-300">
+              <div className="flex items-center gap-2 font-bold text-white">
+                <Laptop className="w-4 h-4 text-cyan-400" />
+                <span>{locale === 'ua' ? 'Вхід для Ghostboard Desktop' : 'Sign In for Ghostboard Desktop'}</span>
+              </div>
+              <p className="text-[11px] text-zinc-300 font-sans leading-relaxed">
+                {locale === 'ua'
+                  ? 'Після авторизації токен автоматично передасться в десктопний додаток.'
+                  : 'After signing in, your session token will automatically transfer to the desktop app.'}
+              </p>
+            </div>
+          )}
 
 
 

@@ -20,6 +20,7 @@ import {
   Cpu,
   Loader2,
   Save,
+  Building2,
 } from 'lucide-react';
 import {
   CandidateProfile,
@@ -55,12 +56,11 @@ export function CandidateProfileModal({
 }: CandidateProfileModalProps) {
   const [profile, setProfile] = useState<CandidateProfile>(DEFAULT_CANDIDATE_PROFILE);
   const [newTag, setNewTag] = useState('');
-  const [activeTab, setActiveTab] = useState<'profile' | 'projects'>('profile');
+  const [activeTab, setActiveTab] = useState<'resume_stack' | 'context_style'>('resume_stack');
   const [isDragging, setIsDragging] = useState(false);
   const [isParsingPdf, setIsParsingPdf] = useState(false);
   const [parsingStep, setParsingStep] = useState('');
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const [showProjects, setShowProjects] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -272,29 +272,29 @@ export function CandidateProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[600] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[600] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-200">
       {/* Outer Luxury Obsidian Window */}
-      <div className="relative w-full max-w-4xl max-h-[92vh] bg-[#08090a] border border-white/[0.12] rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_35px_rgba(255,255,255,0.03)] text-zinc-100 flex flex-col overflow-hidden ring-1 ring-white/[0.05]">
+      <div className="relative w-full max-w-3xl max-h-[92vh] bg-[#08090a] border border-white/[0.12] rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_35px_rgba(255,255,255,0.03)] text-zinc-100 flex flex-col overflow-hidden ring-1 ring-white/[0.05]">
         
         {/* Ambient Top Glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-24 bg-gradient-to-b from-violet-500/10 via-cyan-500/5 to-transparent blur-2xl pointer-events-none" />
 
         {/* Modal Header */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#0c0e12]/90 backdrop-blur-xl flex-shrink-0">
+        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[#0c0e12]/95 backdrop-blur-xl flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-cyan-500/20 border border-white/10 flex items-center justify-center text-zinc-200 shadow-inner">
-              <Briefcase className="w-5 h-5 text-violet-300" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/20 to-cyan-500/20 border border-white/10 flex items-center justify-center text-zinc-200 shadow-inner">
+              <Briefcase className="w-4 h-4 text-violet-300" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-semibold text-white tracking-tight">
+                <h2 className="text-sm sm:text-base font-semibold text-white tracking-tight">
                   Профіль кандидата & Резюме
                 </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
-                  AI Context Injection
+                <span className="px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-violet-500/20 text-violet-300 border border-violet-500/30">
+                  AI Context
                 </span>
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5">
+              <p className="text-[11px] text-zinc-400 mt-0.5 hidden sm:block">
                 Персоналізація відповідей AI під вашу реальну сеньйорність, стек та архітектурні проекти
               </p>
             </div>
@@ -307,7 +307,7 @@ export function CandidateProfileModal({
               className="p-1.5 rounded-lg border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-zinc-400 hover:text-white transition-all text-xs flex items-center gap-1 cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Скинути</span>
+              <span className="hidden sm:inline text-[11px]">Скинути</span>
             </button>
             <button
               onClick={onClose}
@@ -318,6 +318,43 @@ export function CandidateProfileModal({
           </div>
         </div>
 
+        {/* 2 Compact Tab Headers */}
+        <div className="flex items-center px-5 border-b border-white/[0.08] bg-[#0a0c10] gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('resume_stack')}
+            className={`py-2 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+              activeTab === 'resume_stack'
+                ? 'border-violet-500 text-white bg-white/[0.03]'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-violet-400" />
+            <span>Резюме та Стек</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-white/10 text-zinc-300 border border-white/10">
+              {profile.techStack.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('context_style')}
+            className={`py-2 px-3 text-xs font-semibold flex items-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+              activeTab === 'context_style'
+                ? 'border-cyan-500 text-white bg-white/[0.03]'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Контекст та Стиль ШІ</span>
+            {(profile.petProjects?.length || 0) > 0 && (
+              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                {profile.petProjects?.length}
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* Status Notification Banner */}
         <AnimatePresence>
           {statusMessage && (
@@ -325,7 +362,7 @@ export function CandidateProfileModal({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className={`px-6 py-2.5 text-xs flex items-center gap-2 border-b transition-colors ${
+              className={`px-5 py-2 text-xs flex items-center gap-2 border-b transition-colors shrink-0 ${
                 statusMessage.type === 'success'
                   ? 'bg-emerald-950/60 border-emerald-500/30 text-emerald-300'
                   : statusMessage.type === 'error'
@@ -334,276 +371,290 @@ export function CandidateProfileModal({
               }`}
             >
               {statusMessage.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
               ) : statusMessage.type === 'error' ? (
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
               ) : (
-                <Sparkles className="w-4 h-4 flex-shrink-0" />
+                <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
               )}
               <span>{statusMessage.text}</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Modal Scrollable Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          
-          {/* Section 1: Resume Upload / Drag & Drop */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
-                <UploadCloud className="w-3.5 h-3.5 text-cyan-400" />
-                Імпорт резюме (PDF)
-              </label>
-              <span className="text-[11px] text-zinc-500">Автоматичне вилучення навичок та проектів</span>
-            </div>
+        {/* Tab 1 Content: Резюме та Стек */}
+        {activeTab === 'resume_stack' && (
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {/* Target Role & Quick Presets */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <User className="w-3 h-3 text-violet-400" />
+                  Цільова роль (Target Role)
+                </label>
+                <span className="text-[10px] text-zinc-500">Швидкі пресети:</span>
+              </div>
 
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`relative border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all duration-200 ${
-                isDragging
-                  ? 'border-cyan-400 bg-cyan-500/10 scale-[1.005]'
-                  : 'border-white/[0.12] bg-[#0c0e14]/60 hover:bg-[#10131a] hover:border-white/20'
-              }`}
-            >
               <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,application/pdf"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    handleFileUpload(e.target.files[0]);
-                  }
-                }}
+                type="text"
+                value={profile.role}
+                onChange={(e) => setProfile((p) => ({ ...p, role: e.target.value }))}
+                placeholder="e.g. Senior Backend Developer (Python / Go / PostgreSQL)"
+                className="w-full px-3 py-2 rounded-xl bg-[#0c0e14] border border-white/[0.12] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-xs text-zinc-100 placeholder-zinc-600 outline-none transition-all"
               />
 
-              {isParsingPdf ? (
-                <div className="flex flex-col items-center justify-center py-2 space-y-2">
-                  <Loader2 className="w-7 h-7 text-cyan-400 animate-spin" />
-                  <p className="text-sm font-medium text-cyan-300">{parsingStep}</p>
-                  <p className="text-xs text-zinc-500">Multimodal Gemini Flash parser</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-1 space-y-1.5">
-                  <div className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-300 mb-1">
-                    <FileText className="w-5 h-5" />
-                  </div>
-                  <p className="text-sm font-medium text-zinc-200">
-                    Перетягніть PDF резюме сюди або <span className="text-cyan-400 underline underline-offset-4">оберіть файл</span>
-                  </p>
-                  <p className="text-[11px] text-zinc-500">
-                    Підтримуються стандартні PDF до 15 МБ. AI вилучить стек, роль, проекти та налаштує тон відповідей.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Section 2: Target Role & Quick Presets */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
-                <User className="w-3.5 h-3.5 text-violet-400" />
-                Цільова роль (Target Role)
-              </label>
-              <span className="text-[11px] text-zinc-500">Швидкі пресети за напрямками:</span>
-            </div>
-
-            <input
-              type="text"
-              value={profile.role}
-              onChange={(e) => setProfile((p) => ({ ...p, role: e.target.value }))}
-              placeholder="e.g. Senior Backend Developer (Python / Go / PostgreSQL)"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0e14] border border-white/[0.12] focus:border-violet-500 focus:ring-1 focus:ring-violet-500 text-sm text-zinc-100 placeholder-zinc-600 outline-none transition-all"
-            />
-
-            {/* Quick Role Presets Chips */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {Object.entries(ROLE_PRESETS).map(([key, preset]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => handleApplyPreset(key)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
-                    profile.role === preset.role
-                      ? 'bg-violet-500/25 border-violet-500/60 text-violet-200 shadow-[0_0_12px_rgba(139,92,246,0.3)]'
-                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 3: Experience Level (Junior, Middle, Senior, Lead, Principal) */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                Рівень досвіду (Seniority Level)
-              </label>
-              <span className="text-[11px] text-zinc-500">Визначає глибину архітектурних trade-offs</span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {EXPERIENCE_LEVELS.map((lvl) => {
-                const isSelected = profile.experienceLevel === lvl.id;
-                return (
+              {/* Quick Role Presets Chips */}
+              <div className="flex flex-wrap gap-1 pt-0.5">
+                {Object.entries(ROLE_PRESETS).map(([key, preset]) => (
                   <button
-                    key={lvl.id}
+                    key={key}
                     type="button"
-                    onClick={() => setProfile((p) => ({ ...p, experienceLevel: lvl.id }))}
-                    className={`flex flex-col items-center justify-center p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
-                      isSelected
-                        ? `${lvl.colorClass} shadow-[0_0_15px_rgba(255,255,255,0.06)] ring-1 ring-white/20 font-bold scale-[1.02]`
-                        : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/10 text-zinc-400 hover:text-zinc-200'
+                    onClick={() => handleApplyPreset(key)}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium border transition-all cursor-pointer ${
+                      profile.role === preset.role
+                        ? 'bg-violet-500/25 border-violet-500/60 text-violet-200'
+                        : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/10 text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    <span className="text-xs uppercase tracking-wider font-mono">{lvl.badge}</span>
-                    <span className="text-[10px] text-zinc-400 mt-1 line-clamp-1">{lvl.label}</span>
+                    {preset.label}
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 4: Core Tech Stack (Tag Input + Suggestions) */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
-                <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                Основний технологічний стек
-              </label>
-              <span className="text-[11px] text-zinc-500">{profile.techStack.length} навичок</span>
+                ))}
+              </div>
             </div>
 
-            {/* Tag List Container */}
-            <div className="p-3 rounded-xl bg-[#0c0e14] border border-white/[0.12] flex flex-wrap gap-1.5 min-h-[52px] items-center">
-              {profile.techStack.map((tech) => (
-                <span
-                  key={tech}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-200"
-                >
-                  {tech}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tech)}
-                    className="hover:text-rose-400 transition-colors cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
+            {/* Experience Level */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  Рівень досвіду (Seniority Level)
+                </label>
+                <span className="text-[10px] text-zinc-500">Глибина аргументації та trade-offs</span>
+              </div>
 
-              <div className="inline-flex items-center gap-1 flex-1 min-w-[140px]">
+              <div className="grid grid-cols-5 gap-1.5">
+                {EXPERIENCE_LEVELS.map((lvl) => {
+                  const isSelected = profile.experienceLevel === lvl.id;
+                  return (
+                    <button
+                      key={lvl.id}
+                      type="button"
+                      onClick={() => setProfile((p) => ({ ...p, experienceLevel: lvl.id }))}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                        isSelected
+                          ? `${lvl.colorClass} ring-1 ring-white/20 font-bold scale-[1.02]`
+                          : 'bg-white/[0.03] hover:bg-white/[0.06] border-white/10 text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <span className="text-[11px] uppercase tracking-wider font-mono">{lvl.badge}</span>
+                      <span className="text-[9px] text-zinc-400 mt-0.5 line-clamp-1">{lvl.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Resume Upload / Drag & Drop */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <UploadCloud className="w-3 h-3 text-cyan-400" />
+                  Імпорт резюме (PDF)
+                </label>
+                <span className="text-[10px] text-zinc-500">Автоматичне вилучення навичок</span>
+              </div>
+
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                className={`relative border border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all duration-200 ${
+                  isDragging
+                    ? 'border-cyan-400 bg-cyan-500/10 scale-[1.005]'
+                    : 'border-white/[0.12] bg-[#0c0e14]/60 hover:bg-[#10131a] hover:border-white/20'
+                }`}
+              >
                 <input
-                  type="text"
-                  value={newTag}
-                  onChange={(e) => setNewTag(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                      e.preventDefault();
-                      handleAddTag();
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      handleFileUpload(e.target.files[0]);
                     }
                   }}
-                  placeholder="Додати навичку (Enter)..."
-                  className="w-full bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none px-1 py-0.5"
                 />
-                {newTag.trim() && (
-                  <button
-                    type="button"
-                    onClick={handleAddTag}
-                    className="p-1 rounded bg-white/10 hover:bg-white/20 text-white text-xs cursor-pointer"
-                  >
-                    <Plus className="w-3 h-3" />
-                  </button>
+
+                {isParsingPdf ? (
+                  <div className="flex items-center justify-center gap-3 py-1">
+                    <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                    <div className="text-left">
+                      <p className="text-xs font-medium text-cyan-300">{parsingStep}</p>
+                      <p className="text-[10px] text-zinc-500">Gemini Flash Multimodal Parser</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center gap-2.5 py-0.5">
+                    <div className="w-7 h-7 rounded-full bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-300 shrink-0">
+                      <FileText className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-xs font-medium text-zinc-200">
+                        Перетягніть PDF або <span className="text-cyan-400 underline underline-offset-2">оберіть файл</span>
+                      </p>
+                      <p className="text-[10px] text-zinc-500">
+                        Вилучить стек, роль, проекти та налаштує тон відповідей (до 15 МБ).
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Popular Suggestions */}
-            <div className="flex flex-wrap items-center gap-1 pt-0.5">
-              <span className="text-[11px] text-zinc-500 mr-1">Популярні:</span>
-              {POPULAR_TECH_SUGGESTIONS.filter((s) => !profile.techStack.includes(s)).slice(0, 10).map((tech) => (
-                <button
-                  key={tech}
-                  type="button"
-                  onClick={() => handleAddPopularTag(tech)}
-                  className="px-2 py-0.5 rounded text-[11px] bg-white/[0.03] hover:bg-emerald-500/15 hover:border-emerald-500/30 hover:text-emerald-300 border border-white/10 text-zinc-400 transition-all cursor-pointer"
-                >
-                  + {tech}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Section 5: Custom Bio & Background Context */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
-                <FileText className="w-3.5 h-3.5 text-blue-400" />
-                Бекграунд та інструкції до стилю відповідей (Custom Bio)
-              </label>
-              <span className="text-[11px] text-zinc-500">Впливає на формулювання AI</span>
-            </div>
-
-            <textarea
-              rows={4}
-              value={profile.customBio}
-              onChange={(e) => setProfile((p) => ({ ...p, customBio: e.target.value }))}
-              placeholder="Короткий бекграунд, ключові досягнення, улюблені патерни (Clean Architecture, CQRS) та директиви стилю (наприклад: 'відповідати від першого лиця, з реальними кейсами, впевнено і по-простому')."
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#0c0e14] border border-white/[0.12] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-zinc-100 placeholder-zinc-600 outline-none transition-all leading-relaxed"
-            />
-          </div>
-
-          {/* Section 6: Pet Projects / Production Highlights (Expandable) */}
-          <div className="border border-white/[0.08] rounded-xl overflow-hidden bg-[#0a0c10]">
-            <button
-              type="button"
-              onClick={() => setShowProjects((p) => !p)}
-              className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-white/[0.03] transition-colors cursor-pointer"
-            >
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-violet-400" />
-                <span className="text-xs font-semibold text-zinc-200">
-                  Ключові проекти та архітектурні кейси ({profile.petProjects?.length || 0})
-                </span>
+            {/* Core Tech Stack */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Code2 className="w-3 h-3 text-emerald-400" />
+                  Основний технологічний стек
+                </label>
+                <span className="text-[10px] text-zinc-500">{profile.techStack.length} навичок</span>
               </div>
-              <div className="flex items-center gap-1 text-zinc-500">
-                <span className="text-[11px]">{showProjects ? 'Згорнути' : 'Розгорнути'}</span>
-                {showProjects ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </div>
-            </button>
 
-            {showProjects && (
-              <div className="p-4 border-t border-white/[0.08] space-y-4 bg-black/30">
-                <div className="flex justify-between items-center">
-                  <p className="text-[11px] text-zinc-400">
-                    AI посилатиметься на ці проекти при запитаннях "Розкажіть про ваш досвід"
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleAddProject}
-                    className="px-2.5 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/40 text-violet-300 text-xs font-medium flex items-center gap-1 cursor-pointer"
+              <div className="p-2.5 rounded-xl bg-[#0c0e14] border border-white/[0.12] flex flex-wrap gap-1.5 min-h-[44px] items-center">
+                {profile.techStack.map((tech) => (
+                  <span
+                    key={tech}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/15 border border-emerald-500/30 text-emerald-200"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Додати проект
-                  </button>
-                </div>
+                    {tech}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveTag(tech)}
+                      className="hover:text-rose-400 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
 
-                <div className="space-y-3">
-                  {(profile.petProjects || []).map((proj, idx) => (
+                <div className="inline-flex items-center gap-1 flex-1 min-w-[120px]">
+                  <input
+                    type="text"
+                    value={newTag}
+                    onChange={(e) => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                    }}
+                    placeholder="Додати навичку (Enter)..."
+                    className="w-full bg-transparent text-xs text-zinc-200 placeholder-zinc-600 outline-none px-1 py-0.5"
+                  />
+                  {newTag.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleAddTag}
+                      className="p-1 rounded bg-white/10 hover:bg-white/20 text-white text-xs cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Popular Suggestions */}
+              <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                <span className="text-[10px] text-zinc-500 mr-1">Популярні:</span>
+                {POPULAR_TECH_SUGGESTIONS.filter((s) => !profile.techStack.includes(s)).slice(0, 8).map((tech) => (
+                  <button
+                    key={tech}
+                    type="button"
+                    onClick={() => handleAddPopularTag(tech)}
+                    className="px-2 py-0.5 rounded text-[10px] bg-white/[0.03] hover:bg-emerald-500/15 hover:border-emerald-500/30 hover:text-emerald-300 border border-white/10 text-zinc-400 transition-all cursor-pointer"
+                  >
+                    + {tech}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2 Content: Контекст та Стиль ШІ */}
+        {activeTab === 'context_style' && (
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+            {/* Target Company */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Building2 className="w-3 h-3 text-cyan-400" />
+                  Цільова компанія (Target Company)
+                </label>
+                <span className="text-[10px] text-zinc-500">Адаптація цінностей та стандартів</span>
+              </div>
+
+              <input
+                type="text"
+                value={profile.targetCompany || ''}
+                onChange={(e) => setProfile((p) => ({ ...p, targetCompany: e.target.value }))}
+                placeholder="e.g. Google, Revolut, Stripe, Booking.com, Genesis"
+                className="w-full px-3 py-2 rounded-xl bg-[#0c0e14] border border-white/[0.12] focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 text-xs text-zinc-100 placeholder-zinc-600 outline-none transition-all"
+              />
+            </div>
+
+            {/* Custom Bio & Style Directives */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <FileText className="w-3 h-3 text-blue-400" />
+                  Бекграунд та інструкції до стилю відповідей (Custom Bio)
+                </label>
+                <span className="text-[10px] text-zinc-500">Впливає на формулювання AI</span>
+              </div>
+
+              <textarea
+                rows={3}
+                value={profile.customBio}
+                onChange={(e) => setProfile((p) => ({ ...p, customBio: e.target.value }))}
+                placeholder="Короткий бекграунд, ключові досягнення, улюблені патерни (Clean Architecture, CQRS) та директиви стилю (наприклад: 'відповідати від першого лиця, з реальними кейсами, впевнено і по-простому')."
+                className="w-full px-3 py-2 rounded-xl bg-[#0c0e14] border border-white/[0.12] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-xs text-zinc-100 placeholder-zinc-600 outline-none transition-all leading-relaxed"
+              />
+            </div>
+
+            {/* Key Projects & Architectural Cases */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Layers className="w-3 h-3 text-violet-400" />
+                  Ключові проекти та кейси ({profile.petProjects?.length || 0})
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAddProject}
+                  className="px-2 py-1 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 border border-violet-500/40 text-violet-300 text-[11px] font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" />
+                  Додати проект
+                </button>
+              </div>
+
+              {(!profile.petProjects || profile.petProjects.length === 0) ? (
+                <div className="p-4 rounded-xl border border-white/5 bg-[#0c0e14] text-center text-zinc-500 text-xs">
+                  Немає доданих проектів. Натисніть «Додати проект», щоб AI посилався на ваш реальний досвід.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
+                  {profile.petProjects.map((proj, idx) => (
                     <div
                       key={proj.id || idx}
-                      className="p-3 rounded-lg border border-white/10 bg-[#0c0e14] space-y-2 relative"
+                      className="p-3 rounded-xl border border-white/10 bg-[#0c0e14] space-y-1.5 relative"
                     >
                       <div className="flex items-center justify-between gap-2">
                         <input
@@ -618,7 +669,7 @@ export function CandidateProfileModal({
                           onClick={() => handleDeleteProject(proj.id)}
                           className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer transition-colors"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3 h-3" />
                         </button>
                       </div>
 
@@ -640,33 +691,32 @@ export function CandidateProfileModal({
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
+        )}
 
-        </div>
-
-        {/* Modal Footer */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-t border-white/[0.08] bg-[#0c0e12]/95 backdrop-blur-xl flex-shrink-0">
+        {/* Modal Footer (Always Pinned at Bottom) */}
+        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-t border-white/[0.08] bg-[#0c0e12]/95 backdrop-blur-xl flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-            <span className="text-xs text-zinc-400 font-mono">
-              Локальне збереження: <span className="text-zinc-200">активне</span>
+            <span className="text-[11px] text-zinc-400 font-mono">
+              Збереження: <span className="text-zinc-200">локальне</span>
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-xs font-medium text-zinc-300 hover:text-white transition-all cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-xs font-medium text-zinc-300 hover:text-white transition-all cursor-pointer"
             >
               Скасувати
             </button>
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
             >
               <Save className="w-3.5 h-3.5" />
               Зберегти профіль [⌘S]

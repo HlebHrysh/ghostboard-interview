@@ -236,6 +236,12 @@ pub fn open_system_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Native command to open a URL in the user's default system browser
+#[tauri::command]
+fn open_browser(url: String) -> Result<(), String> {
+    open_system_browser(&url).map_err(|e| e.to_string())
+}
+
 /// Initiates OAuth 2.0 PKCE flow and opens system browser
 #[tauri::command]
 async fn start_pkce_login(
@@ -298,6 +304,51 @@ fn get_access_token(
     auth_manager: tauri::State<'_, Arc<AuthManager>>,
 ) -> Result<Option<String>, String> {
     Ok(auth_manager.get_access_token())
+}
+
+/// Stores verified authentication session tokens directly into native OS Keyring
+#[tauri::command]
+async fn save_tokens(
+    token: String,
+    refresh_token: Option<String>,
+    user_id: Option<String>,
+    email: Option<String>,
+    plan: Option<String>,
+    expires_at_ms: Option<u64>,
+    auth_manager: tauri::State<'_, Arc<AuthManager>>,
+    hud_state: tauri::State<'_, HudChannelState>,
+) -> Result<crate::auth::keyring::StoredSession, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let exp = expires_at_ms.unwrap_or(now_ms + 30 * 24 * 3600 * 1000);
+    let u_id = user_id.unwrap_or_else(|| "usr_desktop".to_string());
+    let u_email = email.unwrap_or_else(|| "user@ghostboard.ai".to_string());
+    let u_plan = plan.unwrap_or_else(|| "pro".to_string());
+
+    let session = crate::auth::keyring::StoredSession {
+        access_token: token,
+        refresh_token: refresh_token.unwrap_or_default(),
+        user_id: u_id.clone(),
+        email: u_email.clone(),
+        plan: u_plan.clone(),
+        expires_at_ms: exp,
+    };
+
+    auth_manager.save_session(&session)?;
+
+    hud_state.broadcast(HudEvent::AuthChanged {
+        authenticated: true,
+        user: Some(serde_json::json!({
+            "id": u_id,
+            "email": u_email,
+            "plan": u_plan,
+        })),
+        plan: session.plan.clone(),
+    });
+
+    Ok(session)
 }
 
 /// Clears credentials from OS Keyring and logs user out
@@ -737,7 +788,9 @@ fn main() {
             start_device_code_flow,
             get_auth_state,
             get_access_token,
+            save_tokens,
             capture_screen,
+            open_browser,
             logout,
             crate::updater::check_for_updates,
             crate::updater::install_update
@@ -760,6 +813,22 @@ mod tests {
         let auth = AuthManager::new();
         // Unauthenticated initially
         assert_eq!(auth.get_access_token(), None);
+
+        let session = crate::auth::keyring::StoredSession {
+            access_token: "test_gb_token_abc".to_string(),
+            refresh_token: "test_gb_refresh_xyz".to_string(),
+            user_id: "usr_12345".to_string(),
+            email: "engineer@ghostboard.ai".to_string(),
+            plan: "pro".to_string(),
+            expires_at_ms: 1893456000000,
+        };
+        auth.save_session(&session).expect("session saved");
+        assert_eq!(auth.get_access_token(), Some("test_gb_token_abc".to_string()));
+
+        let state = auth.get_auth_state();
+        assert!(state.authenticated);
+        assert_eq!(state.plan, "pro");
+        assert_eq!(state.user.expect("user").email, "engineer@ghostboard.ai");
     }
 
     #[test]

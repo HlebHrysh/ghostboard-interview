@@ -11,6 +11,7 @@
  */
 
 import type { DesktopMediaSource } from '../types/tauri';
+import { fetchDeepgramKey } from './apiClient';
 
 export type AudioSourceMode = 'system' | 'window' | 'tab' | 'mic';
 export type SpeakerRole = 'interviewer' | 'candidate';
@@ -327,6 +328,141 @@ export class DeepgramStreamClient {
   }
 }
 
+interface SpeechRecognitionResultItem {
+  transcript: string;
+  confidence: number;
+}
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionResultItem;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+}
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+}
+
+export class BrowserSpeechFallback {
+  private recognition: SpeechRecognitionLike | null = null;
+  private shouldRun = false;
+
+  constructor(
+    private readonly speaker: SpeakerRole,
+    private readonly language: string = 'uk',
+    private readonly onTranscript: (event: SpeechTranscriptEvent) => void,
+    private readonly onStateChange?: (speaker: SpeakerRole, state: 'connected' | 'reconnecting' | 'disconnected') => void,
+    private readonly onError?: (err: Error) => void
+  ) {}
+
+  public start(): boolean {
+    if (typeof window === 'undefined') return false;
+    const SpeechRec = (window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).SpeechRecognition || (window as unknown as {
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    }).webkitSpeechRecognition;
+
+    if (!SpeechRec) {
+      return false;
+    }
+
+    this.shouldRun = true;
+    try {
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      const langMap: Record<string, string> = {
+        uk: 'uk-UA',
+        en: 'en-US',
+        pl: 'pl-PL',
+        de: 'de-DE',
+        fr: 'fr-FR',
+        es: 'es-ES',
+        ru: 'ru-RU',
+        auto: 'uk-UA',
+      };
+      recognition.lang = langMap[this.language] || 'uk-UA';
+
+      recognition.onstart = () => {
+        this.onStateChange?.(this.speaker, 'connected');
+      };
+
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        let interim = '';
+        let finalStr = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const item = event.results[i];
+          if (item.isFinal) {
+            finalStr += item[0].transcript + ' ';
+          } else {
+            interim += item[0].transcript;
+          }
+        }
+        const text = (finalStr || interim).trim();
+        if (text) {
+          this.onTranscript({
+            speaker: this.speaker,
+            text,
+            isFinal: Boolean(finalStr),
+            speechFinal: Boolean(finalStr),
+          });
+        }
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error !== 'no-speech') {
+          console.warn(`[BrowserSpeechFallback:${this.speaker}] Speech recognition error:`, e.error);
+        }
+      };
+
+      recognition.onend = () => {
+        if (this.shouldRun) {
+          try {
+            recognition.start();
+          } catch {}
+        } else {
+          this.onStateChange?.(this.speaker, 'disconnected');
+        }
+      };
+
+      this.recognition = recognition;
+      recognition.start();
+      return true;
+    } catch (err) {
+      console.warn(`[BrowserSpeechFallback:${this.speaker}] Failed to start:`, err);
+      this.onError?.(err instanceof Error ? err : new Error(String(err)));
+      return false;
+    }
+  }
+
+  public stop(): void {
+    this.shouldRun = false;
+    if (this.recognition) {
+      try {
+        this.recognition.stop();
+      } catch {}
+      this.recognition = null;
+    }
+    this.onStateChange?.(this.speaker, 'disconnected');
+  }
+}
+
 /**
  * Strict Speaker Separation Guardrail & Dialogue Dispatcher
  * Enforces the HARD BLOCKADE:
@@ -432,6 +568,7 @@ export class DesktopAudioEngine {
   // STT Clients
   private interviewerSttClient: DeepgramStreamClient | null = null;
   private candidateSttClient: DeepgramStreamClient | null = null;
+  private webSpeechFallback: BrowserSpeechFallback | null = null;
 
   // Simulated levels for test environments / soundcheck
   private simulatedInterviewerVol = 0;
@@ -657,11 +794,15 @@ export class DesktopAudioEngine {
       this.animationFrameId = null;
     }
 
-    // 2. Stop Deepgram live STT clients
+    // 2. Stop Deepgram live STT clients and browser speech fallback
     this.interviewerSttClient?.stop();
     this.candidateSttClient?.stop();
     this.interviewerSttClient = null;
     this.candidateSttClient = null;
+    if (this.webSpeechFallback) {
+      try { this.webSpeechFallback.stop(); } catch {}
+      this.webSpeechFallback = null;
+    }
 
     // 3. Disconnect audio processors
     if (this.interviewerProcessor) {
@@ -857,27 +998,48 @@ export class DesktopAudioEngine {
   private async setupDualPcmProcessors(options: DesktopAudioEngineOptions): Promise<void> {
     if (!this.audioContext) return;
 
-    // 1. Initialize Deepgram Live WebSocket clients if apiKey provided
-    if (options.deepgramApiKey) {
+    // 1. Dual Audio Contour: fetch ephemeral Deepgram key if not configured locally
+    let effectiveKey = options.deepgramApiKey;
+    if (!effectiveKey) {
+      try {
+        const fetchedKey = await fetchDeepgramKey();
+        if (fetchedKey) {
+          effectiveKey = fetchedKey;
+          options.deepgramApiKey = fetchedKey;
+        }
+      } catch (err) {
+        console.warn('[DesktopAudioEngine] Ephemeral Deepgram key fetch error:', err);
+      }
+    }
+
+    // 2. Initialize Deepgram Live WebSocket clients if apiKey available
+    if (effectiveKey) {
       this.interviewerSttClient = new DeepgramStreamClient(
         'interviewer',
-        options.deepgramApiKey,
+        effectiveKey,
         options.speechLanguage || 'uk',
         (evt) => options.onTranscript?.(evt),
         options.onSttStateChange,
-        options.onError
+        (err) => {
+          options.onError?.(err);
+          // If Deepgram fails, engage Browser Web Speech fallback
+          this.startBrowserSpeechFallback(options);
+        }
       );
       this.interviewerSttClient.connect();
 
       this.candidateSttClient = new DeepgramStreamClient(
         'candidate',
-        options.deepgramApiKey,
+        effectiveKey,
         options.speechLanguage || 'uk',
         (evt) => options.onTranscript?.(evt),
         options.onSttStateChange,
         options.onError
       );
       this.candidateSttClient.connect();
+    } else {
+      // Ephemeral Deepgram key unavailable or offline: engage Browser Web Speech API fallback
+      this.startBrowserSpeechFallback(options);
     }
 
     // 2. Try loading inlined AudioWorklet
@@ -973,6 +1135,22 @@ export class DesktopAudioEngine {
       }
     } catch (err) {
       console.warn(`[DesktopAudioEngine] Failed to setup ScriptProcessor for ${speaker}:`, err);
+    }
+  }
+
+  private startBrowserSpeechFallback(options: DesktopAudioEngineOptions): void {
+    if (this.webSpeechFallback || !this.isCapturing) return;
+    try {
+      this.webSpeechFallback = new BrowserSpeechFallback(
+        'interviewer',
+        options.speechLanguage || 'uk',
+        (evt) => options.onTranscript?.(evt),
+        options.onSttStateChange,
+        options.onError
+      );
+      this.webSpeechFallback.start();
+    } catch (err) {
+      console.warn('[DesktopAudioEngine] Failed to start BrowserSpeechFallback:', err);
     }
   }
 

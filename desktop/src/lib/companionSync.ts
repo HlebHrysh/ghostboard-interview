@@ -24,6 +24,10 @@ export interface CompanionQAItem {
   question: string;
   startHook?: string;
   quickAnswer: string;
+  shortAnswer?: string;
+  bullets?: string[];
+  code?: string;
+  lang?: string;
   nativeTranslation?: string;
   hints?: string[];
   codeSnippet?: string;
@@ -138,6 +142,8 @@ export function convertStructuredAnswerToCompanionQA(
       question,
       startHook: '',
       quickAnswer: 'Формулюю відповідь...',
+      shortAnswer: 'Формулюю відповідь...',
+      bullets: [],
       hints: [],
       timestamp: Date.now(),
     };
@@ -148,6 +154,10 @@ export function convertStructuredAnswerToCompanionQA(
     question,
     startHook: answer.hook,
     quickAnswer: answer.hook || (answer.pillars?.[0] ?? 'Аналізую запитання...'),
+    shortAnswer: answer.hook || (answer.pillars?.[0] ?? ''),
+    bullets: answer.pillars || [],
+    code: answer.deepDive || '',
+    lang: 'typescript',
     hints: answer.pillars || [],
     codeSnippet: answer.deepDive,
     timestamp: Date.now(),
@@ -465,5 +475,47 @@ export class CompanionSyncManager {
   public syncClear(): void {
     const payload = formatSyncPayload('CLEAR');
     sendCompanionSync(this.serverBaseUrl, payload, this.authToken).catch(() => {});
+  }
+
+  /**
+   * Broadcasts desktop status & heartbeat to /api/desktop/heartbeat
+   */
+  public async sendHeartbeat(data?: {
+    isCapturing?: boolean;
+    state?: 'launcher' | 'stealth' | 'ticker';
+    sttStatus?: string;
+    micStatus?: string;
+    audioLatencyMs?: number;
+  }): Promise<boolean> {
+    const cleanBase = (this.serverBaseUrl || 'http://localhost:3000').replace(/\/+$/, '');
+    const url = `${cleanBase}/api/desktop/heartbeat`;
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-ghostboard-client': 'desktop-app',
+    };
+    if (this.authToken) {
+      headers['Authorization'] = `Bearer ${this.authToken}`;
+    }
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          token: this.authToken,
+          platform: typeof navigator !== 'undefined' ? (navigator.userAgent.includes('Mac') ? 'darwin' : navigator.userAgent.includes('Win') ? 'win32' : 'linux') : 'linux',
+          appVersion: '1.2.0',
+          state: data?.state || 'launcher',
+          isCapturing: Boolean(data?.isCapturing),
+          sttStatus: data?.sttStatus || 'idle',
+          micStatus: data?.micStatus || 'active',
+          audioLatencyMs: data?.audioLatencyMs || 25,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 }

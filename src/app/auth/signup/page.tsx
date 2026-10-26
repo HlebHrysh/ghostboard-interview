@@ -65,8 +65,35 @@ export default function SignupPage() {
         );
       } else if (error === "access_denied") {
         toast.info(locale === "ua" ? "Реєстрацію скасовано" : "Registration cancelled");
-      } else if (error) {
-        toast.error(locale === "ua" ? "Помилка авторизації через " + provider : "Authentication error with " + provider);
+      }
+      const handshake = search.get("handshake");
+      if (handshake) {
+        fetch("/api/auth/me")
+          .then((r) => r.json())
+          .then((meData) => {
+            if (meData?.authenticated && meData.user) {
+              fetch("/api/auth/desktop-bind", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ handshakeId: handshake }),
+              })
+                .then((r) => r.json())
+                .then((bindData) => {
+                  if (bindData?.success) {
+                    toast.success(
+                      locale === "ua"
+                        ? "Десктоп успішно авторизовано! Можете повернутися до програми."
+                        : "Desktop app authorized! You can return to the application."
+                    );
+                    setTimeout(() => {
+                      window.location.href = `ghostboard://auth?token=${bindData?.user?.id || ""}&handshake=${handshake}`;
+                    }, 500);
+                  }
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
       }
     }
   }, [locale]);
@@ -176,6 +203,23 @@ export default function SignupPage() {
         localStorage.setItem("ghostboard_auth_user", JSON.stringify(data.user));
       }
       toast.success(t.toastSuccess(selectedRole));
+
+      const handshake = search.get("handshake");
+      if (handshake && data?.token) {
+        await fetch("/api/auth/desktop-bind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handshakeId: handshake, token: data.token }),
+        }).catch(() => {});
+        toast.success(
+          locale === "ua"
+            ? "Десктоп успішно авторизовано! Можете повернутися до застосунку."
+            : "Desktop authorized! You can return to the app."
+        );
+        setTimeout(() => {
+          window.location.href = `ghostboard://auth?token=${data.token}&handshake=${handshake}`;
+        }, 500);
+      }
 
       const redirectUri = search.get("redirect_uri");
       if (redirectUri && client === "desktop" && data?.token) {

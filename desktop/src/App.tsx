@@ -37,6 +37,7 @@ import {
   Smartphone,
   QrCode,
   ArrowDownCircle,
+  LogOut,
 } from 'lucide-react';
 import type { DesktopMediaSource } from './types/tauri';
 import {
@@ -55,6 +56,7 @@ import { AudioWaveform } from './components/AudioWaveform';
 import { DualColumnChat } from './components/DualColumnChat';
 import { EyeLineTeleprompter } from './components/EyeLineTeleprompter';
 import { PanicShield } from './components/PanicShield';
+import { AuthGateScreen } from './components/AuthGateScreen';
 import type { SessionQAItem } from './components/HistoryDrawer';
 const SourcePickerModal = React.lazy(() =>
   import('./components/SourcePickerModal').then((m) => ({ default: m.SourcePickerModal }))
@@ -68,8 +70,16 @@ const CompanionQRModal = React.lazy(() =>
 const HistoryDrawer = React.lazy(() =>
   import('./components/HistoryDrawer').then((m) => ({ default: m.HistoryDrawer }))
 );
-import { CandidateProfile, loadStoredProfile } from './lib/profileStore';
+import { CandidateProfile, loadStoredProfile, updateStoredProfile } from './lib/profileStore';
 import { CompanionSyncManager } from './lib/companionSync';
+import {
+  detectBackendUrl,
+  checkAuth,
+  fetchProfileContext,
+  sendDesktopHeartbeat,
+  clearAuthToken,
+  type UserProfileData,
+} from './lib/apiClient';
 import { useHudStream } from './hooks/useHudStream';
 import {
   setScreenShareStealth,
@@ -110,6 +120,9 @@ export default function App() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [systemInfo, setSystemInfo] = useState<{ platform: string; arch: string; version: string } | null>(null);
   const [sessionUser, setSessionUser] = useState<string | null>(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authUser, setAuthUser] = useState<UserProfileData | null>(null);
   const [activeTab, setActiveTab] = useState<'dialogue' | 'audio' | 'overview' | 'display' | 'shortcuts'>('dialogue');
 
   // Milestone 2 State: Audio Capture & Strict Speaker Separation
@@ -193,14 +206,101 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const isTauriProd = typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('ghostboard_backend_mode') : null;
-    const initialMode: 'local' | 'cloud' = (saved === 'local' || saved === 'cloud') ? saved : (isTauriProd ? 'cloud' : 'local');
-    const initialUrl = initialMode === 'cloud' ? 'https://ghostboard.ai' : 'http://localhost:3001';
-    setBackendMode(initialMode);
-    streamClientRef.current.setBaseUrl(initialUrl);
-    companionSyncRef.current.setBaseUrl(initialUrl);
+    let isMounted = true;
+    (async () => {
+      try {
+        const detectedUrl = await detectBackendUrl();
+        const isCloud = detectedUrl.includes('ghostboard.ai');
+        setBackendMode(isCloud ? 'cloud' : 'local');
+        streamClientRef.current.setBaseUrl(detectedUrl);
+        companionSyncRef.current.setBaseUrl(detectedUrl);
+
+        const authResult = await checkAuth();
+        if (isMounted) {
+          if (authResult.authenticated && authResult.user) {
+            setIsAuthenticated(true);
+            setAuthUser(authResult.user);
+            setSessionUser(authResult.user.email || authResult.user.name || null);
+
+            fetchProfileContext()
+              .then((ctx) => {
+                if (ctx?.candidateProfile) {
+                  const updated = updateStoredProfile(ctx.candidateProfile as Partial<CandidateProfile>);
+                  setCandidateProfile(updated);
+                }
+              })
+              .catch(console.warn);
+          } else {
+            setIsAuthenticated(false);
+            setAuthUser(null);
+          }
+          setIsAuthChecking(false);
+        }
+      } catch (err) {
+        console.warn('[App] Initial auth/url detection error:', err);
+        if (isMounted) {
+          setIsAuthenticated(false);
+          setIsAuthChecking(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  const handleAuthSuccess = useCallback(async (user: UserProfileData, token: string) => {
+    setIsAuthenticated(true);
+    setAuthUser(user);
+    setSessionUser(user.email || user.name || null);
+    companionSyncRef.current.setAuthToken(token);
+
+    try {
+      const ctx = await fetchProfileContext();
+      if (ctx?.candidateProfile) {
+        const updated = updateStoredProfile(ctx.candidateProfile as Partial<CandidateProfile>);
+        setCandidateProfile(updated);
+      }
+    } catch (err) {
+      console.warn('[App] fetchProfileContext error:', err);
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    await clearAuthToken();
+    setIsAuthenticated(false);
+    setAuthUser(null);
+    setSessionUser(null);
+  }, []);
+
+  // Real-time bidirectional telemetry & heartbeat sync
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const sendHeartbeat = () => {
+      companionSyncRef.current.sendHeartbeat({
+        state: mode,
+        isCapturing,
+        sttStatus: isCapturing ? 'active' : 'idle',
+        micStatus: isCapturing ? 'active' : 'idle',
+        audioLatencyMs: 45,
+      });
+      sendDesktopHeartbeat({
+        appVersion: systemInfo?.version || '0.1.0',
+        platform: systemInfo?.platform || 'linux',
+        state: mode,
+        isCapturing,
+        sttStatus: isCapturing ? 'active' : 'idle',
+        micStatus: isCapturing ? 'active' : 'idle',
+        audioLatencyMs: 45,
+      }).catch(() => {});
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 10000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, mode, isCapturing, systemInfo]);
 
   // ── Native Auto-Updater State & Verification ──
   const [updateState, setUpdateState] = useState<{
@@ -1071,6 +1171,27 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
     return <PanicShield onDismiss={() => setIsPanic(false)} isCapturing={isCapturing} />;
   }
 
+  // Auth Gate: Check session before revealing HUD
+  if (isAuthChecking) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#08090a]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
+          <p className="text-xs font-mono text-zinc-400 tracking-wider">ПЕРЕВІРКА СЕСІЇ GHOSTBOARD...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <AuthGateScreen
+        onSuccess={handleAuthSuccess}
+        backendUrl={streamClientRef.current.getBaseUrl()}
+      />
+    );
+  }
+
   // Eyeline Notch View (when in 'notch' or 'ticker' mode)
   if (prompterMode === 'notch' || prompterMode === 'ticker') {
     return (
@@ -1439,6 +1560,22 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             <Terminal className="w-3.5 h-3.5" />
           </button>
 
+          {/* User Session Pill */}
+          {sessionUser && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono text-zinc-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span className="truncate max-w-[100px]">{sessionUser}</span>
+              <button
+                type="button"
+                onClick={handleLogout}
+                title="Вийти з акаунта"
+                className="text-zinc-500 hover:text-rose-400 transition-colors ml-0.5 cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           <div className="w-[1px] h-4 bg-white/10 mx-1" />
 
           {/* Window Minimize & Close */}
@@ -1512,6 +1649,9 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             isStreaming={isStreaming}
             onApplyModifier={handleApplyModifier}
             onQuestionSelect={(q) => triggerCopilotResponse(q)}
+            onQuestionSubmit={(q) => triggerCopilotResponse(q)}
+            onTriggerScreenshot={handleTriggerScreenshot}
+            isCapturingScreen={isCapturingScreen}
             isFrozen={isFrozen}
           />
         )}

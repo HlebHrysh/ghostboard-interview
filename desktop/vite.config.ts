@@ -2,41 +2,44 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
+export default defineConfig(() => {
+  const backendPort = process.env.BACKEND_PORT || process.env.NEXT_PORT || process.env.PORT || '3000';
+  const backendTarget = process.env.VITE_API_URL || `http://localhost:${backendPort}`;
 
-export default defineConfig({
-  // Relative base path is MANDATORY for Tauri webview asset loading
-  base: './',
+  return {
+      // Relative base path is MANDATORY for Tauri webview asset loading
+      base: './',
 
-  // Source root containing index.html and renderer source code
-  root: path.resolve(import.meta.dirname, 'src'),
+      // Source root containing index.html and renderer source code
+      root: path.resolve(import.meta.dirname, 'src'),
 
-  plugins: [
-    react(),
-    tailwindcss(),
-  ],
+      plugins: [
+        react(),
+        tailwindcss(),
+      ],
 
-  resolve: {
-    alias: {
-      '@': path.resolve(import.meta.dirname, 'src'),
-      '@shared': path.resolve(import.meta.dirname, '../src'),
-      '@shared-types': path.resolve(import.meta.dirname, '../src/types'),
-      '@shared-lib': path.resolve(import.meta.dirname, '../src/lib'),
-    },
-  },
-
-  server: {
-    port: 5173,
-    strictPort: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        headers: {
-          origin: 'http://localhost:3001',
-          referer: 'http://localhost:3001',
+      resolve: {
+        alias: {
+          '@': path.resolve(import.meta.dirname, 'src'),
+          '@shared': path.resolve(import.meta.dirname, '../src'),
+          '@shared-types': path.resolve(import.meta.dirname, '../src/types'),
+          '@shared-lib': path.resolve(import.meta.dirname, '../src/lib'),
         },
       },
-    },
+
+      server: {
+        port: 5173,
+        strictPort: true,
+        proxy: {
+          '/api': {
+            target: backendTarget,
+            changeOrigin: true,
+            headers: {
+              origin: backendTarget,
+              referer: backendTarget,
+            },
+          },
+        },
     fs: {
       allow: [
         path.resolve(import.meta.dirname),
@@ -77,4 +80,8 @@ export default defineConfig({
       },
     },
   },
+};
 });
+
+
+

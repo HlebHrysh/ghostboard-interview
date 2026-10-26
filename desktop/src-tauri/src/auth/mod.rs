@@ -126,6 +126,15 @@ impl AuthManager {
         Ok(session)
     }
 
+    /// Stores an externally authenticated session (e.g. from desktop-poll handshake or deep-link) in native OS Keyring
+    pub fn save_session(&self, session: &StoredSession) -> Result<(), String> {
+        self.keyring_store.save(session)?;
+        if let Ok(mut lock) = self.current_session.write() {
+            *lock = Some(session.clone());
+        }
+        Ok(())
+    }
+
     pub fn start_device_code_flow(&self, base_url: Option<&str>) -> Result<DeviceCodeResponse, String> {
         let resp = generate_device_code_session(base_url);
         if let Ok(mut lock) = self.active_device_flow.write() {

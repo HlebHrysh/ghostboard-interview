@@ -447,8 +447,21 @@ export function validateCandidateProfile(profile: Partial<CandidateProfile>): {
   };
 }
 
+export function buildCandidateSystemPrompt(profile: CandidateProfile): string {
+  return `Candidate Role: ${profile.role} (${profile.experienceLevel.toUpperCase()})
+Primary Stack: ${profile.primaryStack}
+Technologies: ${profile.techStack.join(', ')}
+Context & Bio: ${profile.customBio || profile.summary || ''}
+${profile.petProjects && profile.petProjects.length > 0 ? `Key Projects: ${profile.petProjects.map((p) => `${p.name}: ${p.description}`).join('; ')}` : ''}`.trim();
+}
+
+export function getCachedSystemPrompt(): string {
+  const profile = getStoredProfile();
+  return buildCandidateSystemPrompt(profile);
+}
+
 /**
- * Retrieves the stored candidate profile from localStorage with fallback to default.
+ * Retrieves the stored candidate profile with fallback to default.
  */
 export function getStoredProfile(): CandidateProfile {
   if (typeof window === 'undefined') {
@@ -456,7 +469,9 @@ export function getStoredProfile(): CandidateProfile {
   }
   try {
     const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
-    if (!raw) return DEFAULT_CANDIDATE_PROFILE;
+    if (!raw) {
+      return DEFAULT_CANDIDATE_PROFILE;
+    }
     const parsed = JSON.parse(raw);
     const techStack = Array.isArray(parsed.techStack) && parsed.techStack.length > 0
       ? parsed.techStack
@@ -466,7 +481,7 @@ export function getStoredProfile(): CandidateProfile {
 
     const primaryStack = parsed.primaryStack || techStack.join(', ');
 
-    return {
+    const profile: CandidateProfile = {
       role: parsed.role || DEFAULT_CANDIDATE_PROFILE.role,
       primaryStack,
       techStack,
@@ -480,6 +495,7 @@ export function getStoredProfile(): CandidateProfile {
       cvContext: parsed.cvContext || '',
       updatedAt: parsed.updatedAt || Date.now(),
     };
+    return profile;
   } catch (err) {
     console.warn('[profileStore] Error loading stored profile from localStorage:', err);
     return DEFAULT_CANDIDATE_PROFILE;
@@ -493,19 +509,37 @@ export const loadStoredProfile = getStoredProfile;
  * Saves candidate profile to localStorage.
  */
 export function saveStoredProfile(profile: CandidateProfile): void {
+  const toSave: CandidateProfile = {
+    ...profile,
+    experienceLevel: normalizeCandidateLevel(profile.experienceLevel),
+    primaryStack: profile.primaryStack || (profile.techStack || []).join(', '),
+    updatedAt: Date.now(),
+  };
+
   if (typeof window === 'undefined') return;
   try {
-    const toSave: CandidateProfile = {
-      ...profile,
-      experienceLevel: normalizeCandidateLevel(profile.experienceLevel),
-      primaryStack: profile.primaryStack || (profile.techStack || []).join(', '),
-      updatedAt: Date.now(),
-    };
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(toSave));
     localStorage.removeItem(PROFILE_DRAFT_KEY);
   } catch (err) {
     console.warn('[profileStore] Error saving profile to localStorage:', err);
   }
+}
+
+/**
+ * Merges partial updates into stored profile, saves, and returns the updated profile.
+ */
+export function updateStoredProfile(updates: Partial<CandidateProfile>): CandidateProfile {
+  const current = getStoredProfile();
+  const merged: CandidateProfile = {
+    ...current,
+    ...updates,
+    techStack: updates.techStack || current.techStack,
+    experienceLevel: normalizeCandidateLevel(updates.experienceLevel || current.experienceLevel),
+    primaryStack: updates.primaryStack || current.primaryStack || (updates.techStack || current.techStack || []).join(', '),
+    updatedAt: Date.now(),
+  };
+  saveStoredProfile(merged);
+  return merged;
 }
 
 /**

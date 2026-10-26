@@ -15,6 +15,8 @@ import {
   ChevronUp,
   Scale,
   Maximize2,
+  Camera,
+  Send,
 } from 'lucide-react';
 import type { DialogueMessage } from '../lib/audioEngine';
 import type { StructuredAnswerOutput } from '../lib/streamClient';
@@ -27,6 +29,9 @@ export interface DualColumnChatProps {
   isStreaming: boolean;
   onApplyModifier: (modifier: 'shorter' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => void;
   onQuestionSelect?: (question: string) => void;
+  onQuestionSubmit?: (question: string) => void;
+  onTriggerScreenshot?: () => void;
+  isCapturingScreen?: boolean;
   isFrozen: boolean;
 }
 
@@ -235,6 +240,9 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   isStreaming,
   onApplyModifier,
   onQuestionSelect,
+  onQuestionSubmit,
+  onTriggerScreenshot,
+  isCapturingScreen = false,
   isFrozen,
 }) => {
   const [copiedCodeIndex, setCopiedCodeIndex] = useState<number | null>(null);
@@ -243,6 +251,16 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [fontSize, setFontSize] = useState(15);
   const [isCodeExpanded, setIsCodeExpanded] = useState(true);
+  const [manualQuestion, setManualQuestion] = useState('');
+
+  const handleSendManualQuestion = () => {
+    if (!manualQuestion.trim() || isStreaming) return;
+    const q = manualQuestion.trim();
+    setManualQuestion('');
+    if (onQuestionSubmit) {
+      onQuestionSubmit(q);
+    }
+  };
 
   // Proximity scroll references & states
   const dialogueContainerRef = useRef<HTMLDivElement | null>(null);
@@ -504,12 +522,48 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   behavior: 'smooth',
                 });
               }}
-              className="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-1.5 transition-all"
+              className="absolute bottom-14 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-1.5 transition-all"
             >
               <ChevronDown className="w-3.5 h-3.5" /> Нові повідомлення
             </motion.button>
           )}
         </AnimatePresence>
+
+        {/* ── Quick Manual Prompt & Vision Screenshot Bar ── */}
+        <div className="p-2 border-t border-white/[0.08] bg-black/40 flex items-center gap-2 shrink-0">
+          {onTriggerScreenshot && (
+            <button
+              type="button"
+              onClick={onTriggerScreenshot}
+              disabled={isCapturingScreen}
+              title="Зробити знімок екрана та проаналізувати код (Ctrl+Shift+S)"
+              className="p-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 text-xs transition-all flex items-center justify-center shrink-0 cursor-pointer disabled:opacity-50"
+            >
+              <Camera className={`w-3.5 h-3.5 ${isCapturingScreen ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+          <input
+            type="text"
+            value={manualQuestion}
+            onChange={(e) => setManualQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && manualQuestion.trim()) {
+                handleSendManualQuestion();
+              }
+            }}
+            placeholder="Задати запитання вручну..."
+            className="flex-1 px-3 py-1.5 text-xs bg-white/[0.03] border border-white/[0.08] rounded-xl text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-cyan-500/50"
+          />
+          <button
+            type="button"
+            onClick={handleSendManualQuestion}
+            disabled={!manualQuestion.trim() || isStreaming}
+            className="p-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-black text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center justify-center"
+            title="Надіслати запитання"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* ── RIGHT COLUMN: Streaming AI Answers (75% width in Focus Mode) ── */}

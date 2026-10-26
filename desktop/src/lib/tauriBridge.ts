@@ -304,6 +304,9 @@ export async function getAuthState(): Promise<{ authenticated: boolean; user: Us
 
 export async function getAccessToken(): Promise<string | null> {
   if (!isTauriEnvironment()) {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ghostboard_desktop_token');
+    }
     return null;
   }
   try {
@@ -314,12 +317,73 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+/**
+ * Stores verified tokens into the native OS Keyring via Rust IPC
+ */
+export async function saveTokens(
+  token: string,
+  options: {
+    refreshToken?: string;
+    userId?: string;
+    email?: string;
+    plan?: string;
+    expiresAtMs?: number;
+  } = {}
+): Promise<boolean> {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('ghostboard_desktop_token', token);
+    } catch {}
+  }
+
+  if (!isTauriEnvironment()) {
+    return true;
+  }
+
+  try {
+    await invoke('save_tokens', {
+      token,
+      refreshToken: options.refreshToken,
+      userId: options.userId,
+      email: options.email,
+      plan: options.plan || 'pro',
+      expiresAtMs: options.expiresAtMs,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[tauriBridge] save_tokens error:', err);
+    return false;
+  }
+}
+
 export async function logout(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('ghostboard_desktop_token');
+    } catch {}
+  }
   if (!isTauriEnvironment()) return;
   try {
     await invoke('logout');
   } catch (err) {
     console.warn('[tauriBridge] logout error:', err);
+  }
+}
+
+/**
+ * Native command to open a URL in the user's default system browser
+ */
+export async function openBrowser(url: string): Promise<void> {
+  if (isTauriEnvironment()) {
+    try {
+      await invoke('open_browser', { url });
+      return;
+    } catch (err) {
+      console.warn('[tauriBridge] open_browser error:', err);
+    }
+  }
+  if (typeof window !== 'undefined') {
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 }
 
@@ -422,6 +486,7 @@ export function setupWindowCompatibilityShim(): void {
     getAuthState: () => getAuthState(),
     getSavedSession: () => getAuthState(),
     getAccessToken: () => getAccessToken(),
+    saveTokens: (token: string, opts?: any) => saveTokens(token, opts),
     logout: () => logout(),
     getSystemInfo: async () => ({
       platform: typeof navigator !== 'undefined' && navigator.userAgent?.includes('Mac') ? 'darwin' : 'linux',

@@ -53,12 +53,44 @@ export default function LoginPage() {
       const client = search.get("client");
       const redirectUri = search.get("redirect_uri");
       const stateParam = search.get("state");
+      const handshake = search.get("handshake");
 
-      if (client === "desktop") {
+      if (client === "desktop" || handshake) {
         setIsDesktopClient(true);
       }
 
-      // Auto-redirect if already authenticated and requested by desktop
+      // Auto-bind handshake if user is already authenticated in browser
+      if (handshake) {
+        fetch("/api/auth/me")
+          .then((r) => r.json())
+          .then((meData) => {
+            if (meData?.authenticated && meData.user) {
+              fetch("/api/auth/desktop-bind", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ handshakeId: handshake }),
+              })
+                .then((r) => r.json())
+                .then((bindData) => {
+                  if (bindData?.success) {
+                    toast.success(
+                      locale === "ua"
+                        ? "Десктоп успішно авторизовано! Можете повернутися до застосунку."
+                        : "Desktop app authorized! You can return to the application."
+                    );
+                    // Also trigger deep-link fast path
+                    setTimeout(() => {
+                      window.location.href = `ghostboard://auth?token=${bindData?.user?.id || ""}&handshake=${handshake}`;
+                    }, 500);
+                  }
+                })
+                .catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+
+      // Auto-redirect if already authenticated and requested by desktop OAuth
       if (client === "desktop" && redirectUri && stateParam) {
         fetch("/api/auth/desktop-token", { method: "POST" })
           .then((res) => {
@@ -165,8 +197,24 @@ export default function LoginPage() {
       if (data?.user) {
         localStorage.setItem("ghostboard_auth_user", JSON.stringify(data.user));
       }
-      toast.success(t.signInSuccess);
-      
+      const handshake = search.get("handshake");
+      if (handshake && data?.token) {
+        await fetch("/api/auth/desktop-bind", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handshakeId: handshake, token: data.token }),
+        }).catch(() => {});
+        toast.success(
+          locale === "ua"
+            ? "Десктоп авторизовано! Можете повернутися до програми."
+            : "Desktop authorized! You can return to the app."
+        );
+        // Also trigger deep link fast path
+        setTimeout(() => {
+          window.location.href = `ghostboard://auth?token=${data.token}&handshake=${handshake}`;
+        }, 500);
+      }
+
       const redirectUri = search.get("redirect_uri");
       if (redirectUri && search.get("client") === "desktop") {
         window.location.href = `${redirectUri}?token=${data.token}&state=${search.get("state")}`;

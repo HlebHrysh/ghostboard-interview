@@ -194,7 +194,7 @@ export class DeepgramStreamClient {
   constructor(
     private readonly speaker: SpeakerRole,
     private readonly apiKey: string,
-    private readonly language: string = 'uk',
+    private readonly language: string = 'multi',
     private readonly onTranscript: (event: SpeechTranscriptEvent) => void,
     private readonly onStateChange?: (speaker: SpeakerRole, state: 'connected' | 'reconnecting' | 'disconnected') => void,
     private readonly onError?: (err: Error) => void
@@ -206,6 +206,7 @@ export class DeepgramStreamClient {
     this.cleanupSocket();
 
     try {
+      const targetLang = !this.language || this.language === 'auto' ? 'multi' : this.language;
       const params = new URLSearchParams({
         model: 'nova-3',
         smart_format: 'true',
@@ -214,7 +215,7 @@ export class DeepgramStreamClient {
         encoding: 'linear16',
         sample_rate: '16000',
         channels: '1',
-        language: this.language || 'uk',
+        language: targetLang,
       });
 
       const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
@@ -487,7 +488,7 @@ export class StrictSpeakerGuard {
     if (!event.text || !event.text.trim()) return;
     const cleanText = event.text.trim();
 
-    // 🛡️ CRITICAL HARD BLOCKADE: Candidate microphone speech NEVER enters AI trigger pipeline
+    // CRITICAL HARD BLOCKADE: Candidate microphone speech NEVER enters AI trigger pipeline
     if (event.speaker === 'candidate') {
       const candidateMsg: DialogueMessage = {
         id: `cand_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -1017,7 +1018,7 @@ export class DesktopAudioEngine {
       this.interviewerSttClient = new DeepgramStreamClient(
         'interviewer',
         effectiveKey,
-        options.speechLanguage || 'uk',
+        options.speechLanguage || 'multi',
         (evt) => options.onTranscript?.(evt),
         options.onSttStateChange,
         (err) => {
@@ -1031,7 +1032,7 @@ export class DesktopAudioEngine {
       this.candidateSttClient = new DeepgramStreamClient(
         'candidate',
         effectiveKey,
-        options.speechLanguage || 'uk',
+        options.speechLanguage || 'multi',
         (evt) => options.onTranscript?.(evt),
         options.onSttStateChange,
         options.onError

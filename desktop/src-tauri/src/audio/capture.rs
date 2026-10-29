@@ -105,6 +105,42 @@ pub fn find_microphone_device(host: &Host) -> Result<Device, String> {
         .ok_or_else(|| "No default microphone input device found".to_string())
 }
 
+/// Looks up a concrete audio device by its exact cpal name (inputs first, then outputs for
+/// WASAPI-style loopback on Windows/macOS).
+pub fn find_device_by_name(host: &Host, name: &str) -> Option<Device> {
+    if let Ok(mut devices) = host.input_devices() {
+        if let Some(d) = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)) {
+            return Some(d);
+        }
+    }
+    if let Ok(mut devices) = host.output_devices() {
+        if let Some(d) = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)) {
+            return Some(d);
+        }
+    }
+    None
+}
+
+/// Resolves the user-preferred device (if set and still present), otherwise runs the
+/// platform auto-detection `fallback`.
+pub fn resolve_device(
+    host: &Host,
+    preferred: Option<&str>,
+    fallback: fn(&Host) -> Result<Device, String>,
+) -> Result<Device, String> {
+    if let Some(name) = preferred.map(str::trim).filter(|n| !n.is_empty()) {
+        if let Some(device) = find_device_by_name(host, name) {
+            return Ok(device);
+        }
+        tracing::warn!(
+            target: "ghostboard::audio",
+            "Preferred audio device '{}' not found, falling back to auto-detection",
+            name
+        );
+    }
+    fallback(host)
+}
+
 /// Lists all available input and loopback audio devices for UI selection.
 pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
     let mut result = Vec::new();

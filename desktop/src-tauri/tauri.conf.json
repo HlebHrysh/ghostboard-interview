@@ -14,18 +14,18 @@
     "windows": [
       {
         "label": "main",
-        "title": "Ghostboard Stealth HUD",
-        "width": 720,
-        "height": 480,
-        "minWidth": 480,
-        "minHeight": 80,
+        "title": "Ghostboard Office",
+        "width": 960,
+        "height": 640,
+        "minWidth": 800,
+        "minHeight": 540,
         "resizable": true,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
         "center": true,
-        "shadow": false
+        "shadow": true
       }
     ],
     "security": {

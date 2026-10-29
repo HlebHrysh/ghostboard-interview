@@ -86,7 +86,7 @@ export interface GhostboardAPI {
   }>;
   minimize?: () => Promise<void>;
   close?: () => Promise<void>;
-  setWindowMode?: (mode: 'launcher' | 'stealth' | 'ticker') => Promise<boolean | void>;
+  setWindowMode?: (mode: 'launcher' | 'stealth' | 'ticker' | 'full' | 'chat' | 'notch') => Promise<boolean | void>;
   setWindowHeight?: (height: number) => Promise<number | void>;
   toggleStealth?: (enable?: boolean) => Promise<boolean>;
   toggleClickThrough?: (enable?: boolean) => Promise<boolean>;

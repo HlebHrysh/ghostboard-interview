@@ -55,8 +55,11 @@ import {
 import { AudioWaveform } from './components/AudioWaveform';
 import { DualColumnChat } from './components/DualColumnChat';
 import { EyeLineTeleprompter } from './components/EyeLineTeleprompter';
+import { LauncherScreen } from './components/LauncherScreen';
 import { PanicShield } from './components/PanicShield';
-import { AuthGateScreen } from './components/AuthGateScreen';
+import { DesktopAuthGate } from './components/DesktopAuthGate';
+import { HudWindow } from './components/HudWindow';
+import { OfficeWindow } from './components/OfficeWindow';
 import type { SessionQAItem } from './components/HistoryDrawer';
 const SourcePickerModal = React.lazy(() =>
   import('./components/SourcePickerModal').then((m) => ({ default: m.SourcePickerModal }))
@@ -78,6 +81,8 @@ import {
   fetchProfileContext,
   sendDesktopHeartbeat,
   clearAuthToken,
+  getResolvedBaseUrl,
+  IS_DEV_MODE,
   type UserProfileData,
 } from './lib/apiClient';
 import { useHudStream } from './hooks/useHudStream';
@@ -85,6 +90,7 @@ import {
   setScreenShareStealth,
   toggleClickThrough,
   setWindowOpacity,
+  setWindowMode,
   alignToActiveDisplay,
   panicHide,
   triggerManualAnswer,
@@ -92,6 +98,7 @@ import {
   exportMarkdown,
   getAccessToken,
   captureScreen,
+  logout,
   isTauriEnvironment,
   checkForUpdates,
   quitAndInstallUpdate,
@@ -108,6 +115,18 @@ const SPRING_PHYSICS = {
 };
 
 export default function App() {
+  const isHud = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('window') === 'hud';
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.body.dataset.window = isHud ? 'hud' : 'office';
+    }
+  }, [isHud]);
+
+  if (isHud) {
+    return <HudWindow />;
+  }
+
   const [mode, setMode] = useState<HUDMode>('launcher');
   const [prompterMode, setPrompterMode] = useState<PrompterMode>('notch');
   const [isStealth, setIsStealth] = useState(true);
@@ -129,12 +148,15 @@ export default function App() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [sourceMode, setSourceMode] = useState<AudioSourceMode>('system');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [interviewerVol, setInterviewerVol] = useState(0);
-  const [candidateVol, setCandidateVol] = useState(0);
 
   // Vision OCR State
   const [isCapturingScreen, setIsCapturingScreen] = useState(false);
+  const [screenshotPreview, setScreenshotPreview] = useState<string | null>(null);
   const [cameraFlash, setCameraFlash] = useState(false);
+
+  // Profile Sync State
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false);
+  const [profileSyncSuccess, setProfileSyncSuccess] = useState(false);
 
   // Milestone 4: Candidate Profile & Resume Context Injection
   const [candidateProfile, setCandidateProfile] = useState<CandidateProfile>(() => loadStoredProfile());
@@ -182,8 +204,10 @@ export default function App() {
   const audioEngineRef = useRef<DesktopAudioEngine | null>(null);
   const streamClientRef = useRef<DualStreamClient>(new DualStreamClient());
   const companionSyncRef = useRef<CompanionSyncManager>(new CompanionSyncManager());
+  const handleStartInterviewRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const [backendMode, setBackendMode] = useState<'local' | 'cloud'>(() => {
+    if (IS_DEV_MODE) return 'local';
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('ghostboard_backend_mode');
       if (saved === 'local' || saved === 'cloud') return saved;
@@ -194,8 +218,9 @@ export default function App() {
 
   const handleToggleBackend = useCallback((targetMode?: 'local' | 'cloud') => {
     setBackendMode((prev) => {
-      const next = targetMode ?? (prev === 'cloud' ? 'local' : 'cloud');
-      const nextUrl = next === 'cloud' ? 'https://ghostboard.ai' : 'http://localhost:3001';
+      const requested = targetMode ?? (prev === 'cloud' ? 'local' : 'cloud');
+      const next = IS_DEV_MODE ? 'local' : requested; // never switch to production in dev
+      const nextUrl = next === 'cloud' ? 'https://ghostboard.ai' : getResolvedBaseUrl();
       streamClientRef.current.setBaseUrl(nextUrl);
       companionSyncRef.current.setBaseUrl(nextUrl);
       if (typeof window !== 'undefined') {
@@ -203,6 +228,13 @@ export default function App() {
       }
       return next;
     });
+  }, []);
+
+  const handleDemoMode = useCallback(() => {
+    const demoUser: UserProfileData = { id: 'demo', email: 'demo@offline.local', name: 'Demo', plan: 'PRO', role: 'Demo' };
+    setIsAuthenticated(true);
+    setAuthUser(demoUser);
+    setSessionUser(demoUser.email);
   }, []);
 
   useEffect(() => {
@@ -267,8 +299,33 @@ export default function App() {
     }
   }, []);
 
+  const handleRefreshProfile = useCallback(async () => {
+    setIsRefreshingProfile(true);
+    try {
+      const [ctx, auth] = await Promise.all([
+        fetchProfileContext(),
+        checkAuth(),
+      ]);
+      if (auth.authenticated && auth.user) {
+        setAuthUser(auth.user);
+        setSessionUser(auth.user.email || auth.user.name || null);
+      }
+      if (ctx?.candidateProfile) {
+        const updated = updateStoredProfile(ctx.candidateProfile as Partial<CandidateProfile>);
+        setCandidateProfile(updated);
+      }
+      setProfileSyncSuccess(true);
+      setTimeout(() => setProfileSyncSuccess(false), 2500);
+    } catch (err) {
+      console.warn('[App] handleRefreshProfile error:', err);
+    } finally {
+      setIsRefreshingProfile(false);
+    }
+  }, []);
+
   const handleLogout = useCallback(async () => {
-    await clearAuthToken();
+    await logout();
+    clearAuthToken();
     setIsAuthenticated(false);
     setAuthUser(null);
     setSessionUser(null);
@@ -317,11 +374,13 @@ export default function App() {
     errorMsg: null,
   });
 
+  const hasCheckedUpdatesRef = useRef(false);
   useEffect(() => {
-    let isMounted = true;
+    if (hasCheckedUpdatesRef.current) return;
+    hasCheckedUpdatesRef.current = true;
     checkForUpdates()
       .then((res) => {
-        if (isMounted && res.available && res.version) {
+        if (res.available && res.version) {
           setUpdateState({
             available: true,
             version: res.version,
@@ -334,10 +393,6 @@ export default function App() {
       .catch((err: unknown) => {
         console.debug('[App] Auto-updater check silent fallback:', err);
       });
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
 
   const handlePerformUpdate = useCallback(async () => {
@@ -512,6 +567,8 @@ export default function App() {
         return;
       }
 
+      setScreenshotPreview(captureResult.base64Png);
+
       console.info(
         `[App] Screen captured successfully (${captureResult.width}x${captureResult.height}px). Requesting Vision OCR...`
       );
@@ -620,8 +677,8 @@ export default function App() {
 
         const hook = data.quickAnswer || data.summary || 'Знімок екрана проаналізовано.';
         const qTitle = data.topic
-          ? `📸 ${data.topic}${data.language && data.language !== 'none' ? ` (${data.language})` : ''}`
-          : '📸 Аналіз коду з екрана ПК';
+          ? `[Екран] ${data.topic}${data.language && data.language !== 'none' ? ` (${data.language})` : ''}`
+          : '[Екран] Аналіз коду з екрана ПК';
 
         setCurrentQuestion(qTitle);
         setDialogueMessages((prev) => [
@@ -671,7 +728,7 @@ export default function App() {
         }, 20);
       } else {
         // Resilient Fallback Heuristics for offline / unauthenticated development
-        const fallbackQ = '📸 Аналіз алгоритму / архітектури з екрана';
+        const fallbackQ = '[Екран] Аналіз алгоритму / архітектури з екрана';
         const fallbackHook =
           'На екрані виявлено технічне завдання з алгоритмів. Оптимальний підхід полягає в переведенні квадратичного розв’язку O(N²) у лінійний O(N) за допомогою структури даних з константним доступом.';
         const fallbackPillars = [
@@ -792,17 +849,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
     }
   }, [hudStream.liveTranscript, hudStream.activeSpeaker]);
 
-  useEffect(() => {
-    if (hudStream.interviewerVolume !== undefined) {
-      setInterviewerVol(hudStream.interviewerVolume);
-    }
-  }, [hudStream.interviewerVolume]);
-
-  useEffect(() => {
-    if (hudStream.candidateVolume !== undefined) {
-      setCandidateVol(hudStream.candidateVolume);
-    }
-  }, [hudStream.candidateVolume]);
+  // NOTE: audio levels intentionally NOT mirrored into App state (hudStream.levelsRef is read by leaf components).
 
   useEffect(() => {
     if (hudStream.structuredAnswer && !isFrozen) {
@@ -811,6 +858,24 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       companionSyncRef.current.syncQA(currentQuestion, hudStream.structuredAnswer, !hudStream.isStreaming);
     }
   }, [hudStream.structuredAnswer, hudStream.isStreaming, isFrozen, currentQuestion]);
+
+  const handleToggleStealth = useCallback(async () => {
+    const next = !isStealth;
+    setIsStealth(next);
+    await setScreenShareStealth(next);
+  }, [isStealth]);
+
+  const handleOpacityChange = useCallback(async (val: number) => {
+    const clamped = Math.max(0.4, Math.min(1.0, val));
+    setOpacity(clamped);
+    await setWindowOpacity(clamped);
+  }, []);
+
+  const handleToggleClickThrough = useCallback(async () => {
+    const next = !isClickThrough;
+    setIsClickThrough(next);
+    await toggleClickThrough(next);
+  }, [isClickThrough]);
 
   // Global Keyboard Shortcuts (F12, Space, Hotkeys, Modifiers, Cmd/Ctrl+H)
   useEffect(() => {
@@ -840,10 +905,17 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
         setIsHistoryOpen((prev) => !prev);
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
-        handleManualAnswer();
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        if (mode === 'launcher') {
+          handleStartInterviewRef.current?.();
+        } else {
+          handleManualAnswer();
+        }
+      } else if ((e.metaKey || e.ctrlKey || e.altKey) && e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         handleTriggerScreenshot();
+      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        handleToggleClickThrough();
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'Space') {
         e.preventDefault();
         setPrompterMode((prev) => (prev === 'chat' ? 'notch' : 'chat'));
@@ -870,12 +942,51 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
         setPrompterMode((prev) => (prev === 'chat' ? 'notch' : prev === 'notch' ? 'ticker' : 'chat'));
+      } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'l' || e.key === 'L')) {
+        e.preventDefault();
+        setMode('launcher');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentQuestion, isFrozen, handleManualAnswer, handleTriggerScreenshot, handleClearSession, handleApplyModifier]);
+  }, [mode, currentQuestion, isFrozen, handleManualAnswer, handleTriggerScreenshot, handleToggleClickThrough, handleClearSession, handleApplyModifier]);
+
+  // Window mode synchronization (Launcher 600x400 vs Eyeline Notch 560x140 vs Full 760x480 vs Ticker 640x56)
+  useEffect(() => {
+    const targetMode = mode === 'launcher' ? 'launcher' : prompterMode === 'chat' ? 'full' : prompterMode;
+    setWindowMode(targetMode).catch((err) => {
+      console.warn('[App] setWindowMode error:', err);
+    });
+  }, [mode, prompterMode]);
+
+  // Listen for broadcast events from Rust backend (Stealth and Click-Through state)
+  useEffect(() => {
+    if (!isTauriEnvironment()) return;
+    let unlistenClickThrough: (() => void) | undefined;
+    let unlistenStealth: (() => void) | undefined;
+    import('@tauri-apps/api/event')
+      .then(({ listen }) => {
+        listen<{ enabled: boolean } | boolean>('window:click-through', (event) => {
+          const val = typeof event.payload === 'boolean' ? event.payload : (event.payload?.enabled ?? false);
+          setIsClickThrough(val);
+        }).then((un) => {
+          unlistenClickThrough = un;
+        });
+        listen<{ enabled: boolean } | boolean>('window:stealth', (event) => {
+          const val = typeof event.payload === 'boolean' ? event.payload : (event.payload?.enabled ?? false);
+          setIsStealth(val);
+        }).then((un) => {
+          unlistenStealth = un;
+        });
+      })
+      .catch(console.warn);
+
+    return () => {
+      unlistenClickThrough?.();
+      unlistenStealth?.();
+    };
+  }, []);
 
   // Load initial settings and IPC state
   useEffect(() => {
@@ -980,24 +1091,6 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
     };
   }, [handleTriggerScreenshot]);
 
-  const handleToggleStealth = useCallback(async () => {
-    const next = !isStealth;
-    setIsStealth(next);
-    await setScreenShareStealth(next);
-  }, [isStealth]);
-
-  const handleOpacityChange = useCallback(async (val: number) => {
-    const clamped = Math.max(0.4, Math.min(1.0, val));
-    setOpacity(clamped);
-    await setWindowOpacity(clamped);
-  }, []);
-
-  const handleToggleClickThrough = useCallback(async () => {
-    const next = !isClickThrough;
-    setIsClickThrough(next);
-    await toggleClickThrough(next);
-  }, [isClickThrough]);
-
   const handleModeChange = useCallback(async (newMode: HUDMode) => {
     setMode(newMode);
     const api = window.ghostboard || window.desktopAPI;
@@ -1033,7 +1126,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       if (!event.text || !event.text.trim()) return;
       const cleanText = event.text.trim();
 
-      // 🛡️ CRITICAL STRICT SPEAKER GUARDRAIL:
+      // CRITICAL STRICT SPEAKER GUARDRAIL:
       // Candidate microphone speech NEVER enters AI trigger pipeline!
       if (event.speaker === 'candidate') {
         if (!event.isFinal) {
@@ -1113,8 +1206,8 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       await audioEngineRef.current?.stop();
       setIsCapturing(false);
       companionSyncRef.current.syncStatus(false, isFrozen, isPanic);
-      setInterviewerVol(0);
-      setCandidateVol(0);
+      hudStream.levelsRef.current.interviewer = 0;
+      hudStream.levelsRef.current.candidate = 0;
     } else {
       try {
         const engine = new DesktopAudioEngine();
@@ -1124,8 +1217,8 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           selectedWindowSourceId: selectedSourceId,
           onTranscript: handleTranscript,
           onVolumeChange: (intVol, candVol) => {
-            setInterviewerVol(intVol);
-            setCandidateVol(candVol);
+            hudStream.levelsRef.current.interviewer = intVol;
+            hudStream.levelsRef.current.candidate = candVol;
           },
         });
         setIsCapturing(true);
@@ -1135,6 +1228,33 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       }
     }
   };
+
+  const handleStartInterview = useCallback(async () => {
+    if (!isCapturing) {
+      try {
+        const engine = new DesktopAudioEngine();
+        audioEngineRef.current = engine;
+        await engine.start({
+          sourceMode,
+          selectedWindowSourceId: selectedSourceId,
+          onTranscript: handleTranscript,
+          onVolumeChange: (intVol, candVol) => {
+            hudStream.levelsRef.current.interviewer = intVol;
+            hudStream.levelsRef.current.candidate = candVol;
+          },
+        });
+        setIsCapturing(true);
+        companionSyncRef.current.syncStatus(true, isFrozen, isPanic);
+      } catch (err: unknown) {
+        console.error('[App] Failed to start audio capture for interview:', err);
+      }
+    }
+    setMode('stealth');
+    setPrompterMode('notch');
+    await setWindowMode('notch');
+  }, [isCapturing, sourceMode, selectedSourceId, handleTranscript, hudStream, isFrozen, isPanic]);
+
+  handleStartInterviewRef.current = handleStartInterview;
 
   const handleSwitchAudioMode = async (newMode: AudioSourceMode) => {
     if (newMode === 'tab') {
@@ -1174,10 +1294,14 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
   // Auth Gate: Check session before revealing HUD
   if (isAuthChecking) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#08090a]">
+      <div
+        data-tauri-drag-region
+        className="fixed inset-0 z-50 flex items-center justify-center bg-[#09090b] border border-zinc-800 select-none"
+      >
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-zinc-700 border-t-white animate-spin shadow-sm" />
           <p className="text-xs font-mono text-zinc-400 tracking-wider">ПЕРЕВІРКА СЕСІЇ GHOSTBOARD...</p>
+          <p className="text-[10px] font-mono text-zinc-600">{streamClientRef.current.getBaseUrl()}</p>
         </div>
       </div>
     );
@@ -1185,10 +1309,57 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
 
   if (!isAuthenticated) {
     return (
-      <AuthGateScreen
+      <DesktopAuthGate
         onSuccess={handleAuthSuccess}
+        onDemoMode={handleDemoMode}
         backendUrl={streamClientRef.current.getBaseUrl()}
       />
+    );
+  }
+
+  // Ghostboard Office Window (Standard Command Center with 5 Working Tabs)
+  if ((mode as unknown as string) !== 'legacy_prompter') {
+    return (
+      <OfficeWindow
+        user={authUser}
+        onLogout={handleLogout}
+        onOpenAuth={() => setIsAuthenticated(false)}
+      />
+    );
+  } else if (mode === 'launcher') {
+    return (
+      <div className="w-full h-full bg-transparent overflow-hidden select-none relative">
+        <LauncherScreen
+          user={authUser ? { email: authUser.email, plan: authUser.plan } : sessionUser ? { email: sessionUser, plan: 'pro' } : null}
+          onStartInterview={handleStartInterview}
+          isCapturing={isCapturing}
+          isStealth={isStealth}
+          onToggleStealth={handleToggleStealth}
+          onOpenSourcePicker={() => setIsPickerOpen(true)}
+          onOpenProfileModal={() => setIsProfileModalOpen(true)}
+          candidateProfile={candidateProfile}
+          onLogout={handleLogout}
+          onMinimize={handleMinimize}
+          onClose={handleClose}
+        />
+
+        {/* Modals available in Launcher mode */}
+        <React.Suspense fallback={null}>
+          <SourcePickerModal
+            isOpen={isPickerOpen}
+            activeSourceId={selectedSourceId}
+            onSelect={handleSourcePickerSelect}
+            onCancel={() => setIsPickerOpen(false)}
+          />
+          <CandidateProfileModal
+            isOpen={isProfileModalOpen}
+            onClose={() => setIsProfileModalOpen(false)}
+            onSave={(updated) => setCandidateProfile(updated)}
+            serverBaseUrl={streamClientRef.current.getBaseUrl()}
+            authToken={sessionUser}
+          />
+        </React.Suspense>
+      </div>
     );
   }
 
@@ -1196,7 +1367,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
   if (prompterMode === 'notch' || prompterMode === 'ticker') {
     return (
       <div
-        className="w-full h-full flex flex-col justify-start items-center p-2 bg-transparent select-none relative"
+        className="w-full h-full bg-transparent overflow-hidden select-none relative"
         style={{ opacity }}
       >
         {/* Camera Shutter Flash Visual Feedback */}
@@ -1206,6 +1377,25 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             className="fixed inset-0 pointer-events-none z-[99999] bg-white/25 backdrop-brightness-125 transition-opacity duration-300"
           />
         )}
+
+        {/* Click-Through Protective Banner */}
+        {isClickThrough && (
+          <div className="w-full max-w-[760px] mb-1.5 px-3 py-1 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs font-mono flex items-center justify-between shadow-[0_0_15px_rgba(245,158,11,0.25)] pointer-events-auto">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+              <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Режим наскрізного кліку активний — натисніть <kbd className="px-1.5 py-0.5 rounded bg-black/40 border border-amber-500/40 text-amber-300 font-bold">Ctrl+Shift+X</kbd>, щоб повернути керування</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleClickThrough}
+              className="px-2 py-0.5 rounded bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 text-[10px] font-semibold transition-all cursor-pointer"
+            >
+              Вимкнути
+            </button>
+          </div>
+        )}
+
         <EyeLineTeleprompter
           mode={prompterMode}
           activeQuestion={currentQuestion}
@@ -1213,15 +1403,14 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           isStreaming={isStreaming}
           isFrozen={isFrozen}
           isSpeech={hudStream.isSpeech}
-          interviewerVolume={interviewerVol || hudStream.interviewerVolume}
-          candidateVolume={candidateVol || hudStream.candidateVolume}
+          levelsRef={hudStream.levelsRef}
           liveTranscript={liveInterlocutorText || hudStream.liveTranscript}
           speaker="Співрозмовник"
           opacity={opacity}
           isClickThrough={isClickThrough || hudStream.isClickThrough}
-          isAuthenticated={hudStream.isAuthenticated}
-          user={hudStream.user}
-          plan={hudStream.plan}
+          isAuthenticated={isAuthenticated}
+          user={authUser ? { email: authUser.email, plan: authUser.plan } : hudStream.user}
+          plan={authUser?.plan || hudStream.plan || 'pro'}
           deviceCode={hudStream.deviceCode}
           connectionLatencyMs={hudStream.connectionLatencyMs}
           backendMode={backendMode}
@@ -1245,6 +1434,10 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           onOpenCompanionModal={() => setIsCompanionOpen((p) => !p)}
           onOpenHistory={() => setIsHistoryOpen((p) => !p)}
           onClearSession={() => handleClearSession()}
+          onLogout={handleLogout}
+          onRefreshProfile={handleRefreshProfile}
+          isRefreshingProfile={isRefreshingProfile}
+          profileSyncSuccess={profileSyncSuccess}
           onAudioSourceChange={(src) => {
             if (src === 'mute') {
               audioEngineRef.current?.stop();
@@ -1299,10 +1492,6 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           className="fixed inset-0 pointer-events-none z-[99999] bg-white/25 backdrop-brightness-125 transition-opacity duration-300"
         />
       )}
-
-      {/* ── Ambient Radial Glows (GEMINI.md Dark Luxury) ── */}
-      <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none -z-10" />
-      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-violet-500/10 rounded-full blur-3xl pointer-events-none -z-10" />
 
       {/* ── TOP HEADER DOCK (Frameless drag region + controls) ── */}
       <header className="w-full border-b border-white/[0.08] px-4 py-2.5 flex items-center justify-between drag-region shrink-0 bg-white/[0.01]">
@@ -1440,8 +1629,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           {/* Dual VU Meters (Interlocutor vs Candidate) */}
           <div className="hidden sm:flex items-center px-2 py-1 rounded-xl bg-white/[0.02] border border-white/[0.06]">
             <AudioWaveform
-              interviewerVolume={interviewerVol}
-              candidateVolume={candidateVol}
+              levelsRef={hudStream.levelsRef}
               isCapturing={isCapturing}
               compact={true}
               width={160}
@@ -1560,18 +1748,64 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             <Terminal className="w-3.5 h-3.5" />
           </button>
 
-          {/* User Session Pill */}
-          {sessionUser && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono text-zinc-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="truncate max-w-[100px]">{sessionUser}</span>
+          {/* User Profile, Role, Plan & Sync Dock */}
+          {isAuthenticated && (
+            <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.08] rounded-xl px-2.5 py-1 text-xs font-mono">
+              {/* Tariff Badge */}
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider ${
+                  (authUser?.plan || 'pro').toLowerCase() === 'lifetime'
+                    ? 'bg-gradient-to-r from-amber-500/25 via-purple-500/25 to-pink-500/25 text-amber-300 border border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.25)]'
+                    : (authUser?.plan || 'pro').toLowerCase() === 'pro'
+                    ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.2)]'
+                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                }`}
+              >
+                {(authUser?.plan || 'pro').toUpperCase()}
+              </span>
+
+              {/* User Email & Active Resume Role */}
+              <div className="flex flex-col text-left leading-tight px-1">
+                <span className="text-[11px] font-medium text-zinc-200 truncate max-w-[120px]">
+                  {authUser?.name || authUser?.email || sessionUser || 'Користувач'}
+                </span>
+                <span className="text-[9px] text-zinc-400 truncate max-w-[120px]">
+                  {candidateProfile?.role || authUser?.role || 'Senior Fullstack'}
+                </span>
+              </div>
+
+              {/* Web Sync Indicator / Refresh Profile Button */}
+              <button
+                type="button"
+                onClick={handleRefreshProfile}
+                disabled={isRefreshingProfile}
+                title="Оновити профіль та синхронізувати контекст з веб-акаунтом"
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-lg border text-[10px] transition-all cursor-pointer ${
+                  profileSyncSuccess
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                    : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                {isRefreshingProfile ? (
+                  <RefreshCw className="w-3 h-3 text-cyan-400 animate-spin" />
+                ) : profileSyncSuccess ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+                )}
+                <span className="hidden xl:inline">
+                  {isRefreshingProfile ? 'Синхронізація...' : profileSyncSuccess ? 'Оновлено' : 'Synced'}
+                </span>
+              </button>
+
+              {/* Logout Button */}
               <button
                 type="button"
                 onClick={handleLogout}
-                title="Вийти з акаунта"
-                className="text-zinc-500 hover:text-rose-400 transition-colors ml-0.5 cursor-pointer"
+                title="Вийти з акаунту (очистити збережені токени у Keyring)"
+                className="p-1 rounded-lg hover:bg-rose-500/10 hover:text-rose-400 text-zinc-500 transition-colors cursor-pointer"
               >
-                <LogOut className="w-3 h-3" />
+                <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
           )}
@@ -1594,6 +1828,24 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
           </button>
         </div>
       </header>
+
+      {/* ── CLICK-THROUGH SAFETY BANNER (Task 4) ── */}
+      {isClickThrough && (
+        <div className="w-full bg-amber-500/20 border-b border-amber-500/30 text-amber-200 px-4 py-2 text-xs font-mono flex items-center justify-between shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)] animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Режим наскрізного кліку активний — натисніть <kbd className="px-1.5 py-0.5 rounded bg-black/40 border border-amber-500/40 text-amber-300 font-bold">Ctrl+Shift+X</kbd>, щоб повернути керування вікном</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleToggleClickThrough}
+            className="px-2.5 py-1 rounded-lg bg-amber-500/30 hover:bg-amber-500/50 text-amber-100 text-[11px] font-semibold transition-all cursor-pointer"
+          >
+            Вимкнути клік-крізь
+          </button>
+        </div>
+      )}
 
       {/* ── NAVIGATION TABS & OPACITY BAR ── */}
       <div className="w-full border-b border-white/[0.05] px-4 py-2 flex items-center justify-between no-drag bg-black/20 shrink-0">
@@ -1649,9 +1901,24 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
             isStreaming={isStreaming}
             onApplyModifier={handleApplyModifier}
             onQuestionSelect={(q) => triggerCopilotResponse(q)}
-            onQuestionSubmit={(q) => triggerCopilotResponse(q)}
+            onQuestionSubmit={(q) => {
+              setDialogueMessages((prev) => [
+                ...prev,
+                {
+                  id: `prompt_${Date.now()}`,
+                  speaker: 'candidate',
+                  label: 'Ви (Запит)',
+                  text: q,
+                  isFinal: true,
+                  timestamp: Date.now(),
+                },
+              ]);
+              triggerCopilotResponse(q);
+            }}
             onTriggerScreenshot={handleTriggerScreenshot}
             isCapturingScreen={isCapturingScreen}
+            screenshotPreview={screenshotPreview}
+            onClearScreenshot={() => setScreenshotPreview(null)}
             isFrozen={isFrozen}
           />
         )}
@@ -1672,8 +1939,7 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
 
               <div className="flex items-center justify-center p-4 rounded-xl bg-black/40 border border-white/5">
                 <AudioWaveform
-                  interviewerVolume={interviewerVol}
-                  candidateVolume={candidateVol}
+                  levelsRef={hudStream.levelsRef}
                   isCapturing={isCapturing}
                   compact={false}
                   width={420}

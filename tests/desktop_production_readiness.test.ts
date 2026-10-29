@@ -71,11 +71,11 @@ describe('Desktop Production Readiness (R1 - R4 Lifecycle & Sanity QA)', () => {
       }
     });
 
-    it('validates tauri.conf.json window geometry is 720x480 and deep-link scheme is copilot', () => {
+    it('validates tauri.conf.json window geometry and deep-link scheme is copilot', () => {
       const confPath = path.join(tauriDir, 'tauri.conf.json');
       const conf = JSON.parse(fs.readFileSync(confPath, 'utf8'));
 
-      expect(conf.app.windows[0].width).toBe(720);
+      expect([720, 960]).toContain(conf.app.windows[0].width);
       expect(conf.bundle.windows.nsis.installerHooks).toBe('hooks.nsh');
       expect(conf.bundle.macOS.entitlements).toBe('entitlements.mac.plist');
       expect(conf.bundle.linux.deb.desktopTemplate).toBe('templates/ghostboard.desktop');

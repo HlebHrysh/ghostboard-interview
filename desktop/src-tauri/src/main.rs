@@ -29,7 +29,12 @@ fn set_screen_share_stealth(
     enabled: Option<bool>,
 ) -> Result<bool, String> {
     let flag = enable.or(enabled).unwrap_or(true);
-    crate::window::apply_stealth(&window, flag)
+    let res = crate::window::apply_stealth(&window, flag)?;
+    if let Some(hud_st) = window.app_handle().try_state::<HudChannelState>() {
+        hud_st.broadcast(HudEvent::StealthChanged { enabled: flag });
+    }
+    let _ = window.emit("window:stealth", flag);
+    Ok(res)
 }
 
 /// Native command to toggle click-through cursor transparency
@@ -40,7 +45,21 @@ fn toggle_click_through(
     enabled: Option<bool>,
 ) -> Result<bool, String> {
     let flag = enable.or(enabled).unwrap_or(true);
-    crate::window::toggle_click_through(&window, flag)
+    let res = crate::window::toggle_click_through(&window, flag)?;
+    if let Some(hud_st) = window.app_handle().try_state::<HudChannelState>() {
+        hud_st.broadcast(HudEvent::ClickThroughChanged { enabled: flag });
+    }
+    let _ = window.emit("window:click-through", flag);
+    Ok(res)
+}
+
+/// Native command to switch HUD window mode and adjust physical geometry
+#[tauri::command]
+fn set_window_mode(
+    window: WebviewWindow,
+    mode: String,
+) -> Result<bool, String> {
+    crate::window::apply_window_mode(&window, &mode)
 }
 
 /// Native command to set HUD opacity
@@ -53,14 +72,30 @@ fn set_window_opacity(
     crate::window::set_window_opacity(&window, val)
 }
 
+/// Native command to set exact HUD window size
+#[tauri::command]
+fn set_window_size(
+    window: WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| format!("Failed to set window size: {}", e))
+}
+
 /// Native command to align HUD centered horizontally under the active webcam
 #[tauri::command]
 fn align_to_active_display(
     window: WebviewWindow,
-    _width: Option<f64>,
-    _height: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
 ) -> Result<bool, String> {
-    crate::window::align_to_active_display(&window)
+    if let (Some(w), Some(h)) = (width, height) {
+        crate::window::align_to_active_display_with_size(&window, w, h)
+    } else {
+        crate::window::align_to_active_display(&window)
+    }
 }
 
 /// Native command for panic shield instant hide (<16ms)
@@ -75,28 +110,129 @@ fn capture_screen() -> Result<crate::window::ScreenCaptureResult, String> {
     Ok(crate::window::screenshot::capture_screen_native())
 }
 
-/// Lists all audio devices available on the host system
+/// Lists all audio devices available on the host system.
+/// Enumeration can take hundreds of ms with ALSA/PipeWire, so it runs off the UI thread.
 #[tauri::command]
-fn list_audio_devices() -> Result<Vec<crate::audio::capture::AudioDeviceInfo>, String> {
-    let host = cpal::default_host();
-    Ok(crate::audio::capture::list_audio_devices(&host))
+async fn list_audio_devices() -> Result<Vec<crate::audio::capture::AudioDeviceInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let host = cpal::default_host();
+        crate::audio::capture::list_audio_devices(&host)
+    })
+    .await
+    .map_err(|e| format!("Audio device enumeration failed: {}", e))
 }
+
+/// Environment facts the Office UI shows (compositor integration status etc.).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvironmentInfo {
+    platform: String,
+    wayland: bool,
+    hyprland: bool,
+}
+
+#[tauri::command]
+fn get_environment_info() -> EnvironmentInfo {
+    EnvironmentInfo {
+        platform: std::env::consts::OS.to_string(),
+        wayland: crate::window::hyprland::is_wayland(),
+        hyprland: crate::window::hyprland::is_hyprland(),
+    }
+}
+
+/// Opens (or re-uses) the detached transparent "Ghostboard HUD" Copilot window.
+/// `mode` is `"chat"` (780x460 two-column chat) or `"top_bar"` (680x150 eyeline bar).
+#[tauri::command]
+async fn launch_copilot_window(
+    app: tauri::AppHandle,
+    mode: String,
+) -> Result<crate::window::hud::LaunchReport, String> {
+    crate::window::hud::launch_copilot_window(&app, &mode)
+}
+
+/// Closes the HUD and returns to the Office window.
+#[tauri::command]
+async fn close_copilot_window(app: tauri::AppHandle) -> Result<(), String> {
+    crate::window::hud::close_copilot_window(&app);
+    Ok(())
+}
+
+/// Shows and focuses the Office (main) window.
+#[tauri::command]
+fn open_office(app: tauri::AppHandle) -> Result<(), String> {
+    crate::window::hud::restore_office(&app);
+    Ok(())
+}
+
+/// Minimal window chrome actions for frameless HUD controls: minimize | close | toggle_maximize.
+#[tauri::command]
+fn window_control(window: WebviewWindow, action: String) -> Result<(), String> {
+    match action.as_str() {
+        "minimize" => window.minimize().map_err(|e| e.to_string()),
+        "close" => window.close().map_err(|e| e.to_string()),
+        "toggle_maximize" => {
+            if window.is_maximized().unwrap_or(false) {
+                window.unmaximize().map_err(|e| e.to_string())
+            } else {
+                window.maximize().map_err(|e| e.to_string())
+            }
+        }
+        other => Err(format!("Unknown window action: {}", other)),
+    }
+}
+
+/// Last failed `start_audio_capture` (time, error). While fresh, repeated invokes return the cached
+/// error instead of re-enumerating cpal/ALSA devices (which floods stderr with ALSA warnings).
+static LAST_START_FAILURE: std::sync::Mutex<Option<(std::time::Instant, String)>> =
+    std::sync::Mutex::new(None);
+const START_FAILURE_BACKOFF: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// Starts audio capture on the configured source (loopback, microphone, or dual)
 #[tauri::command]
 fn start_audio_capture(
     state: tauri::State<'_, crate::audio::GlobalAudioState>,
     source: Option<String>,
+    loopback_device: Option<String>,
+    mic_device: Option<String>,
+    force: Option<bool>,
 ) -> Result<bool, String> {
     let mut engine = state.engine.lock().map_err(|e| e.to_string())?;
+    if engine.is_running() {
+        return Ok(true);
+    }
+    // User-initiated starts (force) bypass the failure back-off that protects auto-start loops.
+    if force.unwrap_or(false) {
+        if let Ok(mut guard) = LAST_START_FAILURE.lock() {
+            *guard = None;
+        }
+    } else if let Ok(guard) = LAST_START_FAILURE.lock() {
+        if let Some((at, msg)) = guard.as_ref() {
+            if at.elapsed() < START_FAILURE_BACKOFF {
+                return Err(msg.clone());
+            }
+        }
+    }
+    engine.set_devices(loopback_device, mic_device);
     let capture_src = match source.as_deref().map(|s| s.to_lowercase()).as_deref() {
         Some("mic") | Some("microphone") => crate::audio::capture::CaptureSource::Microphone,
         Some("loopback") | Some("system") => crate::audio::capture::CaptureSource::SystemLoopback,
         _ => crate::audio::capture::CaptureSource::Dual,
     };
     engine.set_source(capture_src);
-    engine.start()?;
-    Ok(true)
+    match engine.start() {
+        Ok(()) => {
+            if let Ok(mut guard) = LAST_START_FAILURE.lock() {
+                *guard = None;
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            if let Ok(mut guard) = LAST_START_FAILURE.lock() {
+                *guard = Some((std::time::Instant::now(), e.clone()));
+            }
+            Err(e)
+        }
+    }
 }
 
 /// Stops audio capture and frees OS audio resources
@@ -433,6 +569,11 @@ pub fn spawn_copilot_pipeline(
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut last_audio_error_at: Option<std::time::Instant> = None;
+        const LEVEL_EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(90);
+        const LEVEL_DELTA_THRESHOLD: f32 = 0.5;
+        let mut last_level_emit = std::time::Instant::now();
+        let mut last_loop_rms: f32 = 0.0;
+        let mut last_mic_rms: f32 = 0.0;
 
         loop {
             interval.tick().await;
@@ -475,20 +616,29 @@ pub fn spawn_copilot_pipeline(
                     .unwrap_or_default()
                     .as_millis() as u64;
 
-                // 1. Emit 30ms RMS AudioLevel events for both loopback and candidate
-                hud_for_audio.broadcast(HudEvent::AudioLevel {
-                    source: "loopback".to_string(),
-                    level: tick.interlocutor_rms,
-                    interlocutor: tick.interlocutor_rms / 100.0,
-                    candidate: tick.candidate_rms / 100.0,
-                });
-                if tick.candidate_rms > 0.0 || !tick.candidate_pcm16_bytes.is_empty() {
-                    hud_for_audio.broadcast(HudEvent::AudioLevel {
-                        source: "microphone".to_string(),
-                        level: tick.candidate_rms,
-                        interlocutor: tick.interlocutor_rms / 100.0,
-                        candidate: tick.candidate_rms / 100.0,
-                    });
+                // 1. Emit throttled (~80ms) RMS AudioLevel events; skip silence / negligible change
+                if last_level_emit.elapsed() >= LEVEL_EMIT_INTERVAL {
+                    let loop_changed = (tick.interlocutor_rms - last_loop_rms).abs() >= LEVEL_DELTA_THRESHOLD;
+                    let mic_changed = (tick.candidate_rms - last_mic_rms).abs() >= LEVEL_DELTA_THRESHOLD;
+                    if loop_changed || mic_changed {
+                        last_level_emit = std::time::Instant::now();
+                        last_loop_rms = tick.interlocutor_rms;
+                        last_mic_rms = tick.candidate_rms;
+                        hud_for_audio.broadcast(HudEvent::AudioLevel {
+                            source: "loopback".to_string(),
+                            level: tick.interlocutor_rms,
+                            interlocutor: tick.interlocutor_rms / 100.0,
+                            candidate: tick.candidate_rms / 100.0,
+                        });
+                        if tick.candidate_rms > 0.0 || !tick.candidate_pcm16_bytes.is_empty() {
+                            hud_for_audio.broadcast(HudEvent::AudioLevel {
+                                source: "microphone".to_string(),
+                                level: tick.candidate_rms,
+                                interlocutor: tick.interlocutor_rms / 100.0,
+                                candidate: tick.candidate_rms / 100.0,
+                            });
+                        }
+                    }
                 }
 
                 // 2. Broadcast VAD frame state
@@ -642,6 +792,7 @@ fn main() {
                         let click_2 = "Super+Shift+X".parse::<Shortcut>();
                         let screen_1 = "Ctrl+Shift+S".parse::<Shortcut>();
                         let screen_2 = "Super+Shift+S".parse::<Shortcut>();
+                        let screen_3 = "Alt+Shift+S".parse::<Shortcut>();
 
                         let is_panic = shortcut == &f12
                             || panic_1.as_ref().map(|s| s == shortcut).unwrap_or(false)
@@ -651,9 +802,12 @@ fn main() {
                             || click_2.as_ref().map(|s| s == shortcut).unwrap_or(false);
 
                         let is_screenshot = screen_1.as_ref().map(|s| s == shortcut).unwrap_or(false)
-                            || screen_2.as_ref().map(|s| s == shortcut).unwrap_or(false);
+                            || screen_2.as_ref().map(|s| s == shortcut).unwrap_or(false)
+                            || screen_3.as_ref().map(|s| s == shortcut).unwrap_or(false);
 
-                        if let Some(w) = app.get_webview_window("main") {
+                        // Panic / click-through / screenshot act on the detached HUD window only;
+                        // the Office (main) window is a regular app window.
+                        if let Some(w) = app.get_webview_window(crate::window::hud::HUD_LABEL) {
                             if is_panic {
                                 let _ = crate::window::toggle_panic(&w);
                             } else if is_click {
@@ -664,6 +818,12 @@ fn main() {
                                 CLICK_THROUGH_ACTIVE
                                     .store(new_state, std::sync::atomic::Ordering::Relaxed);
                                 let _ = crate::window::toggle_click_through(&w, new_state);
+                                let _ = app.emit("window:click-through", new_state);
+                                if let Some(hud_st) = app.try_state::<HudChannelState>() {
+                                    hud_st.broadcast(HudEvent::ClickThroughChanged {
+                                        enabled: new_state,
+                                    });
+                                }
                             } else if is_screenshot {
                                 if let Some(hud_st) = app.try_state::<HudChannelState>() {
                                     hud_st.broadcast(HudEvent::HotkeyTriggered {
@@ -685,17 +845,16 @@ fn main() {
             let auth_manager = auth_manager.clone();
 
             move |app| {
-                let main_window = app
-                    .get_webview_window("main")
-                    .expect("Failed to get main webview window");
+                // The main window is the regular "Ghostboard Office" app window. Stealth, alignment and
+                // transparency belong to the detached HUD window created by `launch_copilot_window`.
+                // Under Hyprland, pre-register the HUD window rules so the HUD opens floating / pinned.
+                if crate::window::hyprland::is_hyprland() {
+                    std::thread::spawn(|| {
+                        crate::window::hyprland::apply_hud_rules();
+                    });
+                }
 
-                // Automatically activate screen share invisibility upon launch
-                let _ = crate::window::apply_stealth(&main_window, true);
-
-                // Automatically align HUD directly under webcam
-                let _ = crate::window::align_to_active_display(&main_window);
-
-                // Register global shortcuts: F12, Cmd/Ctrl+Shift+H, Cmd/Ctrl+Shift+X, Cmd/Ctrl+Shift+S
+                // Register global shortcuts: F12, Cmd/Ctrl+Shift+H, Cmd/Ctrl+Shift+X, Cmd/Ctrl/Alt+Shift+S
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut};
                 let f12 = Shortcut::new(None, Code::F12);
                 let _ = app.global_shortcut().register(f12);
@@ -715,6 +874,9 @@ fn main() {
                     let _ = app.global_shortcut().register(s);
                 }
                 if let Ok(s) = "Super+Shift+S".parse::<Shortcut>() {
+                    let _ = app.global_shortcut().register(s);
+                }
+                if let Ok(s) = "Alt+Shift+S".parse::<Shortcut>() {
                     let _ = app.global_shortcut().register(s);
                 }
 
@@ -768,10 +930,38 @@ fn main() {
                 Ok(())
             }
         })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { .. }
+                if window.label() == crate::window::hud::MAIN_LABEL =>
+            {
+                // Closing the Office quits the whole app (also tears down the HUD).
+                window.app_handle().exit(0);
+            }
+            tauri::WindowEvent::Destroyed if window.label() == crate::window::hud::HUD_LABEL => {
+                let app = window.app_handle();
+                if let Some(audio) = app.try_state::<crate::audio::GlobalAudioState>() {
+                    if let Ok(mut engine) = audio.engine.lock() {
+                        engine.stop();
+                    }
+                }
+                if let Some(hud_st) = app.try_state::<HudChannelState>() {
+                    hud_st.clear_for(crate::window::hud::HUD_LABEL);
+                }
+                crate::window::hud::restore_office(app);
+            }
+            _ => {}
+        })
         .invoke_handler(tauri::generate_handler![
+            launch_copilot_window,
+            close_copilot_window,
+            open_office,
+            window_control,
+            get_environment_info,
             set_screen_share_stealth,
             toggle_click_through,
             set_window_opacity,
+            set_window_size,
+            set_window_mode,
             align_to_active_display,
             panic_hide,
             list_audio_devices,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { HudEvent, SpeakerRole, SttConnectionStatus, UserProfile, DeviceCodePendingPayload } from '../types/hud';
+import type { AudioLevelsRef } from './useSampledLevel';
 import {
   startCopilotStream,
   startAudioCapture,
@@ -18,6 +19,9 @@ import {
   StructuredAnswerOutput,
   parseDualStreamDelimiters,
 } from '../lib/streamClient';
+
+// Module-level: the native capture auto-start must happen at most once per app session.
+let autoCaptureStartPromise: Promise<boolean> | null = null;
 
 function cleanStreamingAnswerText(raw: string): string {
   if (!raw) return '';
@@ -50,8 +54,8 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
   const [sttStatus, setSttStatus] = useState<SttStatusState>({ status: 'connected' });
   const [isSpeech, setIsSpeech] = useState(false);
   const [vadConfidence, setVadConfidence] = useState(0);
-  const [interviewerVolume, setInterviewerVolume] = useState(0);
-  const [candidateVolume, setCandidateVolume] = useState(0);
+  // High-frequency audio levels live in a ref: updating it never re-renders anything.
+  const levelsRef = useRef<AudioLevelsRef>({ interviewer: 0, candidate: 0 });
 
   const [liveTranscript, setLiveTranscript] = useState('');
   const [activeSpeaker, setActiveSpeaker] = useState<SpeakerRole>('interlocutor');
@@ -98,23 +102,24 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         const speech = event.payload.is_speech ?? event.payload.isSpeaking ?? false;
         const conf = event.payload.confidence ?? 0;
         setIsSpeech(speech);
-        setVadConfidence(conf);
+        setVadConfidence(Math.round(conf * 4) / 4);
         if (speech) {
-          setInterviewerVolume(Math.min(100, Math.round(conf * 100)));
+          levelsRef.current.interviewer = Math.min(100, Math.round(conf * 100));
         } else {
-          setInterviewerVolume((prev) => Math.max(0, Math.floor(prev * 0.7)));
+          levelsRef.current.interviewer = Math.max(0, Math.floor(levelsRef.current.interviewer * 0.7));
         }
         break;
       }
 
       case 'audioLevel': {
         const p = event.payload;
+        const levels = levelsRef.current;
         if (p.source !== undefined && p.level !== undefined) {
           const lvl = typeof p.level === 'number' ? p.level : 0;
           if (p.source === 'loopback' || p.source === 'interlocutor') {
-            setInterviewerVolume(Math.min(100, Math.round(lvl)));
+            levels.interviewer = Math.min(100, Math.round(lvl));
           } else {
-            setCandidateVolume(Math.min(100, Math.round(lvl)));
+            levels.candidate = Math.min(100, Math.round(lvl));
           }
         }
         if (p.interlocutor !== undefined || p.candidate !== undefined) {
@@ -122,13 +127,13 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
             const intVol = typeof p.interlocutor === 'number'
               ? (p.interlocutor <= 1.0 ? p.interlocutor * 100 : p.interlocutor)
               : 0;
-            setInterviewerVolume(Math.min(100, Math.round(intVol)));
+            levels.interviewer = Math.min(100, Math.round(intVol));
           }
           if (p.candidate !== undefined) {
             const candVol = typeof p.candidate === 'number'
               ? (p.candidate <= 1.0 ? p.candidate * 100 : p.candidate)
               : 0;
-            setCandidateVolume(Math.min(100, Math.round(candVol)));
+            levels.candidate = Math.min(100, Math.round(candVol));
           }
         }
         break;
@@ -290,16 +295,16 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     let isMounted = true;
     const unsubscribe = startCopilotStream(handleHudEvent);
 
-    // Auto-start native dual audio capture (loopback + mic) with isMounted guard
-    startAudioCapture('dual')
-      .then((ok) => {
-        if (isMounted) setIsCapturing(ok);
-      })
-      .catch((err) => {
+    // Auto-start native dual audio capture once per session (guard survives remounts / StrictMode)
+    if (!autoCaptureStartPromise) {
+      autoCaptureStartPromise = startAudioCapture('dual').catch((err) => {
         console.warn('[useHudStream] startAudioCapture error:', err);
-        if (isMounted) setIsCapturing(false);
+        return false;
       });
-
+    }
+    autoCaptureStartPromise.then((ok) => {
+      if (isMounted) setIsCapturing(ok);
+    });
     // Initial auth state load
     getAuthState().then((st) => {
       if (isMounted && st) {
@@ -319,7 +324,6 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     return () => {
       isMounted = false;
       unsubscribe();
-      stopAudioCapture().catch(() => {});
       clearInterval(latencyInterval);
     };
   }, [autoConnect, handleHudEvent]);
@@ -417,8 +421,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     sttStatus,
     isSpeech,
     vadConfidence,
-    interviewerVolume,
-    candidateVolume,
+    levelsRef,
     liveTranscript,
     activeSpeaker,
     currentQuestion,

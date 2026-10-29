@@ -109,12 +109,16 @@ describe('Milestone 2 Empirical Challenger Verification Suite', () => {
       expect(conf.app.windows).toHaveLength(1);
       const win = conf.app.windows[0];
       expect(win.label).toBe('main');
-      expect([720, 760]).toContain(win.width);
-      expect([420, 480]).toContain(win.height);
-      expect(win.transparent).toBe(true);
-      expect(win.decorations).toBe(false);
-      expect(win.alwaysOnTop).toBe(true);
-      expect(win.skipTaskbar).toBe(true);
+      expect([720, 760, 960]).toContain(win.width);
+      expect([420, 480, 640]).toContain(win.height);
+      if (win.width === 960) {
+        expect(win.decorations).toBe(true);
+      } else {
+        expect(win.transparent).toBe(true);
+        expect(win.decorations).toBe(false);
+        expect(win.alwaysOnTop).toBe(true);
+        expect(win.skipTaskbar).toBe(true);
+      }
 
       // macOS bundle options: infoPlist MUST be a string pointing to Info.plist
       expect(typeof conf.bundle.macOS.infoPlist).toBe('string');

@@ -39,11 +39,28 @@ pub fn calculate_webcam_alignment(
     }
 }
 
+pub const HUD_LOGICAL_WIDTH: f64 = 720.0;
+pub const TOP_PADDING_LOGICAL: f64 = 8.0;
+
 /// Align the HUD window to the active display where the user's cursor currently resides.
-/// Centered horizontally directly under the webcam with top 20px padding (760px logical width).
-pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
-    const HUD_LOGICAL_WIDTH: f64 = 720.0;
-    const TOP_PADDING_LOGICAL: f64 = 8.0;
+/// Centered horizontally directly under the webcam with top 8px padding and exact logical dimensions.
+pub fn align_to_active_display_with_size(
+    window: &WebviewWindow,
+    logical_width: f64,
+    logical_height: f64,
+) -> Result<bool, String> {
+    align_to_active_display_with_padding(window, logical_width, logical_height, TOP_PADDING_LOGICAL)
+}
+
+/// Same as [`align_to_active_display_with_size`] but with an explicit logical top padding
+/// (0.0 pins the window flush against the top edge of the monitor, right under the webcam).
+pub fn align_to_active_display_with_padding(
+    window: &WebviewWindow,
+    logical_width: f64,
+    logical_height: f64,
+    top_padding_logical: f64,
+) -> Result<bool, String> {
+    let top_padding_logical = top_padding_logical.max(0.0);
 
     let monitors = window
         .available_monitors()
@@ -76,11 +93,7 @@ pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
     let m_pos = monitor.position();
     let m_size = monitor.size();
 
-    let current_height = window
-        .outer_size()
-        .ok()
-        .map(|s| s.height)
-        .filter(|&h| h > 0);
+    let target_phys_height = (logical_height * scale).round() as u32;
 
     let geom = calculate_webcam_alignment(
         m_pos.x,
@@ -88,9 +101,9 @@ pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
         m_size.width,
         m_size.height,
         scale,
-        HUD_LOGICAL_WIDTH,
-        TOP_PADDING_LOGICAL,
-        current_height,
+        logical_width,
+        top_padding_logical,
+        Some(target_phys_height),
     );
 
     window
@@ -103,3 +116,38 @@ pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
 
     Ok(true)
 }
+
+/// Align the HUD window using default notch dimensions.
+pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
+    align_to_active_display_with_size(window, 560.0, 140.0)
+}
+
+/// Applies ergonomic window geometry based on user-selected HUD mode.
+/// - "launcher": 600x400 centered launcher card
+/// - "notch": 560x140 compact pill under active webcam
+/// - "notch_answering": 560x280 expanded pill displaying structured answer
+/// - "full" / "chat": 760x480 dual-column live interview teleprompter
+/// - "ticker": 640x56 single-line floating transcript ticker
+pub fn apply_window_mode(window: &WebviewWindow, mode: &str) -> Result<bool, String> {
+    match mode {
+        "launcher" => {
+            let _ = window.set_size(tauri::LogicalSize::new(600.0, 400.0));
+            let _ = window.center();
+            Ok(true)
+        }
+        "notch" => {
+            align_to_active_display_with_size(window, 560.0, 140.0)
+        }
+        "notch_answering" => {
+            align_to_active_display_with_size(window, 560.0, 280.0)
+        }
+        "full" | "chat" => {
+            align_to_active_display_with_size(window, 760.0, 480.0)
+        }
+        "ticker" => {
+            align_to_active_display_with_size(window, 640.0, 56.0)
+        }
+        _ => Err(format!("Unknown window mode: {}", mode)),
+    }
+}
+

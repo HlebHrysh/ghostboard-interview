@@ -57,6 +57,7 @@ export interface EyeLineTeleprompterProps {
   speaker?: string;
   opacity?: number;
   isClickThrough?: boolean;
+  levelsRef?: React.RefObject<{ interlocutor: number; candidate: number }> | any;
   isAuthenticated?: boolean;
   user?: { email?: string; plan?: string } | null;
   plan?: string;
@@ -86,6 +87,10 @@ export interface EyeLineTeleprompterProps {
     message?: string | null;
   };
   onRestartAudio?: () => void;
+  onLogout?: () => void;
+  onRefreshProfile?: () => void;
+  isRefreshingProfile?: boolean;
+  profileSyncSuccess?: boolean;
 }
 
 const SPRING_PHYSICS = {

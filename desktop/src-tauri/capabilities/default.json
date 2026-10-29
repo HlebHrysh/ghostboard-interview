@@ -1,8 +1,11 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/tooling/cli/schema.json",
   "identifier": "default",
-  "description": "Default permissions for Ghostboard Stealth HUD webview",
-  "windows": ["main"],
+  "description": "Permissions for the Ghostboard Office (main) and Ghostboard HUD (hud) webviews",
+  "windows": [
+    "main",
+    "hud"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-set-size",
@@ -16,6 +19,11 @@
     "core:window:allow-unminimize",
     "core:window:allow-set-focus",
     "deep-link:default",
-    "updater:default"
+    "updater:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-title",
+    "core:window:allow-destroy",
+    "core:window:allow-is-maximized",
+    "core:window:allow-toggle-maximize"
   ]
 }

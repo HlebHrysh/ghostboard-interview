@@ -1,12 +1,17 @@
 pub mod alignment;
 pub mod cursor;
+pub mod hud;
+pub mod hyprland;
 pub mod opacity;
 pub mod panic;
 pub mod screencast;
 pub mod screenshot;
 pub mod stealth;
 
-pub use alignment::{align_to_active_display, calculate_webcam_alignment, WindowGeometry};
+pub use alignment::{
+    align_to_active_display, align_to_active_display_with_padding, align_to_active_display_with_size, apply_window_mode,
+    calculate_webcam_alignment, WindowGeometry,
+};
 pub use cursor::toggle_click_through;
 pub use opacity::set_window_opacity;
 pub use panic::{panic_hide, panic_restore, toggle_panic};

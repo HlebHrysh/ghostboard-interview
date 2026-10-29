@@ -17,6 +17,9 @@ pub struct UpdateCheckResult {
 /// Gracefully returns available: false if in dev mode, pubkey is unset, or server is offline.
 #[tauri::command]
 pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheckResult, String> {
+    if cfg!(debug_assertions) {
+        return Ok(UpdateCheckResult::default());
+    }
     let updater = match app.updater() {
         Ok(u) => u,
         Err(err) => {

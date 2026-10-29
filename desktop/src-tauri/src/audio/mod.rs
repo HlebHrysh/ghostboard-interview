@@ -4,7 +4,8 @@ pub mod ringbuffer;
 pub mod vad;
 
 use crate::audio::capture::{
-    find_loopback_device, find_microphone_device, AudioCaptureStream, CaptureSource,
+    find_loopback_device, find_microphone_device, resolve_device, AudioCaptureStream,
+    CaptureSource,
 };
 use crate::audio::resampler::AudioResampler;
 use crate::audio::ringbuffer::{AudioBufferPool, AudioConsumer};
@@ -20,6 +21,12 @@ pub struct AudioEngineConfig {
     pub source: CaptureSource,
     pub buffer_capacity: usize,
     pub custom_device_name: Option<String>,
+    /// Exact cpal name of the loopback / monitor device capturing the interviewer (None = auto).
+    #[serde(default)]
+    pub loopback_device_name: Option<String>,
+    /// Exact cpal name of the candidate microphone (None = system default).
+    #[serde(default)]
+    pub mic_device_name: Option<String>,
 }
 
 impl Default for AudioEngineConfig {
@@ -28,6 +35,8 @@ impl Default for AudioEngineConfig {
             source: CaptureSource::Dual,
             buffer_capacity: DEFAULT_AUDIO_BUFFER_CAPACITY,
             custom_device_name: None,
+            loopback_device_name: None,
+            mic_device_name: None,
         }
     }
 }
@@ -111,6 +120,12 @@ impl AudioEngine {
         self.config.source = source;
     }
 
+    /// Selects explicit capture devices (empty / None = auto-detect). Takes effect on next `start()`.
+    pub fn set_devices(&mut self, loopback: Option<String>, mic: Option<String>) {
+        self.config.loopback_device_name = loopback.filter(|n| !n.trim().is_empty());
+        self.config.mic_device_name = mic.filter(|n| !n.trim().is_empty());
+    }
+
     /// Initializes and starts real-time audio capture, ring buffer, resampler, and Silero VAD.
     /// Supports simultaneous dual capture of both native system loopback and candidate microphone.
     pub fn start(&mut self) -> Result<(), String> {
@@ -134,7 +149,11 @@ impl AudioEngine {
 
         // 1. Initialize System Loopback Stream (Remote Interlocutor)
         if should_start_loopback {
-            match find_loopback_device(&host) {
+            match resolve_device(
+                &host,
+                self.config.loopback_device_name.as_deref(),
+                find_loopback_device,
+            ) {
                 Ok(device) => {
                     let pool = AudioBufferPool::new(self.config.buffer_capacity);
                     let (producer, consumer) = pool.split();
@@ -165,7 +184,11 @@ impl AudioEngine {
 
         // 2. Initialize Microphone Stream (Local Candidate)
         if should_start_mic {
-            match find_microphone_device(&host) {
+            match resolve_device(
+                &host,
+                self.config.mic_device_name.as_deref(),
+                find_microphone_device,
+            ) {
                 Ok(device) => {
                     let pool = AudioBufferPool::new(self.config.buffer_capacity);
                     let (producer, consumer) = pool.split();

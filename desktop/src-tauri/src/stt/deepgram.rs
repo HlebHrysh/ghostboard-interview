@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::ipc::events::HudEvent;
 
 pub const DEFAULT_DEEPGRAM_URL: &str =
-    "wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1";
+    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1";
 
 /// 45+ technical vocabulary keywords boosted for Deepgram Nova-3 recognition.
 pub const TECH_KEYTERMS: &[&str] = &[
@@ -39,16 +39,17 @@ pub const TECH_KEYTERMS: &[&str] = &[
 ];
 
 /// Builds a fully-formed Deepgram Nova-3 WebSocket streaming URL with 45+ technical keywords boosted.
+/// Defaults to language=multi for simultaneous zero-config recognition of EN, UA, and RU.
 pub fn build_deepgram_url(base_model: Option<&str>, language: Option<&str>) -> String {
     let model = base_model.unwrap_or("nova-3");
+    let target_lang = match language {
+        Some("auto") | None => "multi",
+        Some(l) => l,
+    };
     let mut url = format!(
-        "wss://api.deepgram.com/v1/listen?model={}&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1",
-        model
+        "wss://api.deepgram.com/v1/listen?model={}&language={}&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1",
+        model, target_lang
     );
-    if let Some(lang) = language {
-        let target_lang = if lang == "auto" { "multi" } else { lang };
-        url.push_str(&format!("&language={}", target_lang));
-    }
     for term in TECH_KEYTERMS {
         let encoded: String = url::form_urlencoded::byte_serialize(term.as_bytes()).collect();
         url.push_str(&format!("&keyterm={}", encoded));

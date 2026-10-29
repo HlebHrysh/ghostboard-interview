@@ -150,6 +150,42 @@ export async function setWindowOpacity(opacity: number): Promise<void> {
 }
 
 /**
+ * Native command to dynamically set the Tauri window size.
+ */
+export async function setWindowSize(width: number, height: number): Promise<boolean> {
+  if (!isTauriEnvironment()) return true;
+  try {
+    const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+    await getCurrentWindow().setSize(new LogicalSize(width, height));
+    return true;
+  } catch (_e) {
+    try {
+      await invoke('set_window_size', { width, height });
+      return true;
+    } catch (err) {
+      console.warn('[tauriBridge] setWindowSize error:', err);
+      return false;
+    }
+  }
+}
+
+/**
+ * Native command to switch HUD window mode and adjust physical geometry.
+ */
+export async function setWindowMode(
+  mode: 'full' | 'chat' | 'notch' | 'notch_answering' | 'ticker' | 'launcher' | 'stealth'
+): Promise<boolean> {
+  if (!isTauriEnvironment()) return true;
+  const normalized = mode === 'stealth' ? 'notch' : mode;
+  try {
+    return await invoke<boolean>('set_window_mode', { mode: normalized });
+  } catch (err) {
+    console.warn('[tauriBridge] setWindowMode error:', err);
+    return false;
+  }
+}
+
+/**
  * Native command to center and align the HUD directly under the active webcam lens.
  */
 export async function alignToActiveDisplay(): Promise<boolean> {
@@ -241,13 +277,28 @@ export async function exportMarkdown(
 /**
  * Native auth functions for OAuth 2.0 PKCE, Deep Linking & Device Code Flow
  */
+function devLocalBase(): string | undefined {
+  const isDev = Boolean((import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV);
+  if (!isDev) return undefined;
+  try {
+    const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('ghostboard_backend_url') : null;
+    if (cached && !cached.includes('ghostboard.ai')) {
+      // The Vite origin (5173) proxies /api only; browser pages live on the Next.js server.
+      return cached.includes(':5173') ? 'http://localhost:3000' : cached;
+    }
+  } catch {}
+  return 'http://localhost:3000';
+}
+
 export async function startPkceLogin(baseUrl?: string): Promise<{ auth_url: string; state: string } | null> {
   if (!isTauriEnvironment()) {
     console.log('[tauriBridge] Mock startPkceLogin in browser mode');
     return { auth_url: 'https://ghostboard.ai/auth/authorize', state: 'mock_state' };
   }
   try {
-    return await invoke('start_pkce_login', { baseUrl });
+    const devBase = devLocalBase();
+    const resolved = baseUrl ?? (devBase ? `${devBase}/auth/authorize` : undefined);
+    return await invoke('start_pkce_login', { baseUrl: resolved });
   } catch (err) {
     console.warn('[tauriBridge] start_pkce_login error:', err);
     return null;
@@ -283,7 +334,7 @@ export async function startDeviceCodeFlow(baseUrl?: string): Promise<{
     };
   }
   try {
-    return await invoke('start_device_code_flow', { baseUrl });
+    return await invoke('start_device_code_flow', { baseUrl: baseUrl ?? devLocalBase() });
   } catch (err: unknown) {
     console.warn('[tauriBridge] start_device_code_flow error:', err);
     return null;
@@ -456,6 +507,183 @@ export async function quitAndInstallUpdate(): Promise<boolean> {
   }
 }
 
+// ============================================================================
+// Two-window architecture: Office (main) + detached transparent HUD
+// ============================================================================
+
+export type CopilotMode = 'chat' | 'top_bar';
+
+export interface CopilotLaunchReport {
+  mode: CopilotMode;
+  created: boolean;
+  hyprland: boolean;
+  hyprlandRulesApplied: number;
+  hyprlandRulesFailed: number;
+}
+
+export interface EnvironmentInfo {
+  platform: string;
+  wayland: boolean;
+  hyprland: boolean;
+}
+
+export interface AudioDevice {
+  name: string;
+  isDefault: boolean;
+  isLoopbackCapable: boolean;
+  sampleRate: number;
+  channels: number;
+}
+
+/**
+ * Opens (or re-uses) the detached transparent Copilot HUD window.
+ * Rejects with a readable message on failure so the caller can show it - never swallows errors.
+ * Outside Tauri (plain `vite` in a browser) falls back to a popup window for development.
+ */
+export async function launchCopilotWindow(mode: CopilotMode): Promise<CopilotLaunchReport> {
+  if (!isTauriEnvironment()) {
+    const features = mode === 'chat' ? 'width=780,height=460' : 'width=680,height=150';
+    const popup = window.open(`${window.location.pathname}?window=hud&mode=${mode}`, 'ghostboard-hud', features);
+    if (!popup) throw new Error('Браузер заблокував спливаюче вікно HUD');
+    return { mode, created: true, hyprland: false, hyprlandRulesApplied: 0, hyprlandRulesFailed: 0 };
+  }
+  try {
+    return await invoke<CopilotLaunchReport>('launch_copilot_window', { mode });
+  } catch (err) {
+    throw new Error(typeof err === 'string' ? err : err instanceof Error ? err.message : JSON.stringify(err));
+  }
+}
+
+/** Closes the HUD window and brings the Office back. */
+export async function closeCopilotWindow(): Promise<void> {
+  if (!isTauriEnvironment()) {
+    window.close();
+    return;
+  }
+  try {
+    await invoke('close_copilot_window');
+  } catch (err) {
+    console.warn('[tauriBridge] close_copilot_window error:', err);
+  }
+}
+
+/** Focuses the Office (main) window. */
+export async function openOffice(): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    await invoke('open_office');
+  } catch (err) {
+    console.warn('[tauriBridge] open_office error:', err);
+  }
+}
+
+/** Frameless-window chrome actions for the window that issues the call. */
+export async function windowControl(action: 'minimize' | 'close' | 'toggle_maximize'): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    await invoke('window_control', { action });
+  } catch (err) {
+    console.warn('[tauriBridge] window_control error:', err);
+  }
+}
+
+export async function getEnvironmentInfo(): Promise<EnvironmentInfo> {
+  if (!isTauriEnvironment()) return { platform: 'browser', wayland: false, hyprland: false };
+  try {
+    return await invoke<EnvironmentInfo>('get_environment_info');
+  } catch {
+    return { platform: 'unknown', wayland: false, hyprland: false };
+  }
+}
+
+/** Lists capture devices known to the native audio layer (PipeWire / PulseAudio monitors included). */
+export async function listAudioDevices(): Promise<AudioDevice[]> {
+  if (!isTauriEnvironment()) return [];
+  const raw = await invoke<
+    Array<{
+      name: string;
+      is_default: boolean;
+      is_loopback_capable: boolean;
+      default_sample_rate: number;
+      default_channels: number;
+    }>
+  >('list_audio_devices');
+  return raw.map((d) => ({
+    name: d.name,
+    isDefault: d.is_default,
+    isLoopbackCapable: d.is_loopback_capable,
+    sampleRate: d.default_sample_rate,
+    channels: d.default_channels,
+  }));
+}
+
+export interface AudioStartResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Starts native capture on explicit devices and reports *why* it failed (unlike `startAudioCapture`
+ * which only returns a boolean). The HUD still opens on failure and shows this message.
+ */
+export async function startAudioCaptureDetailed(
+  source: 'dual' | 'loopback' | 'mic',
+  devices: { loopbackDevice?: string | null; micDevice?: string | null } = {}
+): Promise<AudioStartResult> {
+  if (!isTauriEnvironment()) return { ok: false, error: 'Нативне захоплення звуку доступне лише у десктопному застосунку' };
+  try {
+    const ok = await invoke<boolean>('start_audio_capture', {
+      source,
+      loopbackDevice: devices.loopbackDevice || null,
+      micDevice: devices.micDevice || null,
+      force: true,
+    });
+    return { ok };
+  } catch (err) {
+    return { ok: false, error: typeof err === 'string' ? err : err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Hands provider keys (Deepgram STT etc.) to the native pipeline. */
+export async function configureCopilotKeys(keys: { deepgramKey?: string | null }): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  await invoke('configure_copilot_keys', {
+    deepgramKey: keys.deepgramKey ?? null,
+    groqKey: null,
+    openaiKey: null,
+    anthropicKey: null,
+  });
+}
+
+/** Subscribes to a Tauri event (no-op outside Tauri). Returns an unsubscribe function. */
+export function listenTauriEvent<T = unknown>(event: string, handler: (payload: T) => void): () => void {
+  if (!isTauriEnvironment()) return () => {};
+  let disposed = false;
+  let unlisten: (() => void) | undefined;
+  import('@tauri-apps/api/event')
+    .then(({ listen }) => listen<T>(event, (e) => handler(e.payload)))
+    .then((un) => {
+      if (disposed) un();
+      else unlisten = un;
+    })
+    .catch((err) => console.warn(`[tauriBridge] listen(${event}) error:`, err));
+  return () => {
+    disposed = true;
+    unlisten?.();
+  };
+}
+
+/** Broadcasts a Tauri event to every window (no-op outside Tauri). */
+export async function emitTauriEvent(event: string, payload?: unknown): Promise<void> {
+  if (!isTauriEnvironment()) return;
+  try {
+    const { emit } = await import('@tauri-apps/api/event');
+    await emit(event, payload);
+  } catch (err) {
+    console.warn(`[tauriBridge] emit(${event}) error:`, err);
+  }
+}
+
 /**
  * Ensure global window compatibility shim so legacy callers (`window.desktopAPI` / `window.ghostboard`)
  * gracefully route through Tauri v2 native invoke bindings.
@@ -485,8 +713,9 @@ export function setupWindowCompatibilityShim(): void {
     startDeviceCodeFlow: (baseUrl?: string) => startDeviceCodeFlow(baseUrl),
     getAuthState: () => getAuthState(),
     getSavedSession: () => getAuthState(),
+    setWindowMode: (mode: 'full' | 'chat' | 'notch' | 'ticker' | 'launcher' | 'stealth') => setWindowMode(mode),
     getAccessToken: () => getAccessToken(),
-    saveTokens: (token: string, opts?: any) => saveTokens(token, opts),
+    saveTokens: (token: string, opts?: Parameters<typeof saveTokens>[1]) => saveTokens(token, opts),
     logout: () => logout(),
     getSystemInfo: async () => ({
       platform: typeof navigator !== 'undefined' && navigator.userAgent?.includes('Mac') ? 'darwin' : 'linux',
@@ -494,8 +723,8 @@ export function setupWindowCompatibilityShim(): void {
       version: '2.0.0-tauri',
     }),
     getSources: async () => [],
-    minimize: async () => {},
-    close: async () => {},
+    minimize: () => windowControl('minimize'),
+    close: () => windowControl('close'),
   };
 
   if (!g.ghostboard) g.ghostboard = bridgeApi;

@@ -32,6 +32,8 @@ export interface DualColumnChatProps {
   onQuestionSubmit?: (question: string) => void;
   onTriggerScreenshot?: () => void;
   isCapturingScreen?: boolean;
+  screenshotPreview?: string | null;
+  onClearScreenshot?: () => void;
   isFrozen: boolean;
 }
 

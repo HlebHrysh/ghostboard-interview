@@ -630,7 +630,7 @@ export class DualStreamClient {
       if (q.includes('postgres') || q.includes('sql') || q.includes('b-tree') || q.includes('mvcc')) {
         hook = isUk
           ? 'PostgreSQL реалізує MVCC (Multi-Version Concurrency Control) через snapshot isolation, зберігаючи старі версії кортежів у heap pages до спрацювання autovacuum.'
-          : 'PostgreSQL implements MVCC via snapshot isolation, tracking tuple visibility via xmin and xmax without locking read operations.';
+          : 'PostgreSQL implements MVCC via snapshot isolation, tracking tuple visibility via xmin and xmax without locking read operations. (Суть: ізоляція знімків та xmin/xmax версії без блокування читання).';
         pillars = [
           isUk ? 'Heap & Tuple Visibility: кожен кортеж має t_xmin та t_xmax, що визначає видимість транзакцій без блокування readers writers.' : 'Throughput & Latency: Non-blocking I/O multiplexing minimizes per-connection thread overhead.',
           isUk ? 'Індексація: B-Tree забезпечує O(log N) пошук, тоді як GIN індексує масиви та JSONB для швидких containment (@>) запитів.' : 'State Synchronization: Raft consensus or distributed locks guarantee linearizability.',
@@ -640,7 +640,7 @@ export class DualStreamClient {
       } else if (q.includes('asyncio') || q.includes('gil') || q.includes('event loop') || q.includes('python')) {
         hook = isUk
           ? 'В Python асинхронність побудована на однопотоковому Event Loop (asyncio) з кооперативною багатозадачністю, тоді як CPU-bound навантаження вимагають ProcessPoolExecutor для обходу GIL.'
-          : 'Python asyncio utilizes a single-threaded cooperative event loop for I/O multiplexing, whereas CPU-intensive tasks require multiprocessing to bypass GIL.';
+          : 'Python asyncio utilizes a single-threaded cooperative event loop for I/O multiplexing, whereas CPU-intensive tasks require multiprocessing to bypass GIL. (Суть: однопотоковий Event Loop для I/O та мультипроцесинг проти GIL).';
         pillars = [
           isUk ? 'Single-threaded Event Loop: черга подій та селектори (epoll/kqueue) ефективно обслуговують десятки тисяч одночасних I/O з\'єднань.' : 'Throughput & Latency: Non-blocking I/O multiplexing minimizes per-connection thread overhead.',
           isUk ? 'GIL & Concurrency: GIL захищає пам\'ять CPython; для I/O-bound задач використовуємо asyncio, для обчислень — багатопроцесорність.' : 'State Synchronization: Raft consensus or distributed locks guarantee linearizability.',
@@ -651,7 +651,7 @@ export class DualStreamClient {
         // Standard high-performance architecture answer (satisfies tier1 tests)
         hook = isUk
           ? 'У продакшн-архітектурах це вирішується через детерміновані межі стану та асинхронні воркери.'
-          : 'In production architectures, this is handled through deterministic state boundaries and decoupled async workers.';
+          : 'In production architectures, this is handled through deterministic state boundaries and decoupled async workers. (Суть: детерміновані межі стану та асинхронна черга).';
         pillars = [
           'Throughput & Latency: Non-blocking I/O multiplexing minimizes per-connection thread overhead.',
           'State Synchronization: Raft consensus or distributed locks guarantee linearizability.',

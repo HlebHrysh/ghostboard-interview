@@ -73,12 +73,29 @@ async function probeHealth(url: string, timeoutMs = 600): Promise<boolean> {
   }
 }
 
+/** True when running under `tauri dev` / `vite` (never talk to production auth there). */
+export const IS_DEV_MODE: boolean = Boolean(
+  (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV
+);
+
+const DEV_FALLBACK_URL = 'http://localhost:3000';
+let backendOffline = false;
+
+/** True if the last detection found no reachable backend (dev mode only). */
+export function isBackendOffline(): boolean {
+  return backendOffline;
+}
+
+function isProdUrl(url: string | null | undefined): boolean {
+  return Boolean(url && url.includes('ghostboard.ai'));
+}
+
 /**
- * Autodetects the available backend URL:
- * 1. import.meta.env.VITE_API_URL (if explicitly provided)
- * 2. http://localhost:3000/api/health
- * 3. http://localhost:3001/api/health
- * 4. Production cloud (https://ghostboard.ai) or cached URL
+ * Autodetects the available backend URL.
+ * Dev mode order: VITE_API_URL (non-production) → same-origin Vite proxy (/api) → :3000 → :3001.
+ * In dev mode production (https://ghostboard.ai) is NEVER used; if nothing answers we flag the
+ * backend as offline and return the local default WITHOUT caching it, so the next call re-probes.
+ * Release builds keep the cached → production fallback.
  */
 export async function detectBackendUrl(forceRefresh = false): Promise<string> {
   if (activeBaseUrl && !forceRefresh) {
@@ -94,38 +111,56 @@ export async function detectBackendUrl(forceRefresh = false): Promise<string> {
     const envUrl = typeof meta !== 'undefined' ? meta.env?.VITE_API_URL : undefined;
     if (envUrl && envUrl.trim()) {
       const clean = envUrl.trim().replace(/\/+$/, '');
-      if (await probeHealth(clean, 1000)) {
+      if (!(IS_DEV_MODE && isProdUrl(clean)) && (await probeHealth(clean, 1000))) {
         activeBaseUrl = clean;
+        backendOffline = false;
         persistBaseUrl(clean);
         return clean;
       }
     }
 
-    // 2. Local Candidate 1: Next.js default port 3000
-    if (await probeHealth('http://localhost:3000', 500)) {
-      activeBaseUrl = 'http://localhost:3000';
+    // Same-origin Vite dev proxy (auto-routes /api to whichever of :3000/:3001 is alive; no CORS)
+    if (
+      IS_DEV_MODE &&
+      typeof window !== 'undefined' &&
+      window.location?.hostname === 'localhost' &&
+      window.location.port === '5173' &&
+      (await probeHealth(window.location.origin, 700))
+    ) {
+      activeBaseUrl = window.location.origin;
+      backendOffline = false;
       persistBaseUrl(activeBaseUrl);
       return activeBaseUrl;
     }
 
-    // 3. Local Candidate 2: Next.js alternate port 3001
-    if (await probeHealth('http://localhost:3001', 500)) {
-      activeBaseUrl = 'http://localhost:3001';
-      persistBaseUrl(activeBaseUrl);
-      return activeBaseUrl;
+    for (const candidate of ['http://localhost:3000', 'http://localhost:3001']) {
+      if (await probeHealth(candidate, 500)) {
+        activeBaseUrl = candidate;
+        backendOffline = false;
+        persistBaseUrl(candidate);
+        return candidate;
+      }
     }
 
-    // 4. In browser Vite dev without Tauri, relative /api proxy works via dev server
+    // Browser-only Vite dev fallback
     if (typeof window !== 'undefined' && !isTauriEnvironment() && window.location?.hostname === 'localhost') {
       const proxyCandidate = window.location.origin;
       if (proxyCandidate && (await probeHealth(proxyCandidate, 500))) {
         activeBaseUrl = proxyCandidate;
+        backendOffline = false;
         persistBaseUrl(activeBaseUrl);
         return activeBaseUrl;
       }
     }
 
-    // 5. Check previously saved working URL
+    if (IS_DEV_MODE) {
+      // Nothing reachable: stay offline, do not cache, never use production.
+      backendOffline = true;
+      activeBaseUrl = null;
+      return DEV_FALLBACK_URL;
+    }
+
+    // Release: previously saved working URL
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage) {
       try {
         const cached = localStorage.getItem(STORAGE_URL_KEY);
@@ -136,7 +171,7 @@ export async function detectBackendUrl(forceRefresh = false): Promise<string> {
       } catch {}
     }
 
-    // 6. Production cloud fallback
+    // Release: production cloud fallback
     activeBaseUrl = PROD_CLOUD_URL;
     persistBaseUrl(activeBaseUrl);
     return activeBaseUrl;
@@ -156,23 +191,25 @@ function persistBaseUrl(url: string) {
 }
 
 /**
- * Returns currently resolved base URL synchronously (defaults to cached or localhost:3000)
+ * Returns currently resolved base URL synchronously (defaults to cached or localhost:3000).
+ * In dev mode a cached production URL is ignored.
  */
 export function getResolvedBaseUrl(): string {
   if (activeBaseUrl) return activeBaseUrl;
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage) {
     try {
       const cached = localStorage.getItem(STORAGE_URL_KEY);
-      if (cached) return cached;
+      if (cached && !(IS_DEV_MODE && isProdUrl(cached))) return cached;
     } catch {}
   }
-  return 'http://localhost:3000';
+  return DEV_FALLBACK_URL;
 }
 
 /**
  * Overrides or manually updates the active base URL
  */
 export function setBaseUrl(url: string): void {
+  if (IS_DEV_MODE && isProdUrl(url)) return;
   activeBaseUrl = url.replace(/\/+$/, '');
   persistBaseUrl(activeBaseUrl);
 }
@@ -248,6 +285,9 @@ export async function apiFetch<T = unknown>(
   options: RequestInit = {}
 ): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
   const baseUrl = await detectBackendUrl();
+  if (IS_DEV_MODE && backendOffline) {
+    return { ok: false, status: 0, data: null, error: 'BACKEND_OFFLINE' };
+  }
   const url = resolveApiUrl(path, baseUrl);
   const token = await getAuthToken();
 

@@ -79,15 +79,51 @@ function highlightTech(text: string): React.ReactNode[] {
   return parts;
 }
 
+function renderBilingualPhrase(text: string): React.ReactNode {
+  if (!text) return null;
+  // Splits by parenthesized hints containing Cyrillic, e.g. (У продакшені вирішуємо це...)
+  const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
+  const parts = text.split(regex);
+  return parts.map((part, idx) => {
+    if (part.startsWith('(') && part.endsWith(')') && /[а-яА-ЯёЁіІїЇєЄґҐ]/.test(part)) {
+      return (
+        <span
+          key={idx}
+          className="text-zinc-400 text-xs italic bg-white/[0.04] px-2 py-0.5 rounded border border-white/5 mx-1 inline-block select-all font-normal"
+          title="Підказка рідною мовою (не читати вголос)"
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={idx}>{highlightTech(part)}</span>;
+  });
+}
+
 function formatPillarAnchor(text: string): React.ReactNode {
-  const colonIdx = text.indexOf(':');
-  if (colonIdx > 0 && colonIdx <= 45) {
-    const anchor = text.slice(0, colonIdx);
-    const rest = text.slice(colonIdx);
+  // Check for bold anchor pattern: **Anchor**: rest
+  const boldMatch = text.match(/^\s*(?:[•\-\*]\s*)?\*\*([^*]+)\*\*:\s*(.*)$/);
+  if (boldMatch) {
+    const [, anchor, rest] = boldMatch;
     return (
       <>
-        <strong className="font-bold text-white tracking-tight mr-1">{highlightTech(anchor)}</strong>
-        <span className="text-zinc-200">{highlightTech(rest)}</span>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+          {highlightTech(anchor)}
+        </span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
+      </>
+    );
+  }
+  const colonIdx = text.indexOf(':');
+  if (colonIdx > 0 && colonIdx <= 45) {
+    const anchor = text.slice(0, colonIdx).replace(/^[•\-\*]\s*/, '').replace(/^\*\*/, '').replace(/\*\*$/, '');
+    const rest = text.slice(colonIdx + 1);
+    return (
+      <>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+          {highlightTech(anchor)}
+        </span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
       </>
     );
   }
@@ -95,9 +131,11 @@ function formatPillarAnchor(text: string): React.ReactNode {
   if (dashMatch) {
     return (
       <>
-        <strong className="font-bold text-white tracking-tight">{highlightTech(dashMatch[1])}</strong>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+          {highlightTech(dashMatch[1])}
+        </span>
         <span className="text-zinc-400 mx-1">—</span>
-        <span className="text-zinc-200">{highlightTech(dashMatch[2])}</span>
+        <span className="text-zinc-200">{renderBilingualPhrase(dashMatch[2])}</span>
       </>
     );
   }
@@ -107,12 +145,14 @@ function formatPillarAnchor(text: string): React.ReactNode {
     const rest = ' ' + words.slice(3).join(' ');
     return (
       <>
-        <strong className="font-bold text-white tracking-tight">{highlightTech(anchor)}</strong>
-        <span className="text-zinc-200">{highlightTech(rest)}</span>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+          {highlightTech(anchor)}
+        </span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
       </>
     );
   }
-  return <span className="text-zinc-200">{highlightTech(text)}</span>;
+  return <span className="text-zinc-200">{renderBilingualPhrase(text)}</span>;
 }
 
 type FeedItem =
@@ -123,7 +163,12 @@ export interface DualStreamCopilotProps {
   onPanicExit?: () => void;
 }
 
-const REFINE_KEYS = ['under_the_hood', 'code', 'shorter', 're_angle'] as const;
+const TARGET_MODIFIERS = [
+  { key: 'shorter', label: '⚡ Коротше', tooltip: 'Стиснути до 3 коротких тез' },
+  { key: 'simpler', label: '💡 Простіше', tooltip: 'Пояснити на пальцях без важкого жаргону' },
+  { key: 'code', label: '</> Код', tooltip: 'Одразу чистий робочий код + O(n)' },
+  { key: 're_angle', label: '🔄 Інший підхід', tooltip: 'Альтернативна архітектура та компроміси' },
+] as const;
 
 const BRIDGE_PHRASES: Record<string, string[]> = {
   uk: [
@@ -164,6 +209,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const [sessionDuration, setSessionDuration] = useState(0);
   const speechLanguageRef = useRef<string>('auto');
   const outputLanguageRef = useRef<string>('auto');
+  const [aiLanguageMode, setAiLanguageMode] = useState<string>('auto');
+
+  const handleAiLanguageChange = useCallback((mode: string) => {
+    setAiLanguageMode(mode);
+    outputLanguageRef.current = mode;
+    try {
+      localStorage.setItem('ghostboard_ai_language', mode);
+      localStorage.setItem('ghostboard_output_language', mode);
+    } catch {}
+  }, []);
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSoundCheckOpen, setIsSoundCheckOpen] = useState(false);
@@ -457,10 +512,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       const allSpeechLangs = ['uk', 'en', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'ru', 'auto'];
       if (savedLang && allSpeechLangs.includes(savedLang)) speechLanguageRef.current = savedLang;
 
-      const savedOut = localStorage.getItem('ghostboard_output_language');
-      const allLangs = ['uk', 'en', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'auto'];
-      outputLanguageRef.current =
-        savedOut && allLangs.includes(savedOut) ? savedOut : locale === 'ua' ? 'uk' : locale;
+      const savedAi = localStorage.getItem('ghostboard_ai_language') || localStorage.getItem('ghostboard_output_language');
+      const supportedAiLangs = ['auto', 'bilingual_uk', 'bilingual_ru', 'uk', 'en', 'ru', 'pl', 'de', 'es', 'fr'];
+      if (savedAi && supportedAiLangs.includes(savedAi)) {
+        setAiLanguageMode(savedAi);
+        outputLanguageRef.current = savedAi;
+      } else {
+        const fallback = locale === 'ua' ? 'bilingual_uk' : (locale as string) === 'ru' ? 'bilingual_ru' : 'auto';
+        setAiLanguageMode(fallback);
+        outputLanguageRef.current = fallback;
+      }
 
       const savedMode = localStorage.getItem('ghostboard_trigger_mode');
       if (savedMode === 'auto' || savedMode === 'enter') {
@@ -885,6 +946,20 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 Q · {activeQA.question}
               </p>
 
+              {/* Context Badge from <<<META>>> */}
+              {activeQA.meta && (
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/10 text-[11px] font-mono text-zinc-300">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <span className="font-semibold text-white">{activeQA.meta.domain}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-zinc-300">{activeQA.meta.level}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-cyan-300 uppercase tracking-wider font-semibold">{activeQA.meta.language}</span>
+                  </div>
+                </div>
+              )}
+
               {activeQA.nativeTranslation && (
                 <div className="space-y-1.5">
                   <GlowBadge tone="indigo">{luxT.translation}</GlowBadge>
@@ -894,7 +969,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
               {/* Phase 1: HOOK / Opening Phrase (Rule of 2 Seconds) */}
               {mainAnswer && (
-                <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-amber-500/[0.08] via-amber-500/[0.03] to-transparent border border-amber-500/30 shadow-[0_4px_24px_rgba(245,158,11,0.06)] relative group">
+                <div className="pl-4 py-3 border-l-4 border-l-amber-400/90 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.04] shadow-[0_4px_24px_rgba(245,158,11,0.06)] relative group">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5 text-amber-400" /> Фаза 1 · Голосовий старт (Hook)
@@ -908,9 +983,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                       {copiedId === 'main' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  <p className="text-lg sm:text-xl font-semibold text-white leading-relaxed tracking-tight font-sans">
-                    &ldquo;{highlightTech(mainAnswer)}&rdquo;
-                  </p>
+                  <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans">
+                    {renderBilingualPhrase(mainAnswer)}
+                  </div>
                 </div>
               )}
 
@@ -984,27 +1059,21 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               )}
 
               <div className="pt-4 border-t border-white/[0.06] flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-600 mr-1" style={{ fontSize: 10 }}>{hudAnswer.refineHeader}</span>
-                {REFINE_KEYS.map((key) => {
-                  const labels = {
-                    under_the_hood: hudAnswer.refineUnderHood,
-                    code: hudAnswer.refineCode,
-                    shorter: hudAnswer.refineShorter,
-                    re_angle: hudAnswer.refineReAngle,
-                  } as const;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={isCopilotGenerating}
-                      onClick={() => handleRefineQA(activeQA.id, key)}
-                      className="px-3 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-zinc-300 hover:bg-white/10 hover:text-white transition disabled:opacity-40 cursor-pointer font-mono"
-                      style={{ fontSize: 11 }}
-                    >
-                      {labels[key]}
-                    </button>
-                  );
-                })}
+                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mr-1" style={{ fontSize: 10 }}>
+                  1-Click Модифікатори:
+                </span>
+                {TARGET_MODIFIERS.map((mod) => (
+                  <button
+                    key={mod.key}
+                    type="button"
+                    disabled={isCopilotGenerating}
+                    onClick={() => handleRefineQA(activeQA.id, mod.key)}
+                    title={mod.tooltip}
+                    className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/20 text-zinc-200 hover:text-white transition-all disabled:opacity-40 cursor-pointer font-mono text-xs flex items-center gap-1 shadow-sm active:scale-95"
+                  >
+                    <span>{mod.label}</span>
+                  </button>
+                ))}
               </div>
             </motion.article>
           ) : isCopilotGenerating ? (
@@ -1056,6 +1125,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         liveVolume={liveVolume}
         userPlan={userPlan}
         candidateRole={candidateProfile?.role}
+        aiLanguageMode={aiLanguageMode}
+        onAiLanguageChange={handleAiLanguageChange}
         onUpgradeClick={() => router.push('/pricing')}
         onManualReconnect={handleManualReconnect}
         onOpenProfile={() => setIsProfileOpen(true)}

@@ -39,6 +39,19 @@ export interface GeminiCallOptions {
   generationConfig?: Record<string, unknown>;
   /** Per-model request timeout in ms (default 25000). Lower = faster failover. */
   timeoutMs?: number;
+  /** Disable thinking budget to ensure sub-250ms TTFT (default: true for flash models) */
+  zeroThinkingBudget?: boolean;
+}
+
+export function getFastStreamingGenerationConfig(maxTokens = 900): Record<string, unknown> {
+  return {
+    temperature: 0.2,
+    topP: 0.9,
+    maxOutputTokens: maxTokens,
+    thinkingConfig: {
+      thinkingBudget: 0,
+    },
+  };
 }
 
 export interface GeminiCallResult {
@@ -74,15 +87,22 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
+      const genConfig: Record<string, unknown> = {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+        ...(options.generationConfig || {}),
+      };
+
+      if (options.zeroThinkingBudget !== false && !genConfig.thinkingConfig) {
+        genConfig.thinkingConfig = { thinkingBudget: 0 };
+      }
+
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: options.contents,
-          generationConfig: options.generationConfig || {
-            temperature: 0.2,
-            maxOutputTokens: 2048,
-          },
+          generationConfig: genConfig,
         }),
         signal: controller.signal,
       });

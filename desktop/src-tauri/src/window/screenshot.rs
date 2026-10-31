@@ -49,7 +49,80 @@ pub fn create_fallback_capture(width: u32, height: u32) -> Result<ScreenCaptureR
     })
 }
 
+/// Parses (width, height) directly from a PNG buffer's IHDR chunk without full image decode.
+pub fn parse_png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() >= 24 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" && &bytes[12..16] == b"IHDR" {
+        let w = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+        let h = u32::from_be_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+        if w > 0 && h > 0 {
+            return Some((w, h));
+        }
+    }
+    None
+}
+
+/// Fast native capture on Linux Wayland (Hyprland / Sway / GNOME) avoiding slow XWayland hooks.
+fn capture_wayland_native() -> Option<ScreenCaptureResult> {
+    #[cfg(target_os = "linux")]
+    {
+        let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+            || std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some();
+        if !is_wayland {
+            return None;
+        }
+
+        // 1. Try `grim -` (standard Wayland screenshot tool, returns PNG to stdout)
+        if let Ok(output) = std::process::Command::new("grim").arg("-").output() {
+            if output.status.success() && output.stdout.len() >= 24 && &output.stdout[0..8] == b"\x89PNG\r\n\x1a\n" {
+                let (width, height) = parse_png_dimensions(&output.stdout).unwrap_or((1920, 1080));
+                let base64_png = base64::engine::general_purpose::STANDARD.encode(&output.stdout);
+                tracing::info!(target: "ghostboard::window", "Captured display using native `grim` ({}x{})", width, height);
+                return Some(ScreenCaptureResult {
+                    base64_png,
+                    width,
+                    height,
+                });
+            }
+        }
+
+        // 2. Try file-based capture via grim, spectacle, or gnome-screenshot
+        let temp_path = std::env::temp_dir().join("ghostboard_cap.png");
+        let temp_str = temp_path.to_string_lossy().to_string();
+
+        let attempts = [
+            ("grim", vec![temp_str.clone()]),
+            ("spectacle", vec!["-b".into(), "-n".into(), "-o".into(), temp_str.clone()]),
+            ("gnome-screenshot", vec!["-f".into(), temp_str.clone()]),
+        ];
+
+        for (bin, args) in attempts {
+            if let Ok(status) = std::process::Command::new(bin).args(&args).status() {
+                if status.success() && temp_path.exists() {
+                    if let Ok(bytes) = std::fs::read(&temp_path) {
+                        let _ = std::fs::remove_file(&temp_path);
+                        if bytes.len() >= 24 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
+                            let (width, height) = parse_png_dimensions(&bytes).unwrap_or((1920, 1080));
+                            let base64_png = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            tracing::info!(target: "ghostboard::window", "Captured display using native `{}`", bin);
+                            return Some(ScreenCaptureResult {
+                                base64_png,
+                                width,
+                                height,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn raw_screen_capture() -> Option<ScreenCaptureResult> {
+    if let Some(res) = capture_wayland_native() {
+        return Some(res);
+    }
+
     let monitors = xcap::Monitor::all().ok()?;
     let primary = monitors
         .iter()
@@ -70,17 +143,21 @@ fn raw_screen_capture() -> Option<ScreenCaptureResult> {
     })
 }
 
-/// Captures the primary or active display using the native `xcap` crate.
-/// If hardware capture fails (e.g. headless CI, missing display server, Wayland permission denied,
-/// or compositor deadlock), safely times out after 1500ms and returns a clean fallback without crashing.
+/// Captures the primary or active display. On Wayland tries `grim` / `spectacle` first (<50ms).
+/// Falls back to `xcap` with a 2000ms timeout, returning a clean dark luxury fallback on failure.
 pub fn capture_screen_native() -> ScreenCaptureResult {
+    // Fast path: Try Wayland native screenshot tool synchronously (usually finishes in ~20-50ms)
+    if let Some(res) = capture_wayland_native() {
+        return res;
+    }
+
     let (tx, rx) = std::sync::mpsc::channel();
     let _ = std::thread::spawn(move || {
         let result = std::panic::catch_unwind(raw_screen_capture);
         let _ = tx.send(result);
     });
 
-    match rx.recv_timeout(Duration::from_millis(1500)) {
+    match rx.recv_timeout(Duration::from_millis(2000)) {
         Ok(Ok(Some(res))) => res,
         Ok(Ok(None)) => {
             tracing::warn!(target: "ghostboard::window", "Display capture returned empty or failed. Using fallback.");
@@ -91,7 +168,7 @@ pub fn capture_screen_native() -> ScreenCaptureResult {
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-            tracing::warn!(target: "ghostboard::window", "Display capture timed out (unpermitted Wayland / headless). Using fallback.");
+            tracing::warn!(target: "ghostboard::window", "Display capture timed out. Using fallback.");
             create_fallback_capture(1920, 1080).unwrap_or_else(|_| create_minimal_fallback())
         }
         Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {

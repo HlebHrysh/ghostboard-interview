@@ -47,6 +47,8 @@ import {
   DialogueMessage,
 } from './lib/audioEngine';
 import { DualStreamClient, StructuredAnswerOutput, parseDualStreamDelimiters } from './lib/streamClient';
+import { loadSettings } from './lib/desktopSettings';
+import type { DirectorModifier } from './lib/answerStream';
 import {
   normalizeTechnicalSpeech,
   isFillerOrNoise,
@@ -415,7 +417,7 @@ export default function App() {
   const triggerCopilotResponse = useCallback(
     async (
       question: string,
-      modifier?: 'normal' | 'shorter' | 'more_technical' | 'code_example' | 'tradeoffs'
+      modifier?: DirectorModifier
     ) => {
       if (isFrozen) {
         console.info('[App] Freeze Mode active: queuing incoming question without updating cards');
@@ -440,11 +442,18 @@ export default function App() {
       try {
         const token = await getAccessToken();
         companionSyncRef.current.setAuthToken(token);
+        const savedSettings = loadSettings();
+        const hintLang = savedSettings.hintLanguage || 'auto';
+        const isBilingual = hintLang.startsWith('bilingual');
+        const resolvedOutputLang = isBilingual ? 'bilingual' : hintLang;
+        const resolvedHelperLang = hintLang === 'bilingual_ru' ? 'ru' : 'uk';
+
         await streamClientRef.current.requestStream(
           {
             question,
             directorModifier: modifier || 'normal',
-            outputLanguage: 'uk',
+            outputLanguage: resolvedOutputLang,
+            helperLanguage: isBilingual ? resolvedHelperLang : undefined,
             authToken: token,
             candidateProfile: {
               role: candidateProfile.role,
@@ -503,7 +512,7 @@ export default function App() {
 
   // 1-Click AI Modifiers
   const handleApplyModifier = useCallback(
-    (modifier: 'shorter' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => {
+    (modifier: DirectorModifier) => {
       if (modifier === 'bridge') {
         const bridgeHooks = [
           'Це класичне питання системного дизайну, де ключовий баланс лежить між консистентністю даних та затримкою (latency).',
@@ -928,13 +937,19 @@ function solveTechnicalScreenProblem<T>(items: T[]): Map<T, number> {
       } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'q' || e.key === 'Q')) {
         e.preventDefault();
         handleApplyModifier('shorter');
+      } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        handleApplyModifier('simpler');
+      } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        handleApplyModifier('re_angle');
       } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
         e.preventDefault();
         handleApplyModifier('more_technical');
       } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
         if (!window.getSelection()?.toString()) {
           e.preventDefault();
-          handleApplyModifier('code_example');
+          handleApplyModifier('code');
         }
       } else if ((e.ctrlKey || e.altKey || e.metaKey) && (e.key === 't' || e.key === 'T')) {
         e.preventDefault();

@@ -47,11 +47,24 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
   }
 
   try {
+    let lastEventKey = '';
+    let lastEventTime = 0;
+    const safeDispatch = (ev: HudEvent) => {
+      if (!active) return;
+      const now = Date.now();
+      const payloadSnippet = ev.payload ? JSON.stringify(ev.payload).slice(0, 100) : '';
+      const key = `${ev.type}:${payloadSnippet}`;
+      if (key === lastEventKey && now - lastEventTime < 25) {
+        return;
+      }
+      lastEventKey = key;
+      lastEventTime = now;
+      onEvent(ev);
+    };
+
     const channel = new Channel<HudEvent>();
     channel.onmessage = (event: HudEvent) => {
-      if (active) {
-        onEvent(event);
-      }
+      safeDispatch(event);
     };
 
     invoke('start_copilot_stream', { onEvent: channel }).catch((err) => {
@@ -60,8 +73,13 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
       }
     });
 
+    const unlistenGlobal = listenTauriEvent<HudEvent>('hud-event', (event) => {
+      safeDispatch(event);
+    });
+
     return () => {
       active = false;
+      unlistenGlobal();
       invoke('stop_hud_stream').catch(() => {});
     };
   } catch (err) {
@@ -100,6 +118,36 @@ export async function stopAudioCapture(): Promise<boolean> {
   } catch (err) {
     console.warn('[tauriBridge] stop_audio_capture failed:', err);
     return false;
+  }
+}
+
+/**
+ * Sets native audio listen mode: 'all' (System sound + Candidate Mic) or 'system_only' (Loopback only).
+ */
+export async function setListenMode(mode: 'all' | 'system_only'): Promise<string> {
+  if (!isTauriEnvironment()) {
+    return mode;
+  }
+  try {
+    return await invoke<string>('set_listen_mode', { mode });
+  } catch (err) {
+    console.warn('[tauriBridge] set_listen_mode failed:', err);
+    return mode;
+  }
+}
+
+/**
+ * Gets currently active audio listen mode.
+ */
+export async function getListenMode(): Promise<string> {
+  if (!isTauriEnvironment()) {
+    return 'all';
+  }
+  try {
+    return await invoke<string>('get_listen_mode');
+  } catch (err) {
+    console.warn('[tauriBridge] get_listen_mode failed:', err);
+    return 'all';
   }
 }
 

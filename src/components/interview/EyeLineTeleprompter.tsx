@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, ChevronRight, ChevronLeft, X, Sparkles, Move } from 'lucide-react';
 import { InterviewQAItem } from '@/types/interview';
+import { parseBilingualParts } from '@/lib/aiPromptCore';
 
 interface EyeLineTeleprompterProps {
   activeQA: InterviewQAItem | null;
@@ -70,9 +71,15 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
         <div className="flex items-center justify-between mt-1 mb-1.5 px-1">
           <div className="flex items-center gap-2">
             <Eye className="w-3.5 h-3.5 text-white" />
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold">
-              {activeQA.tag || 'AI Co-Pilot'}
-            </span>
+            {activeQA.meta ? (
+              <span className="text-[10px] font-mono text-zinc-300 font-semibold truncate max-w-[260px]">
+                {activeQA.meta.domain} • {activeQA.meta.level} • {activeQA.meta.language}
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold">
+                {activeQA.tag || 'AI Co-Pilot'}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -94,7 +101,18 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
         {/* Core Thesis Formulation — large, high-contrast, effortless to read with peripheral eye */}
         <div className="px-1 py-1">
           <p className="text-[15px] leading-snug font-semibold text-white tracking-tight line-clamp-2">
-            {currentSlide}
+            {parseBilingualParts(currentSlide).map((part, idx) =>
+              part.isTranslation ? (
+                <span
+                  key={idx}
+                  className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                >
+                  {part.text}
+                </span>
+              ) : (
+                <span key={idx}>{part.text}</span>
+              )
+            )}
           </p>
         </div>
 

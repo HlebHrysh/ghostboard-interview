@@ -18,6 +18,7 @@ import { InterviewQAItem } from '@/types/interview';
 import { ScrambleText } from '@/components/ui/ScrambleText';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
+import { parseBilingualParts } from '@/lib/aiPromptCore';
 
 interface StealthAnswerCardProps {
   activeQA: InterviewQAItem;
@@ -28,7 +29,7 @@ interface StealthAnswerCardProps {
   pendingNewCount?: number;
   userPlan?: 'free' | 'pro' | 'lifetime';
   onCopy: (text: string, id: string) => void;
-  onRefineQA: (id: string, refinement: 'under_the_hood' | 'code' | 'shorter' | 're_angle') => void;
+  onRefineQA: (id: string, refinement: 'under_the_hood' | 'code' | 'shorter' | 'simpler' | 're_angle') => void;
   onToggleFreeze?: () => void;
   onJumpToNewest?: () => void;
   onUpgradeClick?: () => void;
@@ -110,9 +111,20 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
         <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-white/[0.06]">
           <div className="space-y-1.5 flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono text-zinc-400">
-              <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-semibold uppercase tracking-wider text-[10px]">
-                {activeQA.tag || 'Architecture'}
-              </span>
+              {activeQA.meta ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-semibold text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <span>{activeQA.meta.domain}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-zinc-300">{activeQA.meta.level}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-cyan-300 uppercase">{activeQA.meta.language}</span>
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-zinc-300 font-semibold uppercase tracking-wider text-[10px]">
+                  {activeQA.tag || 'Architecture'}
+                </span>
+              )}
               <span className="text-zinc-600">·</span>
               <span className="text-zinc-400">{activeQA.timecode}</span>
               {activeQA.confidenceScore !== undefined && (
@@ -142,15 +154,26 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
           </button>
         </div>
 
-        {/* ── 1. LEAD HOOK (The "First 5 Seconds" Immediate Spoken Answer) ── */}
-        <div className="my-4 p-4 sm:p-5 rounded-xl bg-white/[0.035] border border-white/[0.08] shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)]">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-white font-bold mb-2 flex items-center gap-1.5">
-            <span className="status-dot !w-1.5 !h-1.5" />
-            <span>{hud.directAnswerHeader} (Speak First)</span>
+        {/* ── 1. LEAD HOOK (Phase 1: First phrase out loud, 17-19px, border-l-4) ── */}
+        <div className="my-4 pl-4 pr-3.5 py-3 border-l-4 border-l-amber-400/90 rounded-r-xl bg-white/[0.02] border-y border-r border-white/[0.05] shadow-[0_4px_20px_rgba(245,158,11,0.05)]">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold mb-2 flex items-center gap-1.5">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span>Фаза 1 · Голосовий старт (Hook)</span>
           </div>
-          <p className="text-base sm:text-lg lg:text-[19px] font-semibold text-white leading-relaxed tracking-tight font-sans animate-in fade-in duration-200">
-            {mainAnswer}
-          </p>
+          <div className="text-base sm:text-lg lg:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans animate-in fade-in duration-200">
+            {parseBilingualParts(mainAnswer).map((part, idx) =>
+              part.isTranslation ? (
+                <span
+                  key={idx}
+                  className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                >
+                  {part.text}
+                </span>
+              ) : (
+                <span key={idx}>{part.text}</span>
+              )
+            )}
+          </div>
         </div>
 
         {/* ── 1.5 BILINGUAL NATIVE TRANSLATION CRIB-SHEET ── */}
@@ -166,65 +189,47 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
           </div>
         )}
 
-        {/* ── 2. KEY THESES BULLETS ── */}
+        {/* ── 2. KEY THESES BULLETS (Phase 2: Pillars with bold chips) ── */}
         {activeQA.hints && activeQA.hints.length > 0 && (
           <div className="my-3.5 space-y-2">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold px-0.5">
-              {hud.keyThesesHeader}
+            <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold px-0.5">
+              Фаза 2 · Ключові тези (Pillars)
             </div>
 
             <ul className="space-y-1.5 text-xs sm:text-sm font-sans text-zinc-300">
-              {/* First thesis always visible */}
-              {activeQA.hints.slice(0, 1).map((hint, idx) => (
-                <li
-                  key={idx}
-                  className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
-                >
-                  <span className="text-white font-mono text-sm leading-none mt-0.5 font-bold">•</span>
-                  <span className="leading-relaxed font-medium">{hint}</span>
-                </li>
-              ))}
-
-              {/* Remaining theses: visible for pro, soft-paywall for free */}
-              {activeQA.hints.length > 1 && (
-                userPlan === 'free' ? (
-                  <div className="relative rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5 mt-2">
-                    <div className="filter blur-[3px] select-none pointer-events-none opacity-40 space-y-1.5">
-                      {activeQA.hints.slice(1).map((hint, idx) => (
-                        <div key={idx} className="flex items-start gap-2 p-1.5 text-xs">
-                          <span className="text-zinc-500">•</span>
-                          <span>{hint}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-2 bg-gradient-to-t from-[#0D0D10] via-[#0D0D10]/80 to-transparent">
-                      <span className="text-xs font-mono text-zinc-300 flex items-center gap-1.5 font-semibold">
-                        <Lock className="w-3.5 h-3.5 text-white" />
-                        <span>{hud.deepDiveLocked}</span>
-                      </span>
-                      {onUpgradeClick && (
-                        <button
-                          type="button"
-                          onClick={onUpgradeClick}
-                          className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-white text-black text-xs font-mono font-bold transition-all cursor-pointer shadow-md"
-                        >
-                          {hud.unlockProBtn}
-                        </button>
+              {activeQA.hints.map((hint, idx) => {
+                const colonIdx = hint.indexOf(':');
+                const hasAnchor = colonIdx > 0 && colonIdx < 35;
+                const anchor = hasAnchor ? hint.slice(0, colonIdx) : null;
+                const rest = hasAnchor ? hint.slice(colonIdx + 1) : hint;
+                return (
+                  <li
+                    key={idx}
+                    className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
+                  >
+                    <span className="text-cyan-400 font-mono text-xs leading-none mt-1 font-bold">{idx + 1}.</span>
+                    <div className="leading-relaxed font-medium flex-1">
+                      {anchor && (
+                        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+                          {anchor}
+                        </span>
+                      )}
+                      {parseBilingualParts(rest).map((part, pIdx) =>
+                        part.isTranslation ? (
+                          <span
+                            key={pIdx}
+                            className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                          >
+                            {part.text}
+                          </span>
+                        ) : (
+                          <span key={pIdx}>{part.text}</span>
+                        )
                       )}
                     </div>
-                  </div>
-                ) : (
-                  activeQA.hints.slice(1).map((hint, idx) => (
-                    <li
-                      key={idx + 1}
-                      className="flex items-start gap-2.5 p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04]"
-                    >
-                      <span className="text-white font-mono text-sm leading-none mt-0.5 font-bold">•</span>
-                      <span className="leading-relaxed font-medium">{hint}</span>
-                    </li>
-                  ))
-                )
-              )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}
@@ -267,25 +272,25 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
           </div>
         )}
 
-        {/* ── 5. REFINEMENT BAR (Raycast Segmented Control) ── */}
+        {/* ── 5. 1-CLICK MODIFIERS BAR ── */}
         <div className="mt-4 pt-3.5 border-t border-white/[0.06] flex items-center justify-between gap-2 flex-wrap">
           <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
-            {hud.refineHeader}:
+            1-Click Модифікатори:
           </span>
 
-          <div className="inline-flex items-center gap-1 p-0.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-xs font-mono">
+          <div className="inline-flex items-center gap-1.5 p-0.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-xs font-mono">
             {[
-              { key: 'under_the_hood', label: hud.refineUnderHood, kbd: 'H' },
-              { key: 'code', label: hud.refineCode, kbd: 'C' },
-              { key: 'shorter', label: hud.refineShorter, kbd: 'S' },
-              { key: 're_angle', label: hud.refineReAngle, kbd: 'R' },
+              { key: 'shorter', label: '⚡ Коротше', kbd: 'S' },
+              { key: 'simpler', label: '💡 Простіше', kbd: 'E' },
+              { key: 'code', label: '</> Код', kbd: 'C' },
+              { key: 're_angle', label: '🔄 Інший підхід', kbd: 'R' },
             ].map((btn) => (
               <button
                 key={btn.key}
                 type="button"
-                onClick={() => onRefineQA(activeQA.id, btn.key as 'under_the_hood' | 'code' | 'shorter' | 're_angle')}
+                onClick={() => onRefineQA(activeQA.id, btn.key as 'shorter' | 'simpler' | 'code' | 're_angle')}
                 disabled={isCopilotGenerating}
-                className="px-2.5 py-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
+                className="px-2.5 py-1 rounded-lg text-zinc-300 hover:text-white hover:bg-white/[0.08] transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-40"
               >
                 <span>{btn.label}</span>
                 <kbd className="text-[9px] font-mono text-zinc-500 px-1 py-0.2 rounded bg-black/40 border border-white/10">

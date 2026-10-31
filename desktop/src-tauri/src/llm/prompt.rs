@@ -1,54 +1,127 @@
 /// Formats system and user prompts for real-time eyeline teleprompter delivery.
-/// The output strictly enforces three sections: Direct Answer, Key Talking Points, and Code Snippet.
+/// Strictly enforces:
+/// 1. Zero-Config domain & profession classification (<<<META: Domain | Level | Lang>>>)
+/// 2. 3-Phase progressive delivery (<<<PHASE_1:HOOK>>>, <<<PHASE_2:PILLARS>>>, <<<PHASE_3:DEEP_DIVE>>>)
+/// 3. Anti-Wikipedia live conversational speech in 1st person
+/// 4. Bold anchor keywords for Phase 2 pillars
+/// 5. Full multilingual and bilingual prompter support
+/// 6. Fast modifiers: shorter, simpler, code, re_angle
 
-pub const BASE_SYSTEM_PROMPT: &str = r#"You are Ghostboard, an ultra-low latency stealth interview copilot.
-Your responses are displayed on a glassmorphic teleprompter directly beneath the candidate's webcam.
-You must generate structured, authoritative technical responses optimized for natural oral delivery.
+pub const BASE_SYSTEM_PROMPT: &str = r#"You are Ghostboard, an ultra-low latency real-time interview teleprompter AI copilot.
+Your response is read orally aloud by the candidate during a live technical interview.
+Confidence, authentic first-person speech, and zero cognitive load are paramount.
 
-AUTONOMOUS CONTEXT & LANGUAGE RULES:
-- Automatically detect the language of the interviewer's question and the technical domain (Backend, Frontend, System Design, DevOps, Algorithms, Behavioral/HR).
-- If the question is in English: give the answer in English, plus append a brief Ukrainian gist/hint in parentheses (наприклад: "(Суть: використання Redis для захисту від cache stampede)").
-- If the question is in Ukrainian or Russian: respond directly in Ukrainian.
+AUTONOMOUS DOMAIN & ROLE CLASSIFICATION:
+- Automatically classify the technical domain (Backend, Frontend, DevOps, Data/ML, QA, Mobile, System Design, Product/PM, Design, Marketing/Sales, HR/Behavioral, LeetCode/Algorithms) and level (Junior, Middle, Senior, Lead/Staff).
+- Always begin your response with the meta tag: <<<META: {Domain} | {Level} | {Language}>>>
 
-STRICT CONSTRAINTS:
-1. NEVER include conversational filler, greetings, or acknowledgments (e.g. NO "Sure!", "Great question!", "Here is an explanation").
-2. Your response MUST follow this exact Markdown format:
+ANTI-WIKIPEDIA & LIVE SPOKEN SPEECH RULES:
+1. STRICTLY FORBIDDEN: Encyclopedic introductions and AI filler (NO "В современном программировании...", "Давайте рассмотрим...", "Важно отметить...", "В контексте...", "Basically...", "Under the hood...", "In essence...", "Sure!", "Here is an explanation").
+2. ALWAYS speak from FIRST PERSON ("На практиці я вирішую це через...", "У нашому продакшені ми використовували...", "In my production experience, I solve this using...").
+3. Sentences must be short, punchy, confident, and effortless to speak aloud without stumbling.
 
-### Direct Answer
-[1-2 punchy sentences summarizing the core conceptual answer for immediate oral response]
+MANDATORY 3-PHASE OUTPUT STRUCTURE:
+Every response MUST follow this exact progressive sequence:
 
-### Key Talking Points
-- [Point 1: Architecture, internal mechanics, or theoretical foundation]
-- [Point 2: Practical trade-off, edge case, or performance implication]
-- [Point 3: Senior-level production rule of thumb or best practice]
+<<<META: {Domain} | {Level} | {Language}>>>
+<<<PHASE_1:HOOK>>>
+[1-2 simple, confident spoken sentences in 1st person that immediately answer the core question without hesitation. Candidate starts saying this aloud in the 1st second.]
 
-### Code Snippet
-[Provide only if the question specifically requests syntax, an implementation, or code snippet. Use idiomatic, modern syntax. Otherwise omit this entire section.]
+<<<PHASE_2:PILLARS>>>
+• **KeyAnchor**: [Mechanic explained in plain words. Maximum 10-14 words total!]
+• **KeyAnchor**: [Mechanic explained in plain words. Maximum 10-14 words total!]
+• **KeyAnchor**: [Mechanic explained in plain words. Maximum 10-14 words total!]
+
+<<<PHASE_3:DEEP_DIVE>>>
+[Either a concrete real-life production case (Problem -> Solution -> Result metric) OR a clean, working idiomatic code snippet without filler comments.]
+
+<<<END>>>
 "#;
 
 pub const CONCISE_SYSTEM_PROMPT_EXTENSION: &str = r#"
-CONCISE MODE ACTIVATED:
-Keep the answer ultra-compact (<120 words total).
-Deliver exactly 1 direct sentence and 2-3 concise bullets.
+MODIFIER: ULTRA-CONCISE (SHORTER).
+- Keep Hook to 1 single punchy sentence.
+- Give exactly 3 ultra-short bullets of 6–8 words each.
+- In Phase 3, provide only 1 sentence takeaway. Skip long code.
 "#;
 
-/// Builds the system prompt tailored with optional candidate profile and concise mode flag.
-pub fn build_system_prompt(candidate_profile: Option<&str>, is_concise: bool) -> String {
+pub const SIMPLER_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: EXPLAIN SIMPLY (LIKE TO A JUNIOR / 5-YEAR-OLD).
+- Avoid heavy academic terminology and obscure acronyms.
+- Use an intuitive real-world physical analogy.
+- Explain the core concept so simply that anyone understands it immediately.
+"#;
+
+pub const CODE_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: CODE-FIRST.
+- In Phase 1, state in 1 sentence how this is implemented.
+- In Phase 2, highlight 3 key implementation patterns in the code.
+- In Phase 3, provide complete, clean, idiomatic code without fluff comments, followed by exact Time & Space Complexity O(n).
+"#;
+
+pub const RE_ANGLE_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: ALTERNATIVE ANGLE & PRODUCTION TRADE-OFFS.
+- Re-frame the problem from a production-reliability and scaling angle.
+- Focus on real-world compromises: Latency vs Throughput, Consistency vs Availability, Memory vs CPU.
+- Propose an alternative architectural approach used in modern production systems.
+"#;
+
+/// Builds system prompt with comprehensive modifier and multilingual support.
+pub fn build_system_prompt_with_options(
+    candidate_profile: Option<&str>,
+    modifier: Option<&str>,
+    output_language: Option<&str>,
+    helper_language: Option<&str>,
+) -> String {
     let mut prompt = String::from(BASE_SYSTEM_PROMPT);
 
-    if is_concise {
-        prompt.push_str(CONCISE_SYSTEM_PROMPT_EXTENSION);
+    // Apply modifier extension
+    match modifier.unwrap_or("normal") {
+        "shorter" => prompt.push_str(CONCISE_SYSTEM_PROMPT_EXTENSION),
+        "simpler" => prompt.push_str(SIMPLER_SYSTEM_PROMPT_EXTENSION),
+        "code" | "code_example" => prompt.push_str(CODE_SYSTEM_PROMPT_EXTENSION),
+        "re_angle" | "tradeoffs" => prompt.push_str(RE_ANGLE_SYSTEM_PROMPT_EXTENSION),
+        _ => {}
     }
 
+    // Apply language rules
+    let out_lang = output_language.unwrap_or("auto");
+    let helper = helper_language.unwrap_or("uk");
+
+    if out_lang == "bilingual" {
+        prompt.push_str("\nBILINGUAL PROMPTER MODE:\n");
+        prompt.push_str("- Spoken text in Phase 1 & 2 must be in natural, conversational Technical English (B2 level).\n");
+        prompt.push_str(&format!(
+            "- Beside each spoken phrase and bullet point in parentheses, append a short gist in {}: e.g. \"(Суть: оптимістичне блокування з версіями рядків)\".\n",
+            if helper == "ru" { "Russian" } else { "Ukrainian" }
+        ));
+    } else if out_lang != "auto" {
+        prompt.push_str(&format!(
+            "\nLANGUAGE DIRECTIVE: Formulate entire response strictly in {}. Keep technical terms in English.\n",
+            out_lang
+        ));
+    } else {
+        prompt.push_str("\nLANGUAGE DIRECTIVE: Auto-detect interviewer question language and respond in the same language.\n");
+    }
+
+    // Candidate profile injection
     if let Some(profile) = candidate_profile {
-        if !profile.trim().is_empty() {
+        let trimmed = profile.trim();
+        if !trimmed.is_empty() {
             prompt.push_str("\nCANDIDATE CONTEXT & EXPERIENCE:\n");
-            prompt.push_str(profile.trim());
-            prompt.push_str("\nAdopt this stack and experience level naturally in your phrasing.\n");
+            prompt.push_str(trimmed);
+            prompt.push_str("\nAdopt this stack, projects, and seniority naturally in your phrasing.\n");
         }
     }
 
     prompt
+}
+
+/// Builds the system prompt tailored with optional candidate profile and concise mode flag.
+/// Preserved for backwards compatibility with existing callers.
+pub fn build_system_prompt(candidate_profile: Option<&str>, is_concise: bool) -> String {
+    let modifier = if is_concise { Some("shorter") } else { None };
+    build_system_prompt_with_options(candidate_profile, modifier, None, None)
 }
 
 /// Builds the user prompt incorporating the detected question and recent sliding context.
@@ -76,14 +149,32 @@ mod tests {
     #[test]
     fn test_system_prompt_formatting() {
         let default_prompt = build_system_prompt(None, false);
-        assert!(default_prompt.contains("### Direct Answer"));
-        assert!(default_prompt.contains("### Key Talking Points"));
-        assert!(default_prompt.contains("### Code Snippet"));
-        assert!(!default_prompt.contains("CONCISE MODE ACTIVATED"));
+        assert!(default_prompt.contains("<<<PHASE_1:HOOK>>>"));
+        assert!(default_prompt.contains("<<<PHASE_2:PILLARS>>>"));
+        assert!(default_prompt.contains("<<<PHASE_3:DEEP_DIVE>>>"));
+        assert!(default_prompt.contains("<<<META:"));
+        assert!(!default_prompt.contains("MODIFIER: ULTRA-CONCISE"));
 
         let concise_prompt = build_system_prompt(Some("Senior Backend Python Engineer"), true);
-        assert!(concise_prompt.contains("CONCISE MODE ACTIVATED"));
+        assert!(concise_prompt.contains("MODIFIER: ULTRA-CONCISE"));
         assert!(concise_prompt.contains("Senior Backend Python Engineer"));
+    }
+
+    #[test]
+    fn test_modifiers_and_bilingual_options() {
+        let simpler_prompt = build_system_prompt_with_options(None, Some("simpler"), None, None);
+        assert!(simpler_prompt.contains("MODIFIER: EXPLAIN SIMPLY"));
+
+        let code_prompt = build_system_prompt_with_options(None, Some("code"), None, None);
+        assert!(code_prompt.contains("MODIFIER: CODE-FIRST"));
+
+        let re_angle_prompt = build_system_prompt_with_options(None, Some("re_angle"), None, None);
+        assert!(re_angle_prompt.contains("MODIFIER: ALTERNATIVE ANGLE"));
+
+        let bilingual_prompt =
+            build_system_prompt_with_options(None, None, Some("bilingual"), Some("uk"));
+        assert!(bilingual_prompt.contains("BILINGUAL PROMPTER MODE"));
+        assert!(bilingual_prompt.contains("Ukrainian"));
     }
 
     #[test]

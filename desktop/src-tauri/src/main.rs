@@ -235,6 +235,44 @@ fn start_audio_capture(
     }
 }
 
+static LISTEN_ALL_SOURCES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_listen_all_flag(enabled: bool) {
+    LISTEN_ALL_SOURCES.store(enabled, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn is_listen_all() -> bool {
+    LISTEN_ALL_SOURCES.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Native command to switch listen mode: "all" (system + mic) vs "system_only" (loopback only)
+#[tauri::command]
+fn set_listen_mode(
+    mode: String,
+    hud_state: tauri::State<'_, HudChannelState>,
+) -> Result<String, String> {
+    let listen_all = match mode.to_lowercase().as_str() {
+        "system_only" | "system" | "loopback_only" => false,
+        _ => true,
+    };
+    set_listen_all_flag(listen_all);
+    let resolved = if listen_all { "all" } else { "system_only" }.to_string();
+    hud_state.broadcast(HudEvent::ListenModeChanged {
+        mode: resolved.clone(),
+    });
+    Ok(resolved)
+}
+
+/// Native command to query current listen mode
+#[tauri::command]
+fn get_listen_mode() -> String {
+    if is_listen_all() {
+        "all".to_string()
+    } else {
+        "system_only".to_string()
+    }
+}
+
 /// Stops audio capture and frees OS audio resources
 #[tauri::command]
 fn stop_audio_capture(
@@ -535,9 +573,10 @@ pub fn spawn_copilot_pipeline(
                 timestamp_ms: token.timestamp_ms,
             });
 
-            // 🛡️ CRITICAL SPEAKER GUARDRAIL: Candidate speech tagged "Ви" / "candidate"
-            // strictly bypasses LLM prompt triggers and question ingestion!
-            if is_candidate {
+            // 🛡️ SPEAKER GUARDRAIL: When listen_all is false (strict mode), candidate speech tagged
+            // "Ви" / "candidate" strictly bypasses LLM prompt triggers and question ingestion.
+            // When listen_all is true (default), candidate and interlocutor speech can both trigger AI answers.
+            if is_candidate && !is_listen_all() {
                 continue;
             }
 
@@ -675,11 +714,77 @@ pub fn spawn_copilot_pipeline(
     });
 }
 
+/// Walks up the directory tree looking for .env and .env.local and sets variables.
+fn load_env_files() {
+    let mut current_dir = std::env::current_dir().ok();
+    let mut loaded_any = false;
+    for _ in 0..5 {
+        if let Some(dir) = &current_dir {
+            let env_local = dir.join(".env.local");
+            if env_local.is_file() {
+                load_single_env_file(&env_local);
+                loaded_any = true;
+            }
+            let env_file = dir.join(".env");
+            if env_file.is_file() {
+                load_single_env_file(&env_file);
+                loaded_any = true;
+            }
+            current_dir = dir.parent().map(|p| p.to_path_buf());
+        } else {
+            break;
+        }
+    }
+    if loaded_any {
+        tracing::info!(target: "ghostboard::env", "Environment files (.env / .env.local) discovered and loaded");
+    }
+}
+
+fn load_single_env_file(path: &std::path::Path) {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = trimmed.split_once('=') {
+                let key = k.trim();
+                let val = v.trim().trim_matches('"').trim_matches('\'');
+                if !key.is_empty() && std::env::var(key).is_err() {
+                    std::env::set_var(key, val);
+                }
+            }
+        }
+    }
+}
+
+/// Fallback key retrieval from local Ghostboard web backend
+async fn fetch_deepgram_key_from_backend() -> Option<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+        .ok()?;
+    let resp = client.get("http://localhost:3000/api/ai/deepgram").send().await.ok()?;
+    if resp.status().is_success() {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(k) = json.get("key").and_then(|v| v.as_str()) {
+                return Some(k.to_string());
+            }
+            if let Some(k) = json.get("apiKey").and_then(|v| v.as_str()) {
+                return Some(k.to_string());
+            }
+        }
+    }
+    None
+}
+
 // ============================================================================
 // Application Entry Point
 // ============================================================================
 
 fn main() {
+    load_env_files();
+
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -908,15 +1013,72 @@ fn main() {
                     }
                 });
 
-                // Auto-connect Deepgram if DEEPGRAM_API_KEY is present
-                if let Ok(key) = std::env::var("DEEPGRAM_API_KEY") {
-                    let stt_clone = stt_orchestrator.clone();
-                    tokio::spawn(async move {
-                        if let Err(e) = stt_clone.start(&key, None).await {
-                            tracing::warn!(target: "ghostboard::stt", "Deepgram auto-connection notice: {}", e);
-                        }
-                    });
+                // Register AppHandle for cross-window broadcasting
+                hud_state.set_app_handle(app.handle().clone());
+
+                // Auto-configure LLM orchestrator if environment keys are present
+                if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+                    if !key.trim().is_empty() {
+                        let llm = llm_orchestrator.clone();
+                        tokio::spawn(async move {
+                            llm.set_config(crate::llm::client::LlmConfig {
+                                provider: crate::llm::client::LlmProviderType::Gemini,
+                                api_key: key,
+                                model: "gemini-2.5-flash".to_string(),
+                                endpoint_url: None,
+                            })
+                            .await;
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 2.5 Flash LLM provider from GEMINI_API_KEY");
+                        });
+                    }
+                } else if let Ok(key) = std::env::var("GROQ_API_KEY") {
+                    if !key.trim().is_empty() {
+                        let llm = llm_orchestrator.clone();
+                        tokio::spawn(async move {
+                            llm.set_config(crate::llm::client::LlmConfig {
+                                provider: crate::llm::client::LlmProviderType::Groq,
+                                api_key: key,
+                                model: "llama-3.3-70b-versatile".to_string(),
+                                endpoint_url: None,
+                            })
+                            .await;
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured Groq LLM provider from GROQ_API_KEY");
+                        });
+                    }
+                } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                    if !key.trim().is_empty() {
+                        let llm = llm_orchestrator.clone();
+                        tokio::spawn(async move {
+                            llm.set_config(crate::llm::client::LlmConfig {
+                                provider: crate::llm::client::LlmProviderType::OpenAI,
+                                api_key: key,
+                                model: "gpt-4o-mini".to_string(),
+                                endpoint_url: None,
+                            })
+                            .await;
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured OpenAI LLM provider from OPENAI_API_KEY");
+                        });
+                    }
                 }
+
+                // Auto-connect Deepgram if DEEPGRAM_API_KEY is present or fetch from local backend
+                let deepgram_key = std::env::var("DEEPGRAM_API_KEY").ok().filter(|k| !k.trim().is_empty());
+                let stt_clone = stt_orchestrator.clone();
+                tokio::spawn(async move {
+                    let key = match deepgram_key {
+                        Some(k) => Some(k),
+                        None => fetch_deepgram_key_from_backend().await,
+                    };
+
+                    if let Some(k) = key {
+                        tracing::info!(target: "ghostboard::stt", "Auto-starting Deepgram STT engine with discovered key...");
+                        if let Err(e) = stt_clone.start(&k, None).await {
+                            tracing::warn!(target: "ghostboard::stt", "Deepgram auto-connection note: {}", e);
+                        }
+                    } else {
+                        tracing::warn!(target: "ghostboard::stt", "No DEEPGRAM_API_KEY in environment or backend; webview will fallback to Web Speech API");
+                    }
+                });
 
                 // Spawn the real-time background audio & copilot pipeline
                 spawn_copilot_pipeline(
@@ -967,6 +1129,8 @@ fn main() {
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
+            set_listen_mode,
+            get_listen_mode,
             crate::ipc::start_copilot_stream,
             crate::ipc::stop_hud_stream,
             trigger_manual_answer,
@@ -1042,6 +1206,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_candidate_speech_guardrail_stress_bursts_and_interrogatives() {
+        set_listen_all_flag(false); // Enable candidate speech filter for guardrail test
         let (tx, rx) = tokio::sync::mpsc::channel(100);
         let audio_state = crate::audio::GlobalAudioState::default();
         let hud_state = HudChannelState::new();

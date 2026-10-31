@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { locale = 'uk', outputLanguage, candidateProfile, sessionMode = 'interview' } = body;
+    const { locale = 'uk', outputLanguage, helperLanguage = 'uk', candidateProfile, sessionMode = 'interview' } = body;
     const imageBase64: string | undefined = body.imageBase64;
     const mimeType: string = body.mimeType || 'image/png';
 
@@ -96,8 +96,12 @@ export async function POST(req: NextRequest) {
     const effectiveLang = outputLanguage || locale || 'uk';
     
     const LANG_DESCRIPTIONS: Record<string, string> = {
+      bilingual: `BILINGUAL PROMPTER MODE:
+- Spoken "quickAnswer", "summary", and "hints" must be formulated in natural, clear Technical English (B2 level - effortless to speak aloud).
+- Immediately beside or beneath each spoken sentence and bullet point in "quickAnswer" and "hints", provide a short, clear hint/gist in parentheses in Ukrainian (or ${helperLanguage}): e.g. "(Суть: використання O(N) алгоритму для обходу дерева)".`,
       uk: 'Ukrainian (Українською мовою). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in Ukrainian. Keep industry-standard tech terms in English.',
       en: 'English (Clear, natural conversational Technical English at B2 level - straightforward to pronounce and speak, without over-complicated academic vocabulary). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in English.',
+      ru: 'Russian (Русский язык). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in Russian. Keep industry-standard tech terms in English.',
       pl: 'Polish (Polski). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in Polish. Keep industry-standard tech terms in English.',
       de: 'German (Deutsch). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in German. Keep industry-standard tech terms in English.',
       fr: 'French (Français). All explanations, code breakdown, bugs, improvements, hints, and deliveryTip must be strictly in French. Keep industry-standard tech terms in English.',
@@ -229,7 +233,10 @@ Do not wrap JSON in backticks or markdown fences. Output pure JSON only.`;
       ],
       generationConfig: {
         responseMimeType: 'application/json',
-        temperature: 0.35,
+        temperature: 0.25,
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
       },
     });
 

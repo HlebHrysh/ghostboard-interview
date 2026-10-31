@@ -12,7 +12,17 @@ import type { CopilotMode } from './tauriBridge';
 
 export type AnswerSpeed = 'fast' | 'deep';
 export type AnswerLength = 'short' | 'detailed' | 'code';
-export type HintLanguage = 'auto' | 'uk' | 'en' | 'ru';
+export type HintLanguage =
+  | 'auto'
+  | 'bilingual_uk'
+  | 'bilingual_ru'
+  | 'uk'
+  | 'en'
+  | 'ru'
+  | 'pl'
+  | 'de'
+  | 'es'
+  | 'fr';
 
 export interface DesktopSettings {
   copilotMode: CopilotMode;
@@ -74,7 +84,22 @@ export function sanitizeSettings(input: Partial<DesktopSettings> | null | undefi
     splitChannels: bool(src.splitChannels, DEFAULT_SETTINGS.splitChannels),
     answerSpeed: pick(src.answerSpeed, ['fast', 'deep'] as const, DEFAULT_SETTINGS.answerSpeed),
     answerLength: pick(src.answerLength, ['short', 'detailed', 'code'] as const, DEFAULT_SETTINGS.answerLength),
-    hintLanguage: pick(src.hintLanguage, ['auto', 'uk', 'en', 'ru'] as const, DEFAULT_SETTINGS.hintLanguage),
+    hintLanguage: pick(
+      src.hintLanguage,
+      [
+        'auto',
+        'bilingual_uk',
+        'bilingual_ru',
+        'uk',
+        'en',
+        'ru',
+        'pl',
+        'de',
+        'es',
+        'fr',
+      ] as const,
+      DEFAULT_SETTINGS.hintLanguage
+    ),
     customInstructions:
       typeof src.customInstructions === 'string' ? src.customInstructions.slice(0, 1200) : '',
     hudOpacity: clamp(num(src.hudOpacity, DEFAULT_SETTINGS.hudOpacity), OPACITY_RANGE.min, OPACITY_RANGE.max),

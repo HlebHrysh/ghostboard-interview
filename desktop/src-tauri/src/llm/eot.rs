@@ -207,9 +207,18 @@ pub fn is_question_heuristic(text: &str) -> bool {
         "опиши", "в чем разница", "какая разница", "можно ли",
     ];
 
+    // European multilingual interrogatives (PL, DE, ES, FR)
+    const EU_PREFIXES: &[&str] = &[
+        "jak", "dlaczego", "czy", "wyjaśnij", "opowiedz", "jaka jest",
+        "wie", "warum", "kannst du", "erkläre", "beschreibe", "unterschied",
+        "cómo", "por qué", "puedes", "explica", "diferencia",
+        "comment", "pourquoi", "peux-tu", "explique", "différence",
+    ];
+
     EN_PREFIXES.iter().any(|&p| lower.contains(p))
         || UK_PREFIXES.iter().any(|&p| lower.contains(p))
         || RU_PREFIXES.iter().any(|&p| lower.contains(p))
+        || EU_PREFIXES.iter().any(|&p| lower.contains(p))
 }
 
 #[cfg(test)]

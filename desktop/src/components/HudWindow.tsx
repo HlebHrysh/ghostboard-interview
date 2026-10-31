@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Terminal,
   Volume2,
+  Mic,
 } from 'lucide-react';
 import { useDesktopSettings, saveSettings } from '../lib/desktopSettings';
 import { streamAnswer, type AnswerStreamHandle, type DirectorModifier } from '../lib/answerStream';
@@ -36,8 +37,11 @@ import {
   listenTauriEvent,
 } from '../lib/tauriBridge';
 import { useHudStream } from '../hooks/useHudStream';
+import { useSampledLevel } from '../hooks/useSampledLevel';
+import { AudioWaveEqualizer } from './AudioWaveEqualizer';
 import { loadStoredProfile } from '../lib/profileStore';
 import { parseStreamingMarkdown } from './DualColumnChat';
+import { DesktopAiLanguageSelector } from './AiLanguageSelector';
 
 const SPRING_PHYSICS = {
   type: 'spring' as const,
@@ -46,8 +50,9 @@ const SPRING_PHYSICS = {
   mass: 0.6,
 };
 
-interface InterviewerMessage {
+interface DialogueMessage {
   id: string;
+  speaker: 'interlocutor' | 'candidate';
   text: string;
   timestamp: number;
 }
@@ -68,8 +73,8 @@ export function HudWindow() {
   const [isStealth, setIsStealth] = useState(settings.stealth);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  // Transcripts & Dialogues: ONLY Interviewer speech is collected!
-  const [interviewerMessages, setInterviewerMessages] = useState<InterviewerMessage[]>([]);
+  // Transcripts & Dialogues: Interlocutor and Candidate speech
+  const [dialogueMessages, setDialogueMessages] = useState<DialogueMessage[]>([]);
   const [liveInterim, setLiveInterim] = useState<string>('');
   const [manualInput, setManualInput] = useState('');
 
@@ -79,7 +84,7 @@ export function HudWindow() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [ttftMs, setTtftMs] = useState<number | null>(null);
   const [totalLatencyMs, setTotalLatencyMs] = useState<number | null>(null);
-  const [modelName, setModelName] = useState<string>('Gemini 3.8 Flash');
+  const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
   const [activeModifier, setActiveModifier] = useState<DirectorModifier>('normal');
   const [isOcrActive, setIsOcrActive] = useState(false);
 
@@ -87,6 +92,7 @@ export function HudWindow() {
   const candidateProfileRef = useRef(loadStoredProfile());
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const answerScrollRef = useRef<HTMLDivElement>(null);
+  const lastFinalTextRef = useRef('');
 
   // Native Tauri event / audio stream hook
   const hudStream = useHudStream({
@@ -108,18 +114,46 @@ export function HudWindow() {
     },
   });
 
-  // Track live speaker and filter out candidate speech
-  useEffect(() => {
-    // Only accept interlocutor speech
-    if (hudStream.activeSpeaker === 'candidate') {
-      // Candidate speech strictly ignored
-      return;
-    }
+  // Sample real-time audio volume level for live 5-bar equalizer
+  const currentRms = useSampledLevel(
+    hudStream.levelsRef,
+    (l) => Math.max(l.interviewer, l.candidate),
+    1,
+    60
+  );
 
+  // Track live speech (both interlocutor and candidate)
+  useEffect(() => {
     if (hudStream.liveTranscript) {
       setLiveInterim(hudStream.liveTranscript);
     }
-  }, [hudStream.liveTranscript, hudStream.activeSpeaker]);
+  }, [hudStream.liveTranscript]);
+
+  // When speech ends (>350ms silence / speech boundary), commit to dialogue list
+  useEffect(() => {
+    if (!hudStream.isSpeech && liveInterim.trim().length > 0) {
+      const text = liveInterim.trim();
+      if (text !== lastFinalTextRef.current) {
+        lastFinalTextRef.current = text;
+        const speaker = (hudStream.activeSpeaker === 'candidate' ? 'candidate' : 'interlocutor') as 'candidate' | 'interlocutor';
+        setDialogueMessages((prev) => [
+          ...prev.slice(-30),
+          {
+            id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            speaker,
+            text,
+            timestamp: Date.now(),
+          },
+        ]);
+        setLiveInterim('');
+
+        // Auto-trigger answer on speech pause if it looks like a question or prompt
+        if (!isGenerating && !isFrozen && text.length > 8) {
+          handleTriggerAi(text, 'normal');
+        }
+      }
+    }
+  }, [hudStream.isSpeech, liveInterim, hudStream.activeSpeaker, isGenerating, isFrozen]);
 
   // Listen to Tauri events for live mode changes and external hotkeys
   useEffect(() => {
@@ -159,7 +193,7 @@ export function HudWindow() {
     if (chatScrollRef.current) {
       chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }
-  }, [interviewerMessages, liveInterim]);
+  }, [dialogueMessages, liveInterim]);
 
   // Trigger token-by-token answer generation
   const handleTriggerAi = useCallback(
@@ -179,8 +213,8 @@ export function HudWindow() {
       setTotalLatencyMs(null);
       setIsGenerating(true);
 
-      const historyContext = interviewerMessages.slice(-4).map((m) => ({
-        speaker: 'interviewer' as const,
+      const historyContext = dialogueMessages.slice(-6).map((m) => ({
+        speaker: m.speaker === 'candidate' ? ('candidate' as const) : ('interviewer' as const),
         text: m.text,
       }));
 
@@ -221,7 +255,7 @@ export function HudWindow() {
         setStreamingText(`[Помилка запиту: ${err?.message || 'Мережевий збій'}]`);
       }
     },
-    [interviewerMessages, isFrozen, settings]
+    [dialogueMessages, isFrozen, settings]
   );
 
   // Trigger Vision OCR Screenshot analysis
@@ -283,9 +317,9 @@ export function HudWindow() {
       if (!manualInput.trim()) return;
 
       const q = manualInput.trim();
-      setInterviewerMessages((prev) => [
+      setDialogueMessages((prev) => [
         ...prev,
-        { id: `manual-${Date.now()}`, text: q, timestamp: Date.now() },
+        { id: `manual-${Date.now()}`, speaker: 'interlocutor', text: q, timestamp: Date.now() },
       ]);
       setManualInput('');
       handleTriggerAi(q, 'normal');
@@ -298,7 +332,7 @@ export function HudWindow() {
       activeStreamRef.current.abort();
       activeStreamRef.current = null;
     }
-    setInterviewerMessages([]);
+    setDialogueMessages([]);
     setLiveInterim('');
     setStreamingText('');
     setActiveQuestion('');
@@ -381,6 +415,28 @@ export function HudWindow() {
             <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">
               Ghostboard HUD
             </span>
+            <AudioWaveEqualizer level={currentRms} />
+            <button
+              onClick={() => hudStream.switchListenMode(hudStream.listenMode === 'all' ? 'system_only' : 'all')}
+              title={hudStream.listenMode === 'all' ? 'Слухати: Системний звук + Мікрофон' : 'Тільки Системний звук'}
+              className={`px-2 py-0.5 rounded-full text-[9px] font-mono flex items-center gap-1 border transition no-drag ${
+                hudStream.listenMode === 'all'
+                  ? 'bg-zinc-800 text-white border-zinc-600'
+                  : 'bg-zinc-900 text-zinc-400 border-zinc-800'
+              }`}
+            >
+              {hudStream.listenMode === 'all' ? (
+                <>
+                  <Mic className="w-2.5 h-2.5 text-emerald-400" />
+                  <span>Всі</span>
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-2.5 h-2.5 text-zinc-400" />
+                  <span>Звук</span>
+                </>
+              )}
+            </button>
             {ttftMs !== null && (
               <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-1.5 py-0.2 rounded">
                 ⚡ {ttftMs}ms
@@ -426,12 +482,16 @@ export function HudWindow() {
           </div>
         </div>
 
-        {/* Line 1: Interviewer speech (Muted, truncated) */}
+        {/* Line 1: Speech preview (Interlocutor or Candidate) */}
         <div className="py-1 px-1 text-xs text-zinc-400 font-mono truncate flex items-center gap-1.5">
-          <Volume2 className="w-3 h-3 text-zinc-500 shrink-0" />
-          <span className="text-zinc-500">Інтерв'юер:</span>
+          {hudStream.activeSpeaker === 'candidate' ? (
+            <Mic className="w-3 h-3 text-emerald-400 shrink-0" />
+          ) : (
+            <Volume2 className="w-3 h-3 text-zinc-400 shrink-0" />
+          )}
+          <span className="text-zinc-500">{hudStream.activeSpeaker === 'candidate' ? 'Ви:' : 'Співрозмовник:'}</span>
           <span className="text-zinc-300">
-            {liveInterim || (interviewerMessages.length > 0 ? interviewerMessages[interviewerMessages.length - 1].text : 'Очікування запитання...')}
+            {liveInterim || (dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1].text : 'Очікування мовлення...')}
           </span>
         </div>
 
@@ -447,7 +507,7 @@ export function HudWindow() {
             </span>
           ) : (
             <span className="text-zinc-500 italic font-normal">
-              ШІ-підказка з'явиться тут миттєво під час мовлення інтерв'юера...
+              ШІ-підказка з'явиться тут миттєво під час мовлення...
             </span>
           )}
         </div>
@@ -473,6 +533,30 @@ export function HudWindow() {
           <span className="text-[10px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">
             {modelName}
           </span>
+          {/* Live 5-bar Equalizer */}
+          <AudioWaveEqualizer level={currentRms} />
+          {/* 1-click Listen Mode Toggle */}
+          <button
+            onClick={() => hudStream.switchListenMode(hudStream.listenMode === 'all' ? 'system_only' : 'all')}
+            title={hudStream.listenMode === 'all' ? 'Слухати: Системний звук + Мікрофон' : 'Тільки Системний звук (відфільтровувати мікрофон)'}
+            className={`px-2 py-0.5 rounded-full text-[10px] font-mono flex items-center gap-1 border transition no-drag ${
+              hudStream.listenMode === 'all'
+                ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm'
+                : 'bg-zinc-900 text-zinc-400 border-zinc-800'
+            }`}
+          >
+            {hudStream.listenMode === 'all' ? (
+              <>
+                <Mic className="w-2.5 h-2.5 text-emerald-400" />
+                <span>Звук + Мік</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-2.5 h-2.5 text-zinc-400" />
+                <span>Тільки Звук</span>
+              </>
+            )}
+          </button>
           {ttftMs !== null && (
             <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-1.5 py-0.5 rounded">
               ⚡ TTFT {ttftMs}ms
@@ -485,8 +569,14 @@ export function HudWindow() {
           )}
         </div>
 
-        {/* Window action icons */}
-        <div className="flex items-center gap-1 no-drag">
+        {/* Window action icons & Language Selector */}
+        <div className="flex items-center gap-1.5 no-drag">
+          <DesktopAiLanguageSelector
+            value={settings.hintLanguage || 'auto'}
+            onChange={(lang) => {
+              updateSettings({ hintLanguage: lang });
+            }}
+          />
           <button
             onClick={() => handleSwitchMode('top_bar')}
             title="Згорнути у суфлер (Ctrl+M)"
@@ -529,37 +619,78 @@ export function HudWindow() {
 
       {/* 2. MAIN 2-COLUMN DISPLAY */}
       <div className="flex-1 flex min-h-0 overflow-hidden divide-x divide-zinc-800/80">
-        {/* LEFT COLUMN: INTERVIEWER SPEECH ONLY */}
+        {/* LEFT COLUMN: LIVE SPEECH ONLY */}
         <div className="w-1/2 flex flex-col min-h-0 p-3 bg-zinc-950/30">
           <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60 shrink-0">
             <div className="flex items-center gap-1.5">
               <Volume2 className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs font-medium text-zinc-300">Мова інтерв'юера</span>
+              <span className="text-xs font-medium text-zinc-300">Живе мовлення</span>
             </div>
             <span className="text-[10px] font-mono text-zinc-500">
-              Лише вхідне аудіо
+              {hudStream.listenMode === 'all' ? 'Звук + Мікрофон' : 'Лише системний звук'}
             </span>
           </div>
 
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto pt-2 space-y-2.5 pr-1 text-xs select-text">
-            {interviewerMessages.length === 0 && !liveInterim ? (
+            {dialogueMessages.length === 0 && !liveInterim ? (
               <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8 text-zinc-500">
                 <MessageSquare className="w-8 h-8 stroke-1 mb-2 text-zinc-600" />
-                <p className="font-medium text-zinc-400">Очікування мовлення інтерв'юера</p>
+                <p className="font-medium text-zinc-400">Очікування мовлення</p>
                 <p className="text-[11px] mt-1 text-zinc-500 leading-relaxed">
-                  Тут з'являтимуться запитання з конференції (Google Meet, Zoom, Teams). Мова кандидата не транслюється.
+                  Говоріть у мікрофон або слухайте запитання з конференції (Google Meet, Zoom, Teams). Мова розпізнається миттєво.
                 </p>
               </div>
             ) : (
               <>
-                {interviewerMessages.map((msg) => (
-                  <div key={msg.id} className="p-2 rounded-lg bg-zinc-900/60 border border-zinc-800/60 text-zinc-200">
-                    <p className="leading-relaxed">{msg.text}</p>
+                {dialogueMessages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={`p-2.5 rounded-lg border ${
+                      msg.speaker === 'candidate'
+                        ? 'bg-zinc-900/40 border-zinc-800/80 text-zinc-300 ml-2'
+                        : 'bg-zinc-900/70 border-zinc-700/70 text-zinc-100 mr-2'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5 mb-1 text-[10px] font-mono">
+                      <span className="flex items-center gap-1 font-semibold text-zinc-300">
+                        {msg.speaker === 'candidate' ? (
+                          <>
+                            <Mic className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>Ви</span>
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-2.5 h-2.5 text-blue-400" />
+                            <span>Інтерв'юер</span>
+                          </>
+                        )}
+                      </span>
+                      <span className="text-zinc-600">
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    </div>
+                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                   </div>
                 ))}
+
                 {liveInterim && (
-                  <div className="p-2 rounded-lg bg-zinc-900/40 border border-zinc-700/60 text-zinc-300 animate-pulse">
-                    <p className="italic leading-relaxed">{liveInterim}...</p>
+                  <div className="p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-700/80 text-zinc-200">
+                    <div className="flex items-center gap-1.5 mb-1 text-[10px] font-mono text-zinc-400">
+                      {hudStream.activeSpeaker === 'candidate' ? (
+                        <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                          <Mic className="w-2.5 h-2.5" /> Ви
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-blue-400 font-semibold">
+                          <Volume2 className="w-2.5 h-2.5" /> Інтерв'юер
+                        </span>
+                      )}
+                      <span className="text-zinc-500 text-[10px]">Слухаю...</span>
+                    </div>
+                    <p className="leading-relaxed italic">
+                      {liveInterim}
+                      <span className="inline-block w-1.5 h-3 ml-1 bg-white animate-pulse" />
+                    </p>
                   </div>
                 )}
               </>
@@ -652,20 +783,38 @@ export function HudWindow() {
       <div className="p-2.5 border-t border-zinc-800/80 bg-zinc-950/70 flex flex-col gap-2">
         {/* Quick action buttons / modifiers */}
         <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Поясни коротко', 'shorter')}
               disabled={isGenerating}
               className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              title="⚡ Коротше"
             >
-              Коротше
+              ⚡ Коротше
             </button>
             <button
-              onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Напиши код', 'code_example')}
+              onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Поясни простіше', 'simpler')}
               disabled={isGenerating}
               className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              title="💡 Простіше"
             >
-              Код
+              💡 Простіше
+            </button>
+            <button
+              onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Напиши код', 'code')}
+              disabled={isGenerating}
+              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              title="</> Код"
+            >
+              &lt;/&gt; Код
+            </button>
+            <button
+              onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Запропонуй інший підхід', 're_angle')}
+              disabled={isGenerating}
+              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              title="🔄 Інший підхід"
+            >
+              🔄 Інший підхід
             </button>
             <button
               onClick={handleTriggerScreenshot}

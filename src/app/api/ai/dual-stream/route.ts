@@ -4,9 +4,25 @@ import { getSessionUser } from '@/lib/serverDb';
 import { FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
 import { normalizeTechnicalSpeech } from '@/lib/techSpeechNormalizer';
 import { checkRateLimit, validateOrigin } from '@/lib/rateLimit';
+import {
+  buildGhostboardSystemPrompt,
+  parseStructuredGhostboardOutput,
+  AiModifier,
+} from '@/lib/aiPromptCore';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const ALLOWED_MODIFIERS = [
+  'normal',
+  'shorter',
+  'simpler',
+  'code',
+  're_angle',
+  'more_technical',
+  'code_example',
+  'tradeoffs',
+] as const;
 
 const DualStreamPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000),
@@ -19,18 +35,23 @@ const DualStreamPayloadSchema = z.object({
     )
     .optional()
     .default([]),
-  directorModifier: z
-    .enum(['normal', 'shorter', 'more_technical', 'code_example', 'tradeoffs'])
-    .optional()
-    .default('normal'),
+  directorModifier: z.enum(ALLOWED_MODIFIERS).optional().default('normal'),
+  modifier: z.enum(ALLOWED_MODIFIERS).optional(),
+  mode: z.enum(ALLOWED_MODIFIERS).optional(),
   candidateProfile: z
     .object({
       role: z.string().optional(),
       primaryStack: z.string().optional(),
       experienceLevel: z.string().optional(),
+      cvContext: z.string().optional(),
+      resumeContext: z.string().optional(),
+      techStack: z.array(z.string()).optional(),
+      petProjects: z.array(z.any()).optional(),
+      customBio: z.string().optional(),
     })
     .optional(),
   outputLanguage: z.string().optional().default('en'),
+  helperLanguage: z.string().optional().default('uk'),
 });
 
 export async function OPTIONS() {
@@ -42,66 +63,6 @@ export async function OPTIONS() {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client',
     },
   });
-}
-
-/**
- * Builds the high-speed system prompt enforcing 3 progressive phases:
- * Phase 1: HOOK (Spoken first sentence, T+250ms ready)
- * Phase 2: PILLARS (3 high-impact architectural bullets, T+600ms ready)
- * Phase 3: DEEP_DIVE (Code snippet or trade-offs, T+1100ms ready)
- */
-function buildSystemInstruction(
-  modifier: string,
-  profile?: { role?: string; primaryStack?: string; experienceLevel?: string },
-  lang = 'en'
-): string {
-  let modifierInstruction = '';
-  switch (modifier) {
-    case 'shorter':
-      modifierInstruction = 'CRITICAL OVERRIDE: Be extremely concise. Keep the hook to 1 punchy sentence, exactly 2 short bullet points, and skip long code.';
-      break;
-    case 'more_technical':
-      modifierInstruction = 'CRITICAL OVERRIDE: Focus heavily on low-level internals, OS memory management, kernel primitives, concurrency mechanics, and asymptotic complexity.';
-      break;
-    case 'code_example':
-      modifierInstruction = 'CRITICAL OVERRIDE: Provide a complete, idiomatic, high-performance code snippet in Phase 3.';
-      break;
-    case 'tradeoffs':
-      modifierInstruction = 'CRITICAL OVERRIDE: Center Phase 2 & 3 around real-world production trade-offs: latency vs throughput, consistency vs availability, memory vs CPU overhead.';
-      break;
-    default:
-      modifierInstruction = 'Balance oral spoken fluency, crisp architectural pillars, and concrete technical depth.';
-  }
-
-  const roleContext = profile?.role
-    ? `Target Role: ${profile.role}. Stack: ${profile.primaryStack || 'Modern Full-Stack'}. Seniority: ${profile.experienceLevel || 'Senior'}. Speak with genuine senior authority.`
-    : 'Speak from the perspective of an elite Staff/Principal Software Engineer.';
-
-  return `You are an ultra-low latency real-time interview teleprompter AI copilot.
-Your response will be read orally aloud by the candidate during a live technical interview.
-
-${roleContext}
-${modifierInstruction}
-Language: Respond in ${lang === 'uk' ? 'Ukrainian' : lang === 'ru' ? 'Russian' : 'English'}.
-
-OUTPUT FORMATTING RULES:
-You must strictly format your output into 3 clearly marked progressive phases so the client engine can parse and render them incrementally:
-
-<<<PHASE_1:HOOK>>>
-[1-2 punchy, confident spoken sentences that directly answer the core question with zero filler words. Start immediately with the key concept. The candidate will speak this sentence out loud instantly with zero hesitation.]
-
-<<<PHASE_2:PILLARS>>>
-• [Pillar 1: Key architectural mechanism or primary concept with exact technical terms]
-• [Pillar 2: Concurrency, data flow, or operational behavior]
-• [Pillar 3: Performance, scaling, or production resiliency consideration]
-
-<<<PHASE_3:DEEP_DIVE>>>
-[Provide either an idiomatic code snippet inside a standard markdown codeblock (\`\`\`language ... \`\`\`), OR 2-3 production trade-offs and edge cases.]
-
-<<<END>>>
-
-DO NOT include introductory filler like "Sure!", "Great question", or conversational pleasantries.
-Begin immediately with <<<PHASE_1:HOOK>>>.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -142,6 +103,12 @@ export async function POST(req: NextRequest) {
     }
 
     const rawBody = await req.json().catch(() => ({}));
+
+    // Normalize modifier aliases before validation
+    const effectiveModifier =
+      rawBody.directorModifier || rawBody.modifier || rawBody.mode || 'normal';
+    rawBody.directorModifier = effectiveModifier;
+
     const parseResult = DualStreamPayloadSchema.safeParse(rawBody);
 
     if (!parseResult.success) {
@@ -149,8 +116,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: err }, { status: 400 });
     }
 
-    const { question, history, directorModifier, candidateProfile, outputLanguage } =
-      parseResult.data;
+    const {
+      question,
+      history,
+      directorModifier,
+      candidateProfile,
+      outputLanguage,
+      helperLanguage,
+    } = parseResult.data;
 
     const normalizedQuestion = normalizeTechnicalSpeech(question.trim());
     const apiKey = getCleanGeminiKey();
@@ -162,11 +135,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = buildSystemInstruction(
-      directorModifier,
-      candidateProfile,
-      outputLanguage
-    );
+    // Build the zero-fluff system prompt with domain auto-classification
+    const { systemPrompt, domain, level, langTag } = buildGhostboardSystemPrompt({
+      question: normalizedQuestion,
+      modifier: directorModifier as AiModifier,
+      profile: candidateProfile,
+      outputLanguage,
+      helperLanguage,
+    });
 
     // Prepare contents array with conversation context
     const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [
@@ -181,7 +157,7 @@ export async function POST(req: NextRequest) {
     ];
 
     if (history && history.length > 0) {
-      // Include last 4 turns for low prompt latency
+      // Include last 4 turns for low prompt latency & fast prefill
       history.slice(-4).forEach((h) => {
         contents.push({
           role: h.speaker === 'interviewer' ? 'user' : 'model',
@@ -203,6 +179,7 @@ export async function POST(req: NextRequest) {
         let firstTokenTimestamp: number | null = null;
         let activeModelUsed = '';
         let fullGeneratedText = '';
+        let metaDispatched = false;
 
         const sendEvent = (event: string, data: unknown) => {
           controller.enqueue(
@@ -223,9 +200,12 @@ export async function POST(req: NextRequest) {
               body: JSON.stringify({
                 contents,
                 generationConfig: {
-                  temperature: 0.25,
+                  temperature: 0.2,
                   topP: 0.9,
-                  maxOutputTokens: directorModifier === 'shorter' ? 400 : 900,
+                  maxOutputTokens: directorModifier === 'shorter' ? 350 : 850,
+                  thinkingConfig: {
+                    thinkingBudget: 0,
+                  },
                 },
               }),
             });
@@ -233,6 +213,87 @@ export async function POST(req: NextRequest) {
             if (!geminiRes.ok) {
               const errBody = await geminiRes.text();
               console.warn(`[DualStream] Model ${model} returned ${geminiRes.status}:`, errBody);
+
+              // If thinkingConfig is unsupported on this specific model/API version, retry without thinkingConfig
+              if (geminiRes.status === 400 && (errBody.includes('thinkingConfig') || errBody.includes('unknown field'))) {
+                const retryRes = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents,
+                    generationConfig: {
+                      temperature: 0.2,
+                      topP: 0.9,
+                      maxOutputTokens: directorModifier === 'shorter' ? 350 : 850,
+                    },
+                  }),
+                });
+                if (!retryRes.ok || !retryRes.body) continue;
+                // Retry succeeded without thinkingConfig
+                activeModelUsed = model;
+                const reader = retryRes.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                  const { value, done } = await reader.read();
+                  if (done) break;
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split('\n');
+                  buffer = lines.pop() || '';
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || !trimmed.startsWith('data:')) continue;
+
+                    const jsonStr = trimmed.replace(/^data:\s*/, '');
+                    if (jsonStr === '[DONE]') continue;
+
+                    try {
+                      const parsed = JSON.parse(jsonStr);
+                      const textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                      if (textChunk) {
+                        if (!firstTokenTimestamp) {
+                          firstTokenTimestamp = Date.now();
+                          const ttftMs = firstTokenTimestamp - requestStartTime;
+                          sendEvent('telemetry', {
+                            type: 'TTFT',
+                            ttftMs,
+                            model,
+                            timestamp: firstTokenTimestamp,
+                          });
+                        }
+
+                        fullGeneratedText += textChunk;
+
+                        // Check for meta tag on early tokens
+                        if (!metaDispatched) {
+                          const metaMatch = fullGeneratedText.match(/<<<META:\s*([^>]+)>>>/i);
+                          if (metaMatch) {
+                            metaDispatched = true;
+                            const parts = metaMatch[1].split('|').map((p) => p.trim());
+                            sendEvent('meta', {
+                              domain: parts[0] || domain,
+                              level: parts[1] || level,
+                              language: parts[2] || langTag,
+                              raw: metaMatch[1].trim(),
+                            });
+                          }
+                        }
+
+                        sendEvent('chunk', {
+                          text: textChunk,
+                          model,
+                        });
+                      }
+                    } catch {}
+                  }
+                }
+                streamSuccess = true;
+                break;
+              }
               continue;
             }
 
@@ -272,19 +333,35 @@ export async function POST(req: NextRequest) {
                       sendEvent('telemetry', {
                         type: 'TTFT',
                         ttftMs,
-                        model: model,
+                        model,
                         timestamp: firstTokenTimestamp,
                       });
                     }
 
                     fullGeneratedText += textChunk;
+
+                    // Immediately dispatch meta event when meta-tag arrives
+                    if (!metaDispatched) {
+                      const metaMatch = fullGeneratedText.match(/<<<META:\s*([^>]+)>>>/i);
+                      if (metaMatch) {
+                        metaDispatched = true;
+                        const parts = metaMatch[1].split('|').map((p) => p.trim());
+                        sendEvent('meta', {
+                          domain: parts[0] || domain,
+                          level: parts[1] || level,
+                          language: parts[2] || langTag,
+                          raw: metaMatch[1].trim(),
+                        });
+                      }
+                    }
+
                     sendEvent('chunk', {
                       text: textChunk,
-                      model: model,
+                      model,
                     });
                   }
                 } catch {
-                  // Partial chunk in SSE buffer; ignore and continue
+                  // Partial chunk in SSE buffer; continue accumulating
                 }
               }
             }
@@ -308,27 +385,20 @@ export async function POST(req: NextRequest) {
         const totalDurationMs = Date.now() - requestStartTime;
         const ttftMs = firstTokenTimestamp ? firstTokenTimestamp - requestStartTime : totalDurationMs;
 
-        let hook = '';
-        let pillars: string[] = [];
-        let deepDive = '';
+        const structured = parseStructuredGhostboardOutput(fullGeneratedText);
 
-        const hookMatch = fullGeneratedText.match(/<<<PHASE_1:HOOK>>>([\s\S]*?)(?:<<<PHASE_2:PILLARS>>>|<<<END>>>|$)/);
-        if (hookMatch) {
-          hook = hookMatch[1].trim();
-        }
+        const finalMetaRaw =
+          structured.meta?.raw || `${domain} | ${level} | ${langTag}`;
 
-        const pillarsMatch = fullGeneratedText.match(/<<<PHASE_2:PILLARS>>>([\s\S]*?)(?:<<<PHASE_3:DEEP_DIVE>>>|<<<END>>>|$)/);
-        if (pillarsMatch) {
-          pillars = pillarsMatch[1]
-            .split('\n')
-            .map((line) => line.replace(/^[•\-\*]\s*/, '').trim())
-            .filter((line) => line.length > 0);
-        }
-
-        const deepDiveMatch = fullGeneratedText.match(/<<<PHASE_3:DEEP_DIVE>>>([\s\S]*?)(?:<<<END>>>|$)/);
-        if (deepDiveMatch) {
-          deepDive = deepDiveMatch[1].trim();
-        }
+        // Fallback pillars if LLM failed to produce 3 bullets
+        const finalPillars =
+          structured.pillars.length >= 2
+            ? structured.pillars
+            : [
+                '**Архітектура**: Пряма реалізація без зайвих шарів абстракцій.',
+                '**Паралелізм**: Неблокуюче асинхронне виконання задач.',
+                '**Надійність**: Ізоляція збоїв та передбачуваний стан системи.',
+              ];
 
         // Final structured completion event
         sendEvent('complete', {
@@ -338,9 +408,13 @@ export async function POST(req: NextRequest) {
           totalDurationMs,
           rawText: fullGeneratedText,
           structured: {
-            hook: hook || fullGeneratedText.slice(0, 160),
-            pillars: pillars.length > 0 ? pillars : ['Direct architectural implementation.', 'High concurrency execution.', 'Zero latency overhead.'],
-            deepDive: deepDive,
+            meta: finalMetaRaw,
+            domain: structured.meta?.domain || domain,
+            level: structured.meta?.level || level,
+            language: structured.meta?.language || langTag,
+            hook: structured.hook || fullGeneratedText.slice(0, 160),
+            pillars: finalPillars,
+            deepDive: structured.deepDive,
           },
         });
 

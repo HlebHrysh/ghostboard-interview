@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState, useRef, Suspense, use } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { Lock, Unlock, ChevronLeft, ChevronRight, ShieldAlert, Sparkles, Radio, Globe } from 'lucide-react';
+import { Lock, Unlock, ChevronLeft, ChevronRight, ShieldAlert, Sparkles, Radio, Globe, Copy, Check } from 'lucide-react';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
+import { parseBilingualParts } from '@/lib/aiPromptCore';
 
 interface SyncQAItem {
   id: string;
@@ -14,6 +15,7 @@ interface SyncQAItem {
   hints?: string[];
   codeSnippet?: string;
   deliveryTip?: string;
+  meta?: { domain: string; level: string; language: string; raw?: string };
 }
 
 interface PageProps {
@@ -304,9 +306,23 @@ function CompanionContent({ params }: PageProps) {
             </div>
           ) : (
             <div className="space-y-4 animate-in fade-in duration-200">
+              {/* Context Badge from <<<META>>> */}
+              {activeQA?.meta && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-mono text-[10px] font-semibold">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                    <span>{activeQA.meta.domain}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-zinc-300">{activeQA.meta.level}</span>
+                    <span className="text-zinc-600">•</span>
+                    <span className="text-cyan-300 uppercase">{activeQA.meta.language}</span>
+                  </span>
+                </div>
+              )}
+
               {/* Active Question Title */}
               {activeQA && (
-                <div className="border-l-2 border-white/30 pl-3">
+                <div className="border-l-2 border-white/20 pl-3">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-bold">
                     QUESTION
                   </span>
@@ -316,56 +332,79 @@ function CompanionContent({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Start Hook / Opening statement */}
-              {activeQA?.startHook && (
-                <div className="bg-amber-500/10 rounded-xl p-3 border border-amber-500/20">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold block mb-1">
-                    OPENING HOOK:
+              {/* Phase 1: Lead Hook / Opening Statement (17-19px font-medium, border-l-4) */}
+              {activeQA && (activeQA.startHook || activeQA.quickAnswer) && (
+                <div className="pl-3.5 pr-3 py-3 border-l-4 border-l-amber-400/90 rounded-r-xl bg-white/[0.03] border-y border-r border-white/[0.06] shadow-[0_4px_20px_rgba(245,158,11,0.05)]">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold block mb-1.5">
+                    Фаза 1 · Голосовий старт (Hook)
                   </span>
-                  <p className="text-sm font-medium text-amber-100 leading-relaxed italic">
-                    &ldquo;{activeQA.startHook}&rdquo;
-                  </p>
-                </div>
-              )}
-
-              {/* Active Answer (Large High-Contrast Text for Glancing) */}
-              {activeQA && (
-                <div className="bento-card p-4 sm:p-5 border border-white/[0.12] shadow-[0_0_30px_rgba(255,255,255,0.06)]">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300 font-bold block mb-1.5">
-                    CORE ANSWER
-                  </span>
-                  <div className="text-2xl sm:text-3xl font-black text-white leading-tight break-words">
-                    {activeQA.quickAnswer}
+                  <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight">
+                    {parseBilingualParts(activeQA.startHook || activeQA.quickAnswer).map((part, idx) =>
+                      part.isTranslation ? (
+                        <span
+                          key={idx}
+                          className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                        >
+                          {part.text}
+                        </span>
+                      ) : (
+                        <span key={idx}>{part.text}</span>
+                      )
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Native Language Subtitle / Translation Crib-Sheet */}
               {showTranslation && activeQA?.nativeTranslation && (
-                <div className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.12]">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-300 font-bold flex items-center gap-1.5 mb-1">
-                    <Globe className="w-3 h-3 text-white" />
+                <div className="p-3 rounded-xl bg-blue-950/20 border border-blue-500/25">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-blue-400 font-bold flex items-center gap-1.5 mb-1">
+                    <Globe className="w-3 h-3 text-blue-400" />
                     ПЕРЕВОД / СУТЬ (РОДНОЙ ЯЗЫК):
                   </span>
-                  <p className="text-sm text-zinc-200 leading-relaxed">
+                  <p className="text-sm text-blue-100/90 leading-relaxed font-sans">
                     {activeQA.nativeTranslation}
                   </p>
                 </div>
               )}
 
-              {/* Bullet Hints */}
+              {/* Phase 2: Key Pillars (Pillars with bold keyword chips) */}
               {activeQA?.hints && activeQA.hints.length > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold block">
-                    KEY BULLETS TO MENTION:
+                <div className="space-y-2 pt-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-bold block">
+                    Фаза 2 · Ключові тези (Pillars)
                   </span>
-                  <ul className="space-y-1.5">
-                    {activeQA.hints.map((hint, i) => (
-                      <li key={i} className="text-sm text-zinc-300 flex items-start gap-2 bg-white/[0.02] p-2 rounded-lg border border-white/5">
-                        <span className="text-amber-400 font-bold shrink-0">•</span>
-                        <span>{hint}</span>
-                      </li>
-                    ))}
+                  <ul className="space-y-2">
+                    {activeQA.hints.map((hint, i) => {
+                      const colonIdx = hint.indexOf(':');
+                      const hasAnchor = colonIdx > 0 && colonIdx < 35;
+                      const anchor = hasAnchor ? hint.slice(0, colonIdx) : null;
+                      const rest = hasAnchor ? hint.slice(colonIdx + 1) : hint;
+                      return (
+                        <li key={i} className="text-sm text-zinc-200 flex items-start gap-2.5 bg-white/[0.03] p-2.5 rounded-xl border border-white/[0.06]">
+                          <span className="text-cyan-400 font-mono text-xs font-bold shrink-0 mt-0.5">{i + 1}.</span>
+                          <div className="leading-relaxed font-medium flex-1">
+                            {anchor && (
+                              <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+                                {anchor}
+                              </span>
+                            )}
+                            {parseBilingualParts(rest).map((part, pIdx) =>
+                              part.isTranslation ? (
+                                <span
+                                  key={pIdx}
+                                  className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                                >
+                                  {part.text}
+                                </span>
+                              ) : (
+                                <span key={pIdx}>{part.text}</span>
+                              )
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -380,12 +419,23 @@ function CompanionContent({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Code Snippet */}
+              {/* Phase 3: Code Snippet */}
               {activeQA?.codeSnippet && (
-                <div className="p-3 rounded-xl bg-black/60 border border-white/10 font-mono text-xs overflow-x-auto text-zinc-300">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold block mb-1">
-                    CODE SNIPPET:
-                  </span>
+                <div className="p-3 rounded-xl bg-black/70 border border-white/10 font-mono text-xs overflow-x-auto text-zinc-300">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                      Фаза 3 · Код / Реалізація
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeQA.codeSnippet!);
+                      }}
+                      className="text-[10px] font-mono text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-white/5 active:scale-95 transition"
+                    >
+                      Копіювати
+                    </button>
+                  </div>
                   <pre className="whitespace-pre-wrap">{activeQA.codeSnippet}</pre>
                 </div>
               )}

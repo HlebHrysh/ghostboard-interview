@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Eye, ChevronLeft, ChevronRight, X, Sparkles, Zap } from 'lucide-react';
 import { InterviewQAItem } from '@/types/interview';
+import { parseBilingualParts } from '@/lib/aiPromptCore';
 
 interface DocumentPiPPrompterProps {
   container: HTMLElement | null;
@@ -49,17 +50,23 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
     <div className="flex flex-col h-full w-full bg-[#0a0a0d] text-zinc-100 p-3 select-none justify-between font-sans border border-white/10 rounded-xl overflow-hidden box-border">
       {/* Top Header */}
       <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
-        <div className="flex items-center gap-2">
-          <Eye className="w-3.5 h-3.5 text-white" />
-          <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold">
-            {activeQA?.tag || 'Ghostboard PiP'}
-          </span>
-          <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
+        <div className="flex items-center gap-2 min-w-0">
+          <Eye className="w-3.5 h-3.5 text-white shrink-0" />
+          {activeQA?.meta ? (
+            <span className="text-[10px] font-mono text-zinc-300 font-semibold truncate max-w-[200px]">
+              {activeQA.meta.domain} • {activeQA.meta.level} • {activeQA.meta.language}
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold truncate">
+              {activeQA?.tag || 'Ghostboard PiP'}
+            </span>
+          )}
+          <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 shrink-0">
             ALWAYS ON TOP
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           {slides.length > 1 && (
             <span className="text-[10px] font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
               {slideIndex + 1}/{slides.length}
@@ -95,7 +102,18 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
               </p>
             )}
             <p className="text-base sm:text-lg font-semibold text-white leading-snug tracking-tight">
-              {currentSlide}
+              {parseBilingualParts(currentSlide).map((part, idx) =>
+                part.isTranslation ? (
+                  <span
+                    key={idx}
+                    className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+                  >
+                    {part.text}
+                  </span>
+                ) : (
+                  <span key={idx}>{part.text}</span>
+                )
+              )}
             </p>
           </>
         )}

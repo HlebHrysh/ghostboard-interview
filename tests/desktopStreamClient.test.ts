@@ -77,6 +77,54 @@ Code snippet
       expect(res.pillars).toEqual([]);
       expect(res.deepDive).toBe('');
     });
+
+    it('extracts <<<META: {Domain} | {Level} | {Language}>>> context badge and strips it from hook', () => {
+      const rawWithMeta = `<<<META: System Design | Senior | EN>>>
+<<<PHASE_1:HOOK>>>
+In production, I architect this using a distributed event-driven topology.
+<<<PHASE_2:PILLARS>>>
+• Partitioning: Key-based routing
+• Replication: Raft consensus
+• Observability: OpenTelemetry tracing
+<<<PHASE_3:DEEP_DIVE>>>
+Latency stays under 15ms at 100k RPS.
+<<<END>>>`;
+
+      const result = parseDualStreamDelimiters(rawWithMeta);
+      expect(result.meta).toBeDefined();
+      expect(result.meta?.domain).toBe('System Design');
+      expect(result.meta?.level).toBe('Senior');
+      expect(result.meta?.language).toBe('EN');
+      expect(result.hook).toBe('In production, I architect this using a distributed event-driven topology.');
+      expect(result.hook).not.toContain('<<<META');
+      expect(result.pillars).toHaveLength(3);
+      expect(result.deepDive).toContain('Latency stays under 15ms');
+    });
+
+    it('prevents incomplete <<<META... tag from leaking into hook during live streaming', () => {
+      // First chunk arriving is an incomplete META tag
+      const partialMetaChunk = `<<<META: Backend | Mid`;
+      const res1 = parseDualStreamDelimiters(partialMetaChunk);
+      expect(res1.hook).toBe('');
+      expect(res1.hook).not.toContain('<<<META');
+
+      // Complete META tag arrives followed by incomplete Phase 1 tag
+      const partialPhase1Chunk = `<<<META: Frontend | Senior | UK>>>\n<<<PHASE_1:`;
+      const res2 = parseDualStreamDelimiters(partialPhase1Chunk);
+      expect(res2.meta?.domain).toBe('Frontend');
+      expect(res2.meta?.level).toBe('Senior');
+      expect(res2.meta?.language).toBe('UK');
+      expect(res2.hook).toBe('');
+      expect(res2.hook).not.toContain('<<<');
+    });
+
+    it('provides 100% backward compatibility for raw plain text answers without tags', () => {
+      const plainText = 'PostgreSQL uses multiversion concurrency control to keep readers non-blocking.';
+      const res = parseDualStreamDelimiters(plainText);
+      expect(res.hook).toBe('PostgreSQL uses multiversion concurrency control to keep readers non-blocking.');
+      expect(res.pillars).toEqual([]);
+      expect(res.deepDive).toBe('');
+    });
   });
 
   describe('DualStreamClient Heuristic Fallback & Modifiers', () => {

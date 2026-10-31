@@ -24,4 +24,10 @@ export interface InterviewQAItem {
   timestamp?: number;
   confidenceScore?: number;
   docReference?: string;
+  meta?: {
+    domain: string;
+    level: string;
+    language: string;
+    raw?: string;
+  };
 }

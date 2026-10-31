@@ -117,6 +117,10 @@ export interface UpdateStatusPayload {
   message?: string | null;
 }
 
+export interface ListenModeChangedPayload {
+  mode: 'all' | 'system_only' | string;
+}
+
 export type HudEvent =
   | { type: 'vadState'; payload: VadStatePayload }
   | { type: 'sttTranscript'; payload: SttTranscriptPayload }
@@ -127,6 +131,7 @@ export type HudEvent =
   | { type: 'audioLevel'; payload: AudioLevelPayload }
   | { type: 'stealthChanged'; payload: StealthChangedPayload }
   | { type: 'clickThroughChanged'; payload: ClickThroughChangedPayload }
+  | { type: 'listenModeChanged'; payload: ListenModeChangedPayload }
   | { type: 'authChanged'; payload: AuthChangedPayload }
   | { type: 'deviceCodePending'; payload: DeviceCodePendingPayload }
   | { type: 'planUpdated'; payload: PlanUpdatedPayload }

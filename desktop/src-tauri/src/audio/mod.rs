@@ -149,71 +149,145 @@ impl AudioEngine {
 
         // 1. Initialize System Loopback Stream (Remote Interlocutor)
         if should_start_loopback {
-            match resolve_device(
-                &host,
-                self.config.loopback_device_name.as_deref(),
-                find_loopback_device,
-            ) {
-                Ok(device) => {
-                    let pool = AudioBufferPool::new(self.config.buffer_capacity);
-                    let (producer, consumer) = pool.split();
-                    match AudioCaptureStream::start(device, producer) {
-                        Ok(capture_stream) => {
-                            let sample_rate = capture_stream.sample_rate();
-                            let channels = capture_stream.channels();
-                            match AudioResampler::new(sample_rate, channels) {
-                                Ok(resampler) => match SileroVad::new() {
-                                    Ok(vad) => {
-                                        self.loopback_stream = Some(capture_stream);
-                                        self.loopback_consumer = Some(consumer);
-                                        self.loopback_resampler = Some(resampler);
-                                        self.loopback_vad = Some(vad);
-                                        loopback_started = true;
-                                    }
-                                    Err(e) => last_error = Some(format!("Loopback VAD error: {}", e)),
-                                },
-                                Err(e) => last_error = Some(format!("Loopback resampler error: {}", e)),
+            #[cfg(target_os = "linux")]
+            let linux_res = {
+                let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                let (producer, consumer) = pool.split();
+                AudioCaptureStream::start_linux_process(
+                    self.config.loopback_device_name.as_deref(),
+                    true,
+                    producer,
+                )
+                .map(|stream| (stream, consumer))
+            };
+            #[cfg(not(target_os = "linux"))]
+            let linux_res: Result<(AudioCaptureStream, AudioConsumer), String> =
+                Err("Not linux".to_string());
+
+            match linux_res {
+                Ok((capture_stream, consumer)) => {
+                    let sample_rate = capture_stream.sample_rate();
+                    let channels = capture_stream.channels();
+                    match AudioResampler::new(sample_rate, channels) {
+                        Ok(resampler) => match SileroVad::new() {
+                            Ok(vad) => {
+                                self.loopback_stream = Some(capture_stream);
+                                self.loopback_consumer = Some(consumer);
+                                self.loopback_resampler = Some(resampler);
+                                self.loopback_vad = Some(vad);
+                                loopback_started = true;
                             }
-                        }
-                        Err(e) => last_error = Some(format!("Loopback stream start error: {}", e)),
+                            Err(e) => last_error = Some(format!("Loopback VAD error: {}", e)),
+                        },
+                        Err(e) => last_error = Some(format!("Loopback resampler error: {}", e)),
                     }
                 }
-                Err(e) => last_error = Some(format!("Loopback device discovery error: {}", e)),
+                Err(_linux_err) => {
+                    // Fallback to cpal
+                    match resolve_device(
+                        &host,
+                        self.config.loopback_device_name.as_deref(),
+                        find_loopback_device,
+                    ) {
+                        Ok(device) => {
+                            let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                            let (producer, consumer) = pool.split();
+                            match AudioCaptureStream::start(device, producer) {
+                                Ok(capture_stream) => {
+                                    let sample_rate = capture_stream.sample_rate();
+                                    let channels = capture_stream.channels();
+                                    match AudioResampler::new(sample_rate, channels) {
+                                        Ok(resampler) => match SileroVad::new() {
+                                            Ok(vad) => {
+                                                self.loopback_stream = Some(capture_stream);
+                                                self.loopback_consumer = Some(consumer);
+                                                self.loopback_resampler = Some(resampler);
+                                                self.loopback_vad = Some(vad);
+                                                loopback_started = true;
+                                            }
+                                            Err(e) => last_error = Some(format!("Loopback VAD error: {}", e)),
+                                        },
+                                        Err(e) => last_error = Some(format!("Loopback resampler error: {}", e)),
+                                    }
+                                }
+                                Err(e) => last_error = Some(format!("Loopback stream start error: {}", e)),
+                            }
+                        }
+                        Err(e) => last_error = Some(format!("Loopback device discovery error: {}", e)),
+                    }
+                }
             }
         }
 
         // 2. Initialize Microphone Stream (Local Candidate)
         if should_start_mic {
-            match resolve_device(
-                &host,
-                self.config.mic_device_name.as_deref(),
-                find_microphone_device,
-            ) {
-                Ok(device) => {
-                    let pool = AudioBufferPool::new(self.config.buffer_capacity);
-                    let (producer, consumer) = pool.split();
-                    match AudioCaptureStream::start(device, producer) {
-                        Ok(capture_stream) => {
-                            let sample_rate = capture_stream.sample_rate();
-                            let channels = capture_stream.channels();
-                            match AudioResampler::new(sample_rate, channels) {
-                                Ok(resampler) => match SileroVad::new() {
-                                    Ok(vad) => {
-                                        self.mic_stream = Some(capture_stream);
-                                        self.mic_consumer = Some(consumer);
-                                        self.mic_resampler = Some(resampler);
-                                        self.mic_vad = Some(vad);
-                                        mic_started = true;
-                                    }
-                                    Err(e) => last_error = Some(format!("Microphone VAD error: {}", e)),
-                                },
-                                Err(e) => last_error = Some(format!("Microphone resampler error: {}", e)),
+            #[cfg(target_os = "linux")]
+            let linux_res = {
+                let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                let (producer, consumer) = pool.split();
+                AudioCaptureStream::start_linux_process(
+                    self.config.mic_device_name.as_deref(),
+                    false,
+                    producer,
+                )
+                .map(|stream| (stream, consumer))
+            };
+            #[cfg(not(target_os = "linux"))]
+            let linux_res: Result<(AudioCaptureStream, AudioConsumer), String> =
+                Err("Not linux".to_string());
+
+            match linux_res {
+                Ok((capture_stream, consumer)) => {
+                    let sample_rate = capture_stream.sample_rate();
+                    let channels = capture_stream.channels();
+                    match AudioResampler::new(sample_rate, channels) {
+                        Ok(resampler) => match SileroVad::new() {
+                            Ok(vad) => {
+                                self.mic_stream = Some(capture_stream);
+                                self.mic_consumer = Some(consumer);
+                                self.mic_resampler = Some(resampler);
+                                self.mic_vad = Some(vad);
+                                mic_started = true;
                             }
-                        }
-                        Err(e) => last_error = Some(format!("Microphone stream start error: {}", e)),
+                            Err(e) => last_error = Some(format!("Microphone VAD error: {}", e)),
+                        },
+                        Err(e) => last_error = Some(format!("Microphone resampler error: {}", e)),
                     }
                 }
-                Err(e) => last_error = Some(format!("Microphone device discovery error: {}", e)),
+                Err(_linux_err) => {
+                    // Fallback to cpal
+                    match resolve_device(
+                        &host,
+                        self.config.mic_device_name.as_deref(),
+                        find_microphone_device,
+                    ) {
+                        Ok(device) => {
+                            let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                            let (producer, consumer) = pool.split();
+                            match AudioCaptureStream::start(device, producer) {
+                                Ok(capture_stream) => {
+                                    let sample_rate = capture_stream.sample_rate();
+                                    let channels = capture_stream.channels();
+                                    match AudioResampler::new(sample_rate, channels) {
+                                        Ok(resampler) => match SileroVad::new() {
+                                            Ok(vad) => {
+                                                self.mic_stream = Some(capture_stream);
+                                                self.mic_consumer = Some(consumer);
+                                                self.mic_resampler = Some(resampler);
+                                                self.mic_vad = Some(vad);
+                                                mic_started = true;
+                                            }
+                                            Err(e) => last_error = Some(format!("Microphone VAD error: {}", e)),
+                                        },
+                                        Err(e) => last_error = Some(format!("Microphone resampler error: {}", e)),
+                                    }
+                                }
+                                Err(e) => last_error = Some(format!("Microphone stream start error: {}", e)),
+                            }
+                        }
+                        Err(e) => last_error = Some(format!("Microphone device discovery error: {}", e)),
+                    }
+                }
             }
         }
 

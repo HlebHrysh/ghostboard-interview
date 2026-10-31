@@ -38,6 +38,7 @@ const MESSAGES: Record<string, CopilotMessages> = {
       under_the_hood: '⚙️ Поглиблюю механіку "Під капотом"...',
       code: '💻 Генерую практичний код...',
       shorter: '✂️ Стискаю до ключової тези...',
+      simpler: '💡 Пояснюю простіше, на пальцях...',
       re_angle: '🔄 Переосмислюю під іншим кутом...',
     },
   },
@@ -58,6 +59,7 @@ const MESSAGES: Record<string, CopilotMessages> = {
       under_the_hood: '⚙️ Углубляю механику «под капотом»...',
       code: '💻 Генерирую практический код...',
       shorter: '✂️ Сжимаю до ключевого тезиса...',
+      simpler: '💡 Объясняю проще, на пальцах...',
       re_angle: '🔄 Переосмысляю под другим углом...',
     },
   },
@@ -78,6 +80,7 @@ const MESSAGES: Record<string, CopilotMessages> = {
       under_the_hood: '⚙️ Digging into the internals...',
       code: '💻 Generating practical code...',
       shorter: '✂️ Condensing to the key point...',
+      simpler: '💡 Simplifying explanation...',
       re_angle: '🔄 Rethinking from another angle...',
     },
   },
@@ -228,7 +231,10 @@ export function useCopilotAI({
           question: cleanText,
           history: recentHistory,
           locale: speechLanguageRef.current,
-          outputLanguage: outputLanguageRef.current,
+          outputLanguage: outputLanguageRef.current.startsWith('bilingual')
+            ? 'bilingual'
+            : outputLanguageRef.current,
+          helperLanguage: outputLanguageRef.current === 'bilingual_ru' ? 'ru' : 'uk',
           candidateProfile: candidateProfileRef.current,
           isConcise: isConciseRef.current,
           triggerMode: triggerModeRef.current,
@@ -395,7 +401,10 @@ export function useCopilotAI({
     processAggregatedQuestion(combinedText, true);
   }, []);
 
-  const handleRefineQA = async (qaId: string, refinement: 'under_the_hood' | 'code' | 'shorter' | 're_angle') => {
+  const handleRefineQA = async (
+    qaId: string,
+    refinement: 'under_the_hood' | 'code' | 'shorter' | 're_angle' | 'simpler'
+  ) => {
     const existing = interviewQAs.find((q) => q.id === qaId);
     if (!existing) return;
 
@@ -432,7 +441,10 @@ export function useCopilotAI({
           history: recentHistory,
           refinement,
           locale: speechLanguageRef.current,
-          outputLanguage: outputLanguageRef.current,
+          outputLanguage: outputLanguageRef.current.startsWith('bilingual')
+            ? 'bilingual'
+            : outputLanguageRef.current,
+          helperLanguage: outputLanguageRef.current === 'bilingual_ru' ? 'ru' : 'uk',
           candidateProfile: candidateProfileRef.current,
           isConcise: isConciseRef.current,
           sessionMode: sessionModeRef.current,

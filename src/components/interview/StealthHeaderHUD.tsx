@@ -20,6 +20,7 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
 import { LangDropdown } from '@/components/ui/LangDropdown';
 import { UserProfileHUD } from './UserProfileHUD';
+import { AiLanguageSelector, type AiLanguageMode } from './AiLanguageSelector';
 
 interface StealthHeaderHUDProps {
   isCapturing: boolean;
@@ -28,6 +29,8 @@ interface StealthHeaderHUDProps {
   liveVolume: number;
   userPlan?: 'free' | 'pro' | 'lifetime';
   candidateRole?: string;
+  aiLanguageMode?: string;
+  onAiLanguageChange?: (mode: string) => void;
   onUpgradeClick?: () => void;
   onManualReconnect: () => void;
   onOpenProfile: () => void;
@@ -48,6 +51,8 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
   liveVolume,
   userPlan = 'free',
   candidateRole,
+  aiLanguageMode = 'auto',
+  onAiLanguageChange,
   onUpgradeClick,
   onManualReconnect,
   onOpenProfile,
@@ -149,7 +154,16 @@ export const StealthHeaderHUD: React.FC<StealthHeaderHUDProps> = ({
             </button>
           )}
 
-          {/* Quick Language Switcher Dropdown */}
+          {/* AI Output Language Selector (Auto, Bilingual, UK, EN, etc.) */}
+          {onAiLanguageChange && (
+            <AiLanguageSelector
+              currentMode={aiLanguageMode}
+              onChange={(mode) => onAiLanguageChange(mode)}
+              compact
+            />
+          )}
+
+          {/* Quick UI Language Switcher Dropdown */}
           <LangDropdown />
 
           {/* User Profile & Subscription Activity HUD */}

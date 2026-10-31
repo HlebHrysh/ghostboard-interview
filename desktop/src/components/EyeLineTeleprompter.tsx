@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import type { StructuredAnswerOutput } from '../lib/streamClient';
 import type { CandidateProfile } from '../lib/profileStore';
-import { parseStreamingMarkdown } from './DualColumnChat';
+import { parseStreamingMarkdown, renderBilingualPhrase } from './DualColumnChat';
 import {
   setWindowOpacity,
   startPkceLogin,
@@ -68,7 +68,7 @@ export interface EyeLineTeleprompterProps {
   onToggleFreeze?: () => void;
   onToggleMode?: (mode: 'notch' | 'chat' | 'ticker') => void;
   onToggleClickThrough?: (enable?: boolean) => void;
-  onApplyModifier?: (modifier: 'shorter' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => void;
+  onApplyModifier?: (modifier: 'shorter' | 'simpler' | 'code' | 're_angle' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => void;
   onToggleBackendMode?: (mode: 'local' | 'cloud') => void;
   onTriggerPanic?: () => void;
   onTriggerAnswer?: (prompt?: string) => void;
@@ -656,9 +656,15 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             {/* Header: Question & Modifiers */}
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
               <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-500/30 text-violet-300 font-mono text-[9px] font-bold uppercase tracking-wider shrink-0">
-                  Питання
-                </span>
+                {activeAnswer?.meta ? (
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-mono text-[9px] font-semibold shrink-0">
+                    {activeAnswer.meta.domain} • {activeAnswer.meta.level} • {activeAnswer.meta.language}
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-500/30 text-violet-300 font-mono text-[9px] font-bold uppercase tracking-wider shrink-0">
+                    Питання
+                  </span>
+                )}
                 <h2 className="text-xs font-semibold text-zinc-100 truncate">
                   {activeQuestion || 'Очікування запитання співрозмовника...'}
                 </h2>
@@ -667,39 +673,39 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
               {/* 1-Click AI Modifiers */}
               <div className="flex items-center gap-1 shrink-0 ml-2">
                 <button
+                  onClick={() => onApplyModifier?.('shorter')}
+                  title="⚡ Коротше (2-3 тези)"
+                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
+                >
+                  ⚡ Коротше
+                </button>
+                <button
+                  onClick={() => onApplyModifier?.('simpler')}
+                  title="💡 Простіше (на пальцях)"
+                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
+                >
+                  💡 Простіше
+                </button>
+                <button
+                  onClick={() => onApplyModifier?.('code')}
+                  title="</> Код"
+                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
+                >
+                  &lt;/&gt; Код
+                </button>
+                <button
+                  onClick={() => onApplyModifier?.('re_angle')}
+                  title="🔄 Інший підхід"
+                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
+                >
+                  🔄 Підхід
+                </button>
+                <button
                   onClick={() => onApplyModifier?.('bridge')}
                   title="Bridge Phrase [B] (виграти 10 секунд)"
                   className="px-1.5 py-0.5 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[9px] font-mono transition-all cursor-pointer"
                 >
                   Bridge [B]
-                </button>
-                <button
-                  onClick={() => onApplyModifier?.('shorter')}
-                  title="Blitz Mode [Q] (коротко 2-3 тези)"
-                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
-                >
-                  Blitz [Q]
-                </button>
-                <button
-                  onClick={() => onApplyModifier?.('more_technical')}
-                  title="Deep Dive [D] (архітектура та деталі)"
-                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
-                >
-                  Dive [D]
-                </button>
-                <button
-                  onClick={() => onApplyModifier?.('code_example')}
-                  title="Code Example [C]"
-                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
-                >
-                  Code [C]
-                </button>
-                <button
-                  onClick={() => onApplyModifier?.('tradeoffs')}
-                  title="Tradeoffs [T] (компроміси та архітектура)"
-                  className="px-1.5 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 text-[9px] font-mono transition-all cursor-pointer"
-                >
-                  Tradeoffs [T]
                 </button>
               </div>
             </div>
@@ -722,7 +728,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                       <span className="w-3.5 h-3.5 rounded-full bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold flex items-center justify-center shrink-0 border border-cyan-500/30 mt-0.5">
                         {idx + 1}
                       </span>
-                      <div className="flex-1">{renderInlineFormatting(pillar)}</div>
+                      <div className="flex-1">{renderBilingualPhrase(pillar)}</div>
                     </div>
                   ))}
                 </div>
@@ -736,7 +742,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
               className="max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 flex flex-col gap-2.5 pr-1 max-w-[65ch] mx-auto w-full"
             >
               {/* Phase 1: Spoken Hook */}
-              <div className="rounded-xl bg-[#14120a] border border-amber-500/40 p-2.5 shadow-[0_0_15px_rgba(245,158,11,0.08)] relative group">
+              <div className="rounded-xl bg-[#14120a] border-l-4 border-l-amber-400/90 border-y border-r border-amber-500/30 p-2.5 shadow-[0_0_15px_rgba(245,158,11,0.08)] relative group">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400 font-bold flex items-center gap-1">
                     <Zap className="w-2.5 h-2.5" /> Фаза 1: Голосовий старт (дивіться у камеру)
@@ -751,9 +757,9 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                   </button>
                 </div>
 
-                <p className="text-xs font-medium text-amber-100/95 leading-relaxed tracking-tight">
+                <div className="text-xs sm:text-[13px] font-medium text-white leading-relaxed tracking-tight font-sans">
                   {activeAnswer?.hook ? (
-                    `"${activeAnswer.hook}"`
+                    renderBilingualPhrase(activeAnswer.hook)
                   ) : (
                     <span className="text-zinc-500 italic text-[11px]">
                       Аналізую запитання та готую влучну голосову відповідь...
@@ -762,7 +768,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                   {isStreaming && !activeAnswer?.pillars?.length && (
                     <span className="inline-block w-1.5 h-3 bg-amber-400 ml-1 animate-pulse align-middle" />
                   )}
-                </p>
+                </div>
               </div>
 
               {/* Phase 3: Syntax-Highlighted Streaming Code & Markdown */}

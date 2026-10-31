@@ -9,12 +9,22 @@ use crate::ipc::events::HudEvent;
 pub struct HudChannelState {
     /// `(window label, channel)` pairs so each window (Office / HUD) manages its own stream.
     channels: Arc<Mutex<Vec<(String, Channel<HudEvent>)>>>,
+    /// Global Tauri app handle for cross-window event broadcasting.
+    app_handle: Arc<Mutex<Option<tauri::AppHandle>>>,
 }
 
 impl HudChannelState {
     pub fn new() -> Self {
         Self {
             channels: Arc::new(Mutex::new(Vec::new())),
+            app_handle: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Associates the global Tauri AppHandle for cross-window broadcasting.
+    pub fn set_app_handle(&self, app: tauri::AppHandle) {
+        if let Ok(mut lock) = self.app_handle.lock() {
+            *lock = Some(app);
         }
     }
 
@@ -35,10 +45,19 @@ impl HudChannelState {
         list.retain(|(l, _)| l != label);
     }
 
-    /// Dispatches an event to all active channels; cleans up closed/broken channels.
+    /// Dispatches an event to all active channels and emits across all webview windows.
     pub fn broadcast(&self, event: HudEvent) {
+        // 1. Direct IPC channel dispatch
         let mut list = self.channels.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         list.retain(|(_, ch)| ch.send(event.clone()).is_ok());
+
+        // 2. Global webview broadcast across all windows (Office + HUD)
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                use tauri::Emitter;
+                let _ = app.emit("hud-event", &event);
+            }
+        }
     }
 
     /// Number of active channels connected.

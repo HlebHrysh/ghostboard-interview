@@ -14,6 +14,8 @@ import {
   panicHide,
   exportMarkdown,
   getAuthState,
+  setListenMode as nativeSetListenMode,
+  getListenMode as nativeGetListenMode,
 } from '../lib/tauriBridge';
 import {
   StructuredAnswerOutput,
@@ -80,6 +82,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
   const [deviceCode, setDeviceCode] = useState<DeviceCodePendingPayload | null>(null);
   const [connectionLatencyMs, setConnectionLatencyMs] = useState<number>(45);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [listenMode, setListenModeState] = useState<'all' | 'system_only'>('all');
 
   const accumulatedTokensRef = useRef('');
   const questionStartTimeRef = useRef<number | null>(null);
@@ -243,6 +246,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         break;
       }
 
+      case 'listenModeChanged': {
+        const mode = event.payload.mode;
+        setListenModeState(mode === 'system_only' ? 'system_only' : 'all');
+        break;
+      }
+
       case 'authChanged': {
         setIsAuthenticated(event.payload.authenticated);
         if (event.payload.user) setUser(event.payload.user);
@@ -294,6 +303,11 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     if (!autoConnect) return;
     let isMounted = true;
     const unsubscribe = startCopilotStream(handleHudEvent);
+
+    // Initial listen mode load
+    nativeGetListenMode().then((m) => {
+      if (isMounted) setListenModeState(m === 'system_only' ? 'system_only' : 'all');
+    }).catch(console.warn);
 
     // Auto-start native dual audio capture once per session (guard survives remounts / StrictMode)
     if (!autoCaptureStartPromise) {
@@ -416,6 +430,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     return await exportMarkdown(content, filename);
   }, []);
 
+  const switchListenMode = useCallback(async (mode: 'all' | 'system_only') => {
+    const res = await nativeSetListenMode(mode);
+    setListenModeState(res === 'system_only' ? 'system_only' : 'all');
+    return res;
+  }, []);
+
   return {
     // Reactive State
     sttStatus,
@@ -434,6 +454,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     lastHotkey,
     isStealth,
     isClickThrough,
+    listenMode,
     error,
     isAuthenticated,
     user,
@@ -446,6 +467,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     startCapture,
     stopCapture,
     restartCapture,
+    switchListenMode,
     triggerAnswer,
     clearSession,
     setOpacity,

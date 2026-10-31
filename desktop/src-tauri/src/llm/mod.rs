@@ -6,7 +6,7 @@ use crate::ipc::events::HudEvent;
 use crate::ipc::HudChannelState;
 use crate::llm::client::{LlmConfig, LlmProviderType, LlmStreamOutcome, SpeculativeLlmClient};
 use crate::llm::eot::{EotDetector, EotTrigger};
-use crate::llm::prompt::{build_system_prompt, build_user_prompt};
+use crate::llm::prompt::{build_system_prompt, build_system_prompt_with_options, build_user_prompt};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -21,6 +21,9 @@ pub struct LlmOrchestrator {
     config: Arc<Mutex<LlmConfig>>,
     candidate_profile: Arc<Mutex<Option<String>>>,
     concise_mode: Arc<Mutex<bool>>,
+    output_language: Arc<Mutex<Option<String>>>,
+    helper_language: Arc<Mutex<Option<String>>>,
+    modifier: Arc<Mutex<Option<String>>>,
 }
 
 impl Default for LlmOrchestrator {
@@ -54,6 +57,9 @@ impl LlmOrchestrator {
             })),
             candidate_profile: Arc::new(Mutex::new(None)),
             concise_mode: Arc::new(Mutex::new(false)),
+            output_language: Arc::new(Mutex::new(None)),
+            helper_language: Arc::new(Mutex::new(None)),
+            modifier: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -73,6 +79,24 @@ impl LlmOrchestrator {
     pub async fn set_concise_mode(&self, concise: bool) {
         let mut c = self.concise_mode.lock().await;
         *c = concise;
+    }
+
+    /// Sets target output language (e.g. "auto", "bilingual", "uk", "en").
+    pub async fn set_output_language(&self, lang: Option<String>) {
+        let mut l = self.output_language.lock().await;
+        *l = lang;
+    }
+
+    /// Sets helper language for bilingual prompter (e.g. "uk", "ru").
+    pub async fn set_helper_language(&self, lang: Option<String>) {
+        let mut l = self.helper_language.lock().await;
+        *l = lang;
+    }
+
+    /// Sets rapid answer modifier ("shorter", "simpler", "code", "re_angle").
+    pub async fn set_modifier(&self, modifier: Option<String>) {
+        let mut m = self.modifier.lock().await;
+        *m = modifier;
     }
 
     /// Ingests incoming transcript into the 90s sliding context window.
@@ -142,8 +166,24 @@ impl LlmOrchestrator {
             let c_lock = self.concise_mode.lock().await;
             *c_lock
         };
+        let (modifier, out_lang, helper_lang) = {
+            let m_lock = self.modifier.lock().await;
+            let l_lock = self.output_language.lock().await;
+            let h_lock = self.helper_language.lock().await;
+            let m = if is_concise {
+                Some("shorter".to_string())
+            } else {
+                m_lock.clone()
+            };
+            (m, l_lock.clone(), h_lock.clone())
+        };
 
-        let system_prompt = build_system_prompt(candidate_profile.as_deref(), is_concise);
+        let system_prompt = build_system_prompt_with_options(
+            candidate_profile.as_deref(),
+            modifier.as_deref(),
+            out_lang.as_deref(),
+            helper_lang.as_deref(),
+        );
         let user_prompt = build_user_prompt(&trigger.question_text, Some(&trigger.context_90s));
 
         let client = self.llm_client.clone();

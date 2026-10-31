@@ -13,11 +13,20 @@ import { normalizeTechnicalSpeech } from './techSpeechNormalizer';
 import type { AnswerLength, AnswerSpeed, HintLanguage } from './desktopSettings';
 import type { CandidateProfile } from './profileStore';
 
-export type DirectorModifier = 'normal' | 'shorter' | 'more_technical' | 'code_example' | 'tradeoffs';
+export type DirectorModifier =
+  | 'normal'
+  | 'shorter'
+  | 'simpler'
+  | 'code'
+  | 're_angle'
+  | 'bridge'
+  | 'more_technical'
+  | 'code_example'
+  | 'tradeoffs';
 
 export interface AnswerRequest {
   question: string;
-  /** Explicit one-shot override from a quick-action button ("Коротше", "Код"). */
+  /** Explicit one-shot override from a quick-action button ("Коротше", "Простіше", "Код", "Інший підхід"). */
   modifier?: DirectorModifier;
   speed: AnswerSpeed;
   length: AnswerLength;
@@ -42,7 +51,10 @@ export interface AnswerStreamHandle {
 const MAX_QUESTION_CHARS = 3000;
 
 /** Resolves the output language: explicit choice wins, "auto" follows the question's script. */
-export function resolveLanguage(language: HintLanguage, question: string): 'uk' | 'en' | 'ru' {
+export function resolveLanguage(language: HintLanguage, question: string): string {
+  if (language === 'bilingual_uk' || language === 'bilingual_ru') {
+    return 'bilingual';
+  }
   if (language !== 'auto') return language;
   if (/[ыэёъ]/i.test(question)) return 'ru';
   if (/[а-яіїєґ]/i.test(question)) return 'uk';
@@ -53,7 +65,7 @@ export function resolveLanguage(language: HintLanguage, question: string): 'uk' 
 export function resolveModifier(req: Pick<AnswerRequest, 'modifier' | 'length' | 'speed'>): DirectorModifier {
   if (req.modifier) return req.modifier;
   if (req.length === 'short') return 'shorter';
-  if (req.length === 'code') return 'code_example';
+  if (req.length === 'code') return 'code';
   return req.speed === 'deep' ? 'more_technical' : 'normal';
 }
 
@@ -68,9 +80,11 @@ export function buildAnswerPayload(req: AnswerRequest): {
   directorModifier: DirectorModifier;
   candidateProfile?: { role?: string; primaryStack?: string; experienceLevel?: string };
   outputLanguage: string;
+  helperLanguage?: string;
 } {
   const cleanQuestion = normalizeTechnicalSpeech(req.question.trim());
   const lang = resolveLanguage(req.language, cleanQuestion);
+  const helperLanguage = req.language === 'bilingual_ru' ? 'ru' : 'uk';
   const contextLines: string[] = [];
 
   if (req.speed === 'deep') {
@@ -105,6 +119,7 @@ export function buildAnswerPayload(req: AnswerRequest): {
         }
       : undefined,
     outputLanguage: lang,
+    helperLanguage,
   };
 }
 
@@ -115,11 +130,12 @@ export function buildAnswerPayload(req: AnswerRequest): {
 export function cleanStreamText(raw: string): string {
   if (!raw) return '';
   return raw
+    .replace(/<<<\s*META:[^>]+>>>/gi, '')
     .replace(/<<<\s*PHASE_1:[A-Za-z_]*\s*>>>/gi, '')
     .replace(/<<<\s*PHASE_[2-9]:[A-Za-z_]*\s*>>>/gi, '\n\n')
     .replace(/<<<\s*END\s*>>>/gi, '')
     .replace(/\[DONE\]/gi, '')
-    .replace(/(?:<{3}[A-Za-z0-9_:]*>{0,2}|<{1,2})$/, '')
+    .replace(/(?:<{3,}[A-Za-z0-9_:>|\s\-]*>{0,2}|<{1,2})$/, '')
     .replace(/^\s+/, '')
     .replace(/\n{3,}/g, '\n\n');
 }

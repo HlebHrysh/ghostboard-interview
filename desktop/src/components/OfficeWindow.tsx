@@ -29,6 +29,7 @@ import {
   ChevronRight,
   Check,
   Languages,
+  Target,
 } from 'lucide-react';
 import {
   type CopilotMode,
@@ -57,6 +58,10 @@ import {
   type CandidateLevel,
 } from '../lib/profileStore';
 import type { UserProfileData } from '../lib/apiClient';
+import { AudioWaveEqualizer } from './AudioWaveEqualizer';
+import { InterviewArena } from './InterviewArena';
+import { useHudStream } from '../hooks/useHudStream';
+import { useSampledLevel } from '../hooks/useSampledLevel';
 
 export interface OfficeWindowProps {
   user: UserProfileData | null;
@@ -64,7 +69,7 @@ export interface OfficeWindowProps {
   onOpenAuth?: () => void;
 }
 
-type OfficeTab = 'launch' | 'audio' | 'ai' | 'resume' | 'stealth';
+type OfficeTab = 'launch' | 'arena' | 'audio' | 'ai' | 'resume' | 'stealth';
 
 const SPRING = { type: 'spring' as const, stiffness: 380, damping: 28, mass: 0.6 };
 
@@ -72,6 +77,15 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
   const [settings, updateSettings] = useDesktopSettings();
   const [activeTab, setActiveTab] = useState<OfficeTab>('launch');
   const [profile, setProfile] = useState<CandidateProfile>(() => getStoredProfile());
+
+  // Real-time audio levels for header equalizer
+  const hudStream = useHudStream({ autoConnect: true });
+  const currentRms = useSampledLevel(
+    hudStream.levelsRef,
+    (l) => Math.max(l.interviewer, l.candidate),
+    1,
+    60
+  );
 
   // Launch state
   const [isLaunching, setIsLaunching] = useState(false);
@@ -268,6 +282,19 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
 
             <button
               type="button"
+              onClick={() => setActiveTab('arena')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
+                activeTab === 'arena'
+                  ? 'bg-zinc-800 text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/80'
+              }`}
+            >
+              <Target className="w-4 h-4 text-emerald-400" />
+              <span>🎯 Тренажер (AI Arena)</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('audio')}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                 activeTab === 'audio'
@@ -362,6 +389,48 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
           MAIN CONTENT AREA (Monochrome, High-Density Controls)
       ───────────────────────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#09090b] p-6 sm:p-8">
+        {/* Top Persistent Ambient Header Bar */}
+        <header className="mb-6 pb-4 border-b border-zinc-800/80 flex flex-wrap items-center justify-between gap-4 shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono font-medium text-zinc-300">
+              {activeTab === 'launch' && 'Готовність до інтерв\'ю'}
+              {activeTab === 'arena' && '🎯 AI Arena — Тренажер співбесіди'}
+              {activeTab === 'audio' && 'Конфігурація аудіо-потоків'}
+              {activeTab === 'ai' && 'Параметри ШІ та Промптів'}
+              {activeTab === 'resume' && 'Стек та Досвід кандидата'}
+              {activeTab === 'stealth' && 'Безпека та Стелс-режим'}
+            </span>
+            <div className="h-3 w-px bg-zinc-800 hidden sm:block" />
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] font-mono text-zinc-400">
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  hudStream.isCapturing || hudStream.sttStatus.status === 'connected'
+                    ? 'bg-emerald-400 animate-pulse'
+                    : 'bg-zinc-600'
+                }`}
+              />
+              <span>
+                {hudStream.isCapturing || hudStream.sttStatus.status === 'connected'
+                  ? 'HUD: Активний'
+                  : 'HUD: Очікування'}
+              </span>
+            </div>
+            {envInfo?.platform === 'linux' && (
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] font-mono text-zinc-400">
+                <span className="text-zinc-500">Захват:</span>
+                <span className="text-zinc-200">PipeWire 16kHz</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <AudioWaveEqualizer
+              level={currentRms}
+              label={hudStream.listenMode === 'all' ? 'Звук + Мік' : 'Тільки Звук'}
+            />
+          </div>
+        </header>
+
         {/* Error notification banner if launch was blocked */}
         {launchError && (
           <div className="mb-6 p-4 rounded-xl bg-rose-950/30 border border-rose-500/40 text-rose-300 text-xs flex items-center justify-between">
@@ -376,6 +445,19 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
             >
               Закрити
             </button>
+          </div>
+        )}
+
+        {/* ── TAB: ТРЕНАЖЕР СПІВБЕСІДИ (AI ARENA) ── */}
+        {activeTab === 'arena' && (
+          <div className="max-w-4xl space-y-6">
+            <InterviewArena
+              user={user}
+              candidateProfile={profile}
+              settings={settings}
+              liveTranscript={hudStream.liveTranscript}
+              isCapturing={hudStream.isCapturing}
+            />
           </div>
         )}
 
@@ -856,23 +938,29 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
                   <Languages className="w-4 h-4 text-zinc-400" />
                   <span>Мова відповідей суфлера</span>
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   {(
                     [
-                      { id: 'auto', label: 'Авто (EN / UA)' },
-                      { id: 'uk', label: 'Українська' },
-                      { id: 'en', label: 'English' },
-                      { id: 'ru', label: 'Русский' },
+                      { id: 'auto', label: '🌐 Авто' },
+                      { id: 'bilingual_uk', label: '🇬🇧🇺🇦 EN + UA' },
+                      { id: 'bilingual_ru', label: '🇬🇧🇷🇺 EN + RU' },
+                      { id: 'uk', label: '🇺🇦 Українська' },
+                      { id: 'en', label: '🇬🇧 English' },
+                      { id: 'ru', label: '🇷🇺 Русский' },
+                      { id: 'pl', label: '🇵🇱 Polski' },
+                      { id: 'de', label: '🇩🇪 Deutsch' },
+                      { id: 'es', label: '🇪🇸 Español' },
+                      { id: 'fr', label: '🇫🇷 Français' },
                     ] as const
                   ).map((lang) => (
                     <button
                       key={lang.id}
                       type="button"
                       onClick={() => updateSettings({ hintLanguage: lang.id })}
-                      className={`py-2 px-3 rounded-xl text-xs font-medium border text-center transition-all cursor-pointer ${
+                      className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-center transition-all cursor-pointer ${
                         settings.hintLanguage === lang.id
-                          ? 'bg-zinc-800 border-white text-white'
-                          : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                          ? 'bg-zinc-800 border-white text-white shadow-sm font-semibold'
+                          : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
                       }`}
                     >
                       {lang.label}

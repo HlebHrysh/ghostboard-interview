@@ -18,10 +18,21 @@
 
 import { normalizeTechnicalSpeech } from './techSpeechNormalizer';
 
+export type DirectorModifier =
+  | 'normal'
+  | 'shorter'
+  | 'simpler'
+  | 'code'
+  | 're_angle'
+  | 'bridge'
+  | 'more_technical'
+  | 'code_example'
+  | 'tradeoffs';
+
 export interface DualStreamRequestPayload {
   question: string;
   history?: Array<{ speaker: 'interviewer' | 'candidate'; text: string }>;
-  directorModifier?: 'normal' | 'shorter' | 'more_technical' | 'code_example' | 'tradeoffs';
+  directorModifier?: DirectorModifier;
   candidateProfile?: {
     role?: string;
     primaryStack?: string;
@@ -31,6 +42,7 @@ export interface DualStreamRequestPayload {
     [key: string]: unknown;
   };
   outputLanguage?: string;
+  helperLanguage?: string;
   authToken?: string | null;
 }
 
@@ -40,7 +52,15 @@ export interface TelemetryPayload {
   timestamp: number;
 }
 
+export interface MetaTagInfo {
+  domain: string;
+  level: string;
+  language: string;
+  raw: string;
+}
+
 export interface StructuredAnswerOutput {
+  meta?: MetaTagInfo;
   hook: string;
   pillars: string[];
   deepDive: string;
@@ -70,7 +90,7 @@ export interface StreamOptions extends StreamCallbacks {
 }
 
 /**
- * Strips partial delimiters (e.g. <, <<, <<<, <<<PHASE_1:H, <<<PHASE_2:PILL, <<<PHASE_3:DEEP, <<<END)
+ * Strips partial delimiters (e.g. <, <<, <<<, <<<META: ..., <<<PHASE_1:H, <<<PHASE_2:PILL, <<<PHASE_3:DEEP, <<<END)
  * and sentinels ([DONE], <<<END>>>) that occur at the trailing end of a streaming buffer chunk before they fully arrive.
  * Safely preserves valid code and math symbols (<, <<, generics, tags, bitshifts).
  */
@@ -80,7 +100,7 @@ export function stripTrailingPartialDelimiter(text: string): string {
     // 1. Strip trailing complete sentinels and delimiters (<<<END>>>, [DONE])
     .replace(/(?:\r?\n|\s)*(?:<<<END>>>|\[DONE\])\s*$/gi, '')
     // 2. Strip trailing partial delimiter: 1 or 2 '<' at end, or 3+ '<' followed by delimiter tag chars
-    .replace(/(?:\r?\n|\s)*(?:<{3,}[A-Za-z0-9_:>]*|<{1,2})$/i, '')
+    .replace(/(?:\r?\n|\s)*(?:<{3,}[A-Za-z0-9_:>|\s\-]*>{0,2}|<{1,2})$/i, '')
     // 3. Strip trailing partial [DONE] sentinel: [, [D, [DO, [DON, [DONE
     .replace(/(?:\r?\n|\s)*\[(?:D(?:O(?:N(?:E\]?)?)?)?)?$/i, '')
     // 4. Strip trailing dangling delimiter brackets (3+ brackets from <<< or >>>)
@@ -95,6 +115,7 @@ function cleanPhaseContent(str: string): string {
   if (!str) return '';
   let cleaned = stripTrailingPartialDelimiter(str);
   cleaned = cleaned
+    .replace(/<<<\s*META:[^>]+>>>/gi, '')
     .replace(/<<<\s*PHASE_[123]:[A-Za-z0-9_]+\s*>>>/gi, '')
     .replace(/<<<\s*END\s*>>>/gi, '')
     .replace(/\[DONE\]/gi, '')
@@ -109,9 +130,11 @@ function cleanPhaseContent(str: string): string {
  * Parses progressive 3-phase stream delimiters from raw accumulator text.
  * Guarantees zero leakage of partial delimiters during streaming,
  * provides resilient fallback when <<<PHASE_1:HOOK>>> is omitted by LLM,
+ * extracts <<<META: {Domain} | {Level} | {Language}>>> context badge,
  * and extracts clean bullet lists and deep-dive code blocks with case-insensitive matching.
  */
 export function parseDualStreamDelimiters(rawText: string): {
+  meta?: MetaTagInfo;
   hook: string;
   pillars: string[];
   deepDive: string;
@@ -120,14 +143,32 @@ export function parseDualStreamDelimiters(rawText: string): {
     return { hook: '', pillars: [], deepDive: '' };
   }
 
+  let meta: MetaTagInfo | undefined = undefined;
   let hook = '';
   let pillars: string[] = [];
   let deepDive = '';
 
-  // 1. PHASE 1: Spoken Start Hook (case-insensitive)
-  const hasPhase1 = /<<<PHASE_1:HOOK>>>/i.test(rawText);
+  // 1. Extract <<<META: {Domain} | {Level} | {Language}>>>
+  const metaMatch = rawText.match(/<<<META:\s*([^>]+)>>>/i);
+  if (metaMatch) {
+    const parts = metaMatch[1].split('|').map((p) => p.trim());
+    meta = {
+      domain: parts[0] || 'Backend',
+      level: parts[1] || 'Senior',
+      language: parts[2] || 'EN',
+      raw: metaMatch[1].trim(),
+    };
+  }
+
+  // Strip META tag completely from the text before searching for Phase 1 Hook
+  const textForPhases = rawText
+    .replace(/<<<META:[^>]+>>>/gi, '')
+    .replace(/(?:^|\n)\s*<{3,}META:[^>]*$/i, '');
+
+  // 2. PHASE 1: Spoken Start Hook (case-insensitive)
+  const hasPhase1 = /<<<PHASE_1:HOOK>>>/i.test(textForPhases);
   if (hasPhase1) {
-    const hookMatch = rawText.match(
+    const hookMatch = textForPhases.match(
       /<<<PHASE_1:HOOK>>>([\s\S]*?)(?:<<<PHASE_2:PILLARS>>>|<<<PHASE_3:DEEP_DIVE>>>|<<<END>>>|\[DONE\]|$)/i
     );
     if (hookMatch) {
@@ -135,7 +176,7 @@ export function parseDualStreamDelimiters(rawText: string): {
     }
   } else {
     // Resilient fallback: LLM omitted <<<PHASE_1:HOOK>>> and started generating text directly
-    const fallbackMatch = rawText.match(
+    const fallbackMatch = textForPhases.match(
       /^([\s\S]*?)(?:<<<PHASE_2:PILLARS>>>|<<<PHASE_3:DEEP_DIVE>>>|<<<END>>>|\[DONE\]|$)/i
     );
     if (fallbackMatch) {
@@ -143,8 +184,8 @@ export function parseDualStreamDelimiters(rawText: string): {
     }
   }
 
-  // 2. PHASE 2: Core Architectural Pillars (case-insensitive)
-  const pillarsMatch = rawText.match(
+  // 3. PHASE 2: Core Architectural Pillars (case-insensitive)
+  const pillarsMatch = textForPhases.match(
     /<<<PHASE_2:PILLARS>>>([\s\S]*?)(?:<<<PHASE_3:DEEP_DIVE>>>|<<<END>>>|\[DONE\]|$)/i
   );
   if (pillarsMatch) {
@@ -168,8 +209,8 @@ export function parseDualStreamDelimiters(rawText: string): {
       );
   }
 
-  // 3. PHASE 3: Deep Dive & Code (case-insensitive)
-  const deepDiveMatch = rawText.match(
+  // 4. PHASE 3: Deep Dive & Code (case-insensitive)
+  const deepDiveMatch = textForPhases.match(
     /<<<PHASE_3:DEEP_DIVE>>>([\s\S]*?)(?:<<<END>>>|\[DONE\]|$)/i
   );
   if (deepDiveMatch) {
@@ -177,11 +218,11 @@ export function parseDualStreamDelimiters(rawText: string): {
     deepDive = cleanPhaseContent(rawDeepDive);
   }
 
-  // Global safety guarantee: ensure neither [DONE] nor <<<END>>> ever leaks in any phase
+  // Global safety guarantee: ensure neither [DONE] nor <<<END>>> nor <<<META>>> ever leaks in any phase
   hook = cleanPhaseContent(hook);
   deepDive = cleanPhaseContent(deepDive);
 
-  return { hook, pillars, deepDive };
+  return { meta, hook, pillars, deepDive };
 }
 
 export class DualStreamClient {

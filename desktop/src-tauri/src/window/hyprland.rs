@@ -63,8 +63,32 @@ pub struct HyprlandReport {
     pub errors: Vec<String>,
 }
 
-/// Runs `hyprctl keyword <keyword> <rule>` and succeeds only on the literal `ok` reply
-/// (hyprctl exits 0 even for rejected keywords, printing the error on stdout).
+/// Tries to register dynamic window rules using Hyprland >= 0.50 Lua `hyprctl eval` API.
+fn run_eval_rules() -> Result<(), String> {
+    let script = r#"
+        if hl and hl.window_rule then
+            pcall(hl.window_rule, {"float on", "match:title ^(Ghostboard HUD)$"})
+            pcall(hl.window_rule, {"pin on", "match:title ^(Ghostboard HUD)$"})
+            pcall(hl.window_rule, {"no_blur on", "match:title ^(Ghostboard HUD)$"})
+            pcall(hl.window_rule, {"no_shadow on", "match:title ^(Ghostboard HUD)$"})
+            pcall(hl.window_rule, {"border_size 0", "match:title ^(Ghostboard HUD)$"})
+            return "ok"
+        end
+        error("hl.window_rule not found")
+    "#;
+    let output = Command::new("hyprctl")
+        .args(["eval", script])
+        .output()
+        .map_err(|e| format!("hyprctl eval unavailable: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if output.status.success() && (stdout.eq_ignore_ascii_case("ok") || stdout.contains("ok")) {
+        Ok(())
+    } else {
+        Err(format!("hyprctl eval rejected: {}", stdout))
+    }
+}
+
+/// Runs `hyprctl keyword <keyword> <rule>` (legacy fallback).
 fn run_keyword(keyword: &str, rule: &str) -> Result<(), String> {
     let output = Command::new("hyprctl")
         .args(["keyword", keyword, rule])
@@ -93,6 +117,14 @@ pub fn apply_hud_rules() -> HyprlandReport {
     }
     report.detected = true;
 
+    // 1. First attempt: Modern Hyprland Lua evaluation (`hyprctl eval`)
+    if let Ok(()) = run_eval_rules() {
+        report.rules_applied = 5;
+        tracing::info!(target: "ghostboard::hyprland", "Applied 5 HUD window rules via Hyprland Lua eval");
+        return report;
+    }
+
+    // 2. Second attempt: Legacy keyword parsers (windowrulev2 / windowrule) without WARN spam
     let legacy = hud_windowrulev2_rules();
     let modern = hud_windowrule_modern_rules();
 
@@ -103,7 +135,8 @@ pub fn apply_hud_rules() -> HyprlandReport {
             Ok(()) => report.rules_applied += 1,
             Err(e) => {
                 report.rules_failed += 1;
-                tracing::warn!(target: "ghostboard::hyprland", "{}", e);
+                // Debug log only to prevent console spam on non-legacy parsers
+                tracing::debug!(target: "ghostboard::hyprland", "{}", e);
                 report.errors.push(e);
             }
         }
@@ -116,6 +149,63 @@ pub fn apply_hud_rules() -> HyprlandReport {
         "Hyprland HUD window rules pushed"
     );
     report
+}
+
+/// Applies direct window properties via `hyprctl dispatch` and `setprop` after window creation.
+pub fn dispatch_hud_window_properties(x: i32, y: i32) {
+    if !is_hyprland() {
+        return;
+    }
+
+    let sel = hud_title_selector();
+
+    // 1. Dispatch commands
+    let dispatch_cmds = [
+        format!("setfloating {}", sel),
+        format!("pin {}", sel),
+        format!("setprop {} noblur 1", sel),
+        format!("setprop {} noshadow 1", sel),
+        format!("setprop {} noborder 1", sel),
+        format!("movewindowpixel exact {} {},{}", x, y, sel),
+    ];
+
+    for cmd in dispatch_cmds {
+        let _ = Command::new("hyprctl")
+            .args(["dispatch", &cmd])
+            .output();
+    }
+
+    // 2. Direct setprop commands
+    let props = [
+        ("noblur", "1"),
+        ("noshadow", "1"),
+        ("noborder", "1"),
+    ];
+    for (prop, val) in props {
+        let _ = Command::new("hyprctl")
+            .args(["setprop", &sel, prop, val])
+            .output();
+    }
+
+    // 3. Lua-based direct address properties if available
+    let lua_script = format!(r#"
+        if hl and hl.get_windows then
+            for _, w in ipairs(hl.get_windows()) do
+                if w.title and string.find(w.title, "Ghostboard HUD") then
+                    if hl.dsp and hl.dsp.window then
+                        pcall(hl.dsp.window.float, w.address)
+                        pcall(hl.dsp.window.pin, w.address)
+                        pcall(hl.dsp.window.set_prop, w.address, "noblur", 1)
+                        pcall(hl.dsp.window.set_prop, w.address, "noshadow", 1)
+                        pcall(hl.dsp.window.set_prop, w.address, "noborder", 1)
+                    end
+                end
+            end
+        end
+    "#);
+    let _ = Command::new("hyprctl")
+        .args(["eval", &lua_script])
+        .output();
 }
 
 /// Top-centre placement in Hyprland layout (logical) coordinates for a monitor described by
@@ -194,6 +284,7 @@ pub fn place_hud_top_center(width: u32, height: u32, top_padding: f64) {
             };
             let batch = format_place_batch(x, y, width, height);
             let _ = Command::new("hyprctl").args(["--batch", &batch]).output();
+            dispatch_hud_window_properties(x, y);
         }
     });
 }

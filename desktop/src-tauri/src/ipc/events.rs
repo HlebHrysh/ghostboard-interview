@@ -73,6 +73,11 @@ pub enum HudEvent {
         enabled: bool,
     },
 
+    #[serde(rename = "listenModeChanged")]
+    ListenModeChanged {
+        mode: String,
+    },
+
     #[serde(rename = "error")]
     Error {
         code: String,

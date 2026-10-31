@@ -10,6 +10,7 @@ pub enum LlmProviderType {
     Groq,
     OpenAI,
     Anthropic,
+    Gemini,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +47,7 @@ pub fn parse_sse_data_chunk(provider: LlmProviderType, data_str: &str) -> Option
     }
 
     match provider {
-        LlmProviderType::Groq | LlmProviderType::OpenAI => {
+        LlmProviderType::Groq | LlmProviderType::OpenAI | LlmProviderType::Gemini => {
             #[derive(Deserialize)]
             struct ChatDelta {
                 content: Option<String>,
@@ -60,11 +61,53 @@ pub fn parse_sse_data_chunk(provider: LlmProviderType, data_str: &str) -> Option
                 choices: Option<Vec<ChatChoice>>,
             }
 
-            let parsed: ChatCompletionChunk = serde_json::from_str(trimmed).ok()?;
-            let choices = parsed.choices?;
-            let choice = choices.first()?;
-            let delta = choice.delta.as_ref()?;
-            delta.content.clone()
+            if let Ok(parsed) = serde_json::from_str::<ChatCompletionChunk>(trimmed) {
+                if let Some(choices) = parsed.choices {
+                    if let Some(choice) = choices.first() {
+                        if let Some(delta) = &choice.delta {
+                            if let Some(content) = &delta.content {
+                                return Some(content.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Fallback for native Gemini streamGenerateContent candidate schema
+            #[derive(Deserialize)]
+            struct GeminiPart {
+                text: Option<String>,
+            }
+            #[derive(Deserialize)]
+            struct GeminiContent {
+                parts: Option<Vec<GeminiPart>>,
+            }
+            #[derive(Deserialize)]
+            struct GeminiCandidate {
+                content: Option<GeminiContent>,
+            }
+            #[derive(Deserialize)]
+            struct GeminiChunk {
+                candidates: Option<Vec<GeminiCandidate>>,
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<GeminiChunk>(trimmed) {
+                if let Some(candidates) = parsed.candidates {
+                    if let Some(first_cand) = candidates.first() {
+                        if let Some(content) = &first_cand.content {
+                            if let Some(parts) = &content.parts {
+                                if let Some(first_part) = parts.first() {
+                                    if let Some(text) = &first_part.text {
+                                        return Some(text.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            None
         }
         LlmProviderType::Anthropic => {
             #[derive(Deserialize)]
@@ -197,6 +240,38 @@ impl SpeculativeLlmClient {
                     "stream": true,
                     "max_tokens": 1024,
                     "temperature": 0.2
+                });
+
+                (url, body, headers)
+            }
+            LlmProviderType::Gemini => {
+                let url = config
+                    .endpoint_url
+                    .clone()
+                    .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".to_string());
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
+                        .map_err(|e| e.to_string())?,
+                );
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+                let model = if config.model.is_empty() {
+                    "gemini-3.8-flash".to_string()
+                } else {
+                    config.model.clone()
+                };
+
+                let body = serde_json::json!({
+                    "model": model,
+                    "messages": [
+                        { "role": "system", "content": system_prompt },
+                        { "role": "user", "content": user_prompt }
+                    ],
+                    "stream": true,
+                    "temperature": 0.2,
+                    "max_tokens": 1024
                 });
 
                 (url, body, headers)

@@ -172,9 +172,17 @@ pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
     result
 }
 
-/// Active running audio capture stream wrapping cpal::Stream.
+/// Backend representation of an active audio capture stream.
+pub enum AudioStreamBackend {
+    Cpal(Stream),
+    Process {
+        child: Arc<std::sync::Mutex<std::process::Child>>,
+    },
+}
+
+/// Active running audio capture stream wrapping cpal::Stream or Linux parec/pw-record process.
 pub struct AudioCaptureStream {
-    _stream: Stream,
+    _backend: AudioStreamBackend,
     device_name: String,
     sample_rate: u32,
     channels: u16,
@@ -183,6 +191,18 @@ pub struct AudioCaptureStream {
 
 unsafe impl Send for AudioCaptureStream {}
 unsafe impl Sync for AudioCaptureStream {}
+
+impl Drop for AudioCaptureStream {
+    fn drop(&mut self) {
+        self.is_running.store(false, Ordering::SeqCst);
+        if let AudioStreamBackend::Process { child } = &self._backend {
+            if let Ok(mut c) = child.lock() {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+        }
+    }
+}
 
 impl AudioCaptureStream {
     pub fn device_name(&self) -> &str {
@@ -199,6 +219,133 @@ impl AudioCaptureStream {
 
     pub fn is_running(&self) -> bool {
         self.is_running.load(Ordering::SeqCst)
+    }
+
+    /// Linux-native direct capture via PipeWire / PulseAudio (`parec` or `pw-record`).
+    /// Captures pristine 16kHz s16le mono without ALSA dsnoop/slave locking errors.
+    #[cfg(target_os = "linux")]
+    pub fn start_linux_process(
+        device_name: Option<&str>,
+        is_monitor: bool,
+        mut producer: AudioProducer,
+    ) -> Result<Self, String> {
+        let target_device = if let Some(d) = device_name.map(str::trim).filter(|s| !s.is_empty()) {
+            if is_monitor && !d.ends_with(".monitor") && !d.contains("monitor") {
+                format!("{}.monitor", d)
+            } else {
+                d.to_string()
+            }
+        } else if is_monitor {
+            // Query default sink via pactl
+            let sink_out = std::process::Command::new("pactl")
+                .arg("get-default-sink")
+                .output();
+            if let Ok(out) = sink_out {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    format!("{}.monitor", s)
+                } else {
+                    "@DEFAULT_MONITOR@".to_string()
+                }
+            } else {
+                "@DEFAULT_MONITOR@".to_string()
+            }
+        } else {
+            // Query default source via pactl
+            let src_out = std::process::Command::new("pactl")
+                .arg("get-default-source")
+                .output();
+            if let Ok(out) = src_out {
+                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !s.is_empty() {
+                    s
+                } else {
+                    "@DEFAULT_SOURCE@".to_string()
+                }
+            } else {
+                "@DEFAULT_SOURCE@".to_string()
+            }
+        };
+
+        let is_running = Arc::new(AtomicBool::new(true));
+        let is_running_clone = is_running.clone();
+
+        // 1. Try launching parec
+        let mut child_opt = std::process::Command::new("parec")
+            .args([
+                "--format=s16le",
+                "--rate=16000",
+                "--channels=1",
+                "-d",
+                &target_device,
+                "--latency-msec=40",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok();
+
+        // 2. If parec failed, fallback to pw-record
+        if child_opt.is_none() {
+            child_opt = std::process::Command::new("pw-record")
+                .args([
+                    "--target",
+                    &target_device,
+                    "--rate",
+                    "16000",
+                    "--channels",
+                    "1",
+                    "--format",
+                    "s16",
+                    "-",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .ok();
+        }
+
+        let mut child = child_opt.ok_or_else(|| "Failed to spawn parec or pw-record on Linux".to_string())?;
+        let mut stdout = child.stdout.take().ok_or_else(|| "Failed to pipe audio process stdout".to_string())?;
+
+        // Background thread reading 16kHz 16-bit mono PCM chunks and pushing f32 to ringbuffer
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut buf = [0u8; 640]; // 20ms of audio (320 samples @ 16kHz, 2 bytes/sample)
+            while is_running_clone.load(Ordering::Relaxed) {
+                match stdout.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let samples = n / 2;
+                        for i in 0..samples {
+                            let sample_i16 = i16::from_le_bytes([buf[i * 2], buf[i * 2 + 1]]);
+                            let sample_f32 = sample_i16 as f32 / 32768.0;
+                            let _ = producer.push(sample_f32);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(target: "ghostboard::audio", "Process capture read exited: {:?}", e);
+                        break;
+                    }
+                }
+            }
+        });
+
+        tracing::info!(
+            target: "ghostboard::audio",
+            "Started native Linux PipeWire/PulseAudio capture for '{}'",
+            target_device
+        );
+
+        Ok(Self {
+            _backend: AudioStreamBackend::Process {
+                child: Arc::new(std::sync::Mutex::new(child)),
+            },
+            device_name: format!("PipeWire: {}", target_device),
+            sample_rate: 16000,
+            channels: 1,
+            is_running,
+        })
     }
 
     /// Spawns a real-time audio capture stream and begins pushing samples into the ring buffer producer.
@@ -273,7 +420,7 @@ impl AudioCaptureStream {
             .map_err(|e| format!("Failed to start cpal audio playback/capture: {:?}", e))?;
 
         Ok(Self {
-            _stream: stream,
+            _backend: AudioStreamBackend::Cpal(stream),
             device_name,
             sample_rate,
             channels,

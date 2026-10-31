@@ -27,7 +27,7 @@ export interface DualColumnChatProps {
   liveCandidateText: string;
   activeAnswer: StructuredAnswerOutput | null;
   isStreaming: boolean;
-  onApplyModifier: (modifier: 'shorter' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => void;
+  onApplyModifier: (modifier: 'shorter' | 'simpler' | 'code' | 're_angle' | 'more_technical' | 'code_example' | 'bridge' | 'tradeoffs') => void;
   onQuestionSelect?: (question: string) => void;
   onQuestionSubmit?: (question: string) => void;
   onTriggerScreenshot?: () => void;
@@ -193,6 +193,32 @@ function renderFormattedInlineText(text: string): React.ReactNode {
 }
 
 /**
+ * Renders bilingual phrases: primary spoken phrase in bright text,
+ * translation in parentheses in muted italic capsule pill.
+ */
+export function renderBilingualPhrase(text: string): React.ReactNode {
+  const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
+  const parts = text.split(regex);
+  if (parts.length === 1) {
+    return <span>{text}</span>;
+  }
+  return parts.map((part, idx) => {
+    if (regex.test(part)) {
+      regex.lastIndex = 0;
+      return (
+        <span
+          key={idx}
+          className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={idx}>{part}</span>;
+  });
+}
+
+/**
  * Renders pillars with bold anchor keywords at the beginning (Rule of 2 Seconds).
  */
 function renderPillarWithAnchor(text: string): React.ReactNode {
@@ -202,11 +228,13 @@ function renderPillarWithAnchor(text: string): React.ReactNode {
   const colonIdx = text.indexOf(':');
   if (colonIdx > 0 && colonIdx <= 45) {
     const anchor = text.slice(0, colonIdx);
-    const rest = text.slice(colonIdx);
+    const rest = text.slice(colonIdx + 1);
     return (
       <>
-        <strong className="font-bold text-white tracking-tight mr-1">{anchor}</strong>
-        <span className="text-zinc-200">{rest}</span>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+          {anchor}
+        </span>
+        {renderBilingualPhrase(rest)}
       </>
     );
   }
@@ -214,9 +242,11 @@ function renderPillarWithAnchor(text: string): React.ReactNode {
   if (dashMatch) {
     return (
       <>
-        <strong className="font-bold text-white tracking-tight">{dashMatch[1]}</strong>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+          {dashMatch[1]}
+        </span>
         <span className="text-zinc-400 mx-1">—</span>
-        <span className="text-zinc-200">{dashMatch[2]}</span>
+        {renderBilingualPhrase(dashMatch[2])}
       </>
     );
   }
@@ -226,12 +256,14 @@ function renderPillarWithAnchor(text: string): React.ReactNode {
     const rest = ' ' + words.slice(3).join(' ');
     return (
       <>
-        <strong className="font-bold text-white tracking-tight">{anchor}</strong>
-        <span className="text-zinc-200">{rest}</span>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+          {anchor}
+        </span>
+        {renderBilingualPhrase(rest)}
       </>
     );
   }
-  return <span className="text-zinc-200">{text}</span>;
+  return renderBilingualPhrase(text);
 }
 
 export const DualColumnChat: React.FC<DualColumnChatProps> = ({
@@ -580,6 +612,16 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             <h2 className="text-xs font-semibold tracking-wider uppercase text-zinc-300">
               AI Copilot Teleprompter
             </h2>
+            {activeAnswer?.meta && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-mono text-[9px] font-semibold">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span>{activeAnswer.meta.domain}</span>
+                <span className="text-zinc-600">•</span>
+                <span className="text-zinc-400">{activeAnswer.meta.level}</span>
+                <span className="text-zinc-600">•</span>
+                <span className="text-cyan-300 uppercase">{activeAnswer.meta.language}</span>
+              </span>
+            )}
             {isStreaming && (
               <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
@@ -643,56 +685,56 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
+            onClick={() => onApplyModifier('shorter')}
+            title="⚡ Коротше: стиснути до 3 коротких тез"
+            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+          >
+            <Zap className="w-3 h-3 text-cyan-400" />
+            ⚡ Коротше
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => onApplyModifier('simpler')}
+            title="💡 Простіше: пояснити на пальцях без важкого жаргону"
+            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+          >
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            💡 Простіше
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => onApplyModifier('code')}
+            title="</> Код: одразу чистий робочий код + O(n)"
+            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+          >
+            <Code2 className="w-3 h-3 text-emerald-400" />
+            &lt;/&gt; Код
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => onApplyModifier('re_angle')}
+            title="🔄 Інший підхід: альтернативна архітектура та компроміси"
+            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+          >
+            <Scale className="w-3 h-3 text-violet-400" />
+            🔄 Інший підхід
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
             onClick={() => onApplyModifier('bridge')}
-            title="Instant Bridge Phrase: buys 10 seconds of thinking time"
-            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap"
+            title="Instant Bridge Phrase: виграти 10 секунд"
+            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ml-auto"
           >
             <Clock className="w-3 h-3 text-amber-400" />
             Bridge [B]
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onApplyModifier('shorter')}
-            title="Blitz Mode: 2-3 punchy bullet points"
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap"
-          >
-            <Zap className="w-3 h-3 text-cyan-400" />
-            Blitz / Shorter [Q]
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onApplyModifier('more_technical')}
-            title="Deep Dive: OS memory, kernel primitives, asymptotic complexity"
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap"
-          >
-            <Cpu className="w-3 h-3 text-violet-400" />
-            Under-the-hood
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onApplyModifier('code_example')}
-            title="Code Snippet: Idiomatic implementation"
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap"
-          >
-            <Code2 className="w-3 h-3 text-emerald-400" />
-            Code Example
-          </motion.button>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => onApplyModifier('tradeoffs')}
-            title="Tradeoffs [T]: Latency vs throughput, consistency vs availability"
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap"
-          >
-            <Scale className="w-3 h-3 text-amber-400" />
-            Tradeoffs [T]
           </motion.button>
         </div>
 
@@ -719,7 +761,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={SPRING_PHYSICS}
-                  className="p-4 rounded-xl bg-gradient-to-br from-amber-500/15 via-amber-500/[0.05] to-transparent border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.08)] relative group"
+                  className="pl-4 pr-3.5 py-3 border-l-4 border-l-amber-400/90 rounded-r-xl bg-white/[0.02] border-y border-r border-white/[0.05] shadow-[0_4px_20px_rgba(245,158,11,0.06)] relative group"
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
@@ -737,9 +779,9 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                       )}
                     </button>
                   </div>
-                  <p className="text-base sm:text-lg font-semibold text-amber-50 leading-relaxed tracking-tight">
-                    &ldquo;<SpringTypewriter text={activeAnswer.hook} isStreaming={isStreaming && !activeAnswer.pillars.length} />&rdquo;
-                  </p>
+                  <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans">
+                    {renderBilingualPhrase(activeAnswer.hook)}
+                  </div>
                 </motion.div>
               )}
 

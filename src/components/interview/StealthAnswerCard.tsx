@@ -20,6 +20,22 @@ import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
 import { parseBilingualParts } from '@/lib/aiPromptCore';
 
+export function renderFormattedInlineText(text: string): React.ReactNode {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
 interface StealthAnswerCardProps {
   activeQA: InterviewQAItem;
   readLockProgress: number;
@@ -170,7 +186,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
                   {part.text}
                 </span>
               ) : (
-                <span key={idx}>{part.text}</span>
+                <span key={idx}>{renderFormattedInlineText(part.text)}</span>
               )
             )}
           </div>
@@ -184,7 +200,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
               <span>{hud.nativeTranslationHeader}</span>
             </div>
             <p className="text-xs sm:text-sm font-medium text-blue-100/90 leading-relaxed font-sans">
-              {activeQA.nativeTranslation}
+              {renderFormattedInlineText(activeQA.nativeTranslation)}
             </p>
           </div>
         )}
@@ -199,8 +215,9 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
             <ul className="space-y-1.5 text-xs sm:text-sm font-sans text-zinc-300">
               {activeQA.hints.map((hint, idx) => {
                 const colonIdx = hint.indexOf(':');
-                const hasAnchor = colonIdx > 0 && colonIdx < 35;
-                const anchor = hasAnchor ? hint.slice(0, colonIdx) : null;
+                const hasAnchor = colonIdx > 0 && colonIdx <= 45;
+                const rawAnchor = hasAnchor ? hint.slice(0, colonIdx).trim() : null;
+                const anchor = rawAnchor ? rawAnchor.replace(/^\*\*|\*\*$/g, '').trim() : null;
                 const rest = hasAnchor ? hint.slice(colonIdx + 1) : hint;
                 return (
                   <li
@@ -223,7 +240,7 @@ export const StealthAnswerCard: React.FC<StealthAnswerCardProps> = ({
                             {part.text}
                           </span>
                         ) : (
-                          <span key={pIdx}>{part.text}</span>
+                          <span key={pIdx}>{renderFormattedInlineText(part.text)}</span>
                         )
                       )}
                     </div>

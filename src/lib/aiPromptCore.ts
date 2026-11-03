@@ -240,13 +240,7 @@ export function buildLanguageInstruction(
       instruction: `BILINGUAL PROMPTER MODE:
 - Spoken words MUST be in natural, conversational, clear Technical English (B2/C1 level - straightforward and easy for the candidate to read aloud smoothly).
 - Beside or beneath each spoken phrase and bullet point, provide a short, clear hint/gist in parentheses in ${helperName} so the candidate instantly grasps the exact nuance without mental strain!
-Example format:
-<<<PHASE_1:HOOK>>>
-In production, I solve this with optimistic locking using row version checks. (У продакшені я вирішую це через оптимістичні блокування та перевірку версій рядків)
-<<<PHASE_2:PILLARS>>>
-• **Version Field**: Validates record state before committing transaction. (Перевіряє номер версії перед комітом транзакції)
-• **Zero Locks**: Eliminates database lock contention on frequent reads. (Усуває блокування бази при частих читаннях)
-• **Retry Policy**: Handles version conflict aborts with exponential backoff. (Повторює операцію при конфлікті версій)`,
+Example: In production, I solve this with optimistic locking. (У продакшені я вирішую це через оптимістичні блокування)`,
     };
   }
 
@@ -376,10 +370,10 @@ export function buildGhostboardSystemPrompt(options: {
 ${cvPieces.join('\n')}
 (Weave these real tools and projects naturally into your answer from first-person experience).`
       : `PRACTITIONER STANCE:
-Answer with the natural, lived authority of an active ${level} ${domain} practitioner with battle-tested production experience.`;
+Answer with the lived authority of an active ${level} ${domain} practitioner with battle-tested production experience.`;
 
-  const systemPrompt = `Ghostboard: ultra-low latency interview teleprompter AI copilot.
-Response is read aloud by candidate during live interview.
+  const systemPrompt = `Ghostboard: ultra-low latency teleprompter AI (<450 tokens).
+Read aloud by candidate during live interview.
 
 CONTEXT: Domain: ${domain} | Level: ${level}
 ${cvContextString}
@@ -388,25 +382,27 @@ ${langInstruction}
 ${modifierInstruction}
 
 ANTI-WIKIPEDIA & LIVE SPOKEN SPEECH RULES:
-1. STRICTLY FORBIDDEN: Encyclopedic introductions (NO "В современном...", "Давайте рассмотрим...", "Basically...", "Under the hood...", "In essence...", "Sure!").
-2. ALWAYS speak from FIRST PERSON ("На практиці я вирішую це через...", "У продакшені ми робили...", "In our production setup, I handle this with...").
-3. Sentences must be short, punchy, confident, effortless to pronounce.
+1. STRICTLY FORBIDDEN: Encyclopedic introductions (NO "В современном...", "Basically...", "Sure!").
+2. ALWAYS speak from FIRST PERSON ("На практиці я вирішую це...", "In production, I solve this with...").
+3. Short, punchy, confident sentences, effortless to speak aloud.
+4. SHORT QUERIES: If brief (e.g. 'React + SQL'): treat as Senior technical question on internal mechanics and trade-offs.
 
-MANDATORY 3-PHASE SEQUENCE:
+MANDATORY 3-PHASE SEQUENCE (START IMMEDIATELY WITH LINE 1):
 <<<META: ${domain} | ${level} | ${langTag}>>>
 <<<PHASE_1:HOOK>>>
-[1-2 simple, confident spoken sentences in 1st person answering directly. Spoken aloud in 1st second.]
+[Gear 1 — Instant Spoken Hook: 1–2 natural, confident, first-person sentences (20–35 words). Candidate reads aloud in 1st second without filler. Directly answers core mechanic.]
 
 <<<PHASE_2:PILLARS>>>
+[Gear 2 — Deep Technical Pillars: 3 bullets (18–28 words each) streamed while candidate speaks Hook. Each bullet starts with a **Bold Technical Anchor** on mechanics/trade-offs:]
 • **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
 • **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
 • **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
 
 <<<PHASE_3:DEEP_DIVE>>>
-[Real-life case (Problem -> Solution -> Result metric) OR clean idiomatic code without comments.]
+[Gear 3 — Production Code / Concrete Case: 8–16 lines of clean idiomatic code OR concrete architecture case with numbers & trade-offs (💡 Key nuance / interviewer trap).]
 
 <<<END>>>
-Start immediately with <<<META: ${domain} | ${level} | ${langTag}>>> followed by <<<PHASE_1:HOOK>>>.`;
+Start directly with <<<META: ${domain} | ${level} | ${langTag}>>> then <<<PHASE_1:HOOK>>>.`;
 
   return {
     systemPrompt,

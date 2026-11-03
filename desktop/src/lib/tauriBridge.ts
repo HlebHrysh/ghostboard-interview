@@ -47,24 +47,30 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
   }
 
   try {
-    let lastEventKey = '';
-    let lastEventTime = 0;
-    const safeDispatch = (ev: HudEvent) => {
+    let lastKey = '';
+    let lastSource = '';
+    let lastTime = 0;
+
+    const safeDispatch = (ev: HudEvent, source: 'channel' | 'global') => {
       if (!active) return;
       const now = Date.now();
-      const payloadSnippet = ev.payload ? JSON.stringify(ev.payload).slice(0, 100) : '';
-      const key = `${ev.type}:${payloadSnippet}`;
-      if (key === lastEventKey && now - lastEventTime < 25) {
+      const payloadStr = ev.payload ? JSON.stringify(ev.payload) : '';
+      const key = `${ev.type}:${payloadStr}`;
+
+      // Only deduplicate if the exact same event arrives from the OTHER source within 100ms
+      if (key === lastKey && source !== lastSource && now - lastTime < 100) {
         return;
       }
-      lastEventKey = key;
-      lastEventTime = now;
+
+      lastKey = key;
+      lastSource = source;
+      lastTime = now;
       onEvent(ev);
     };
 
     const channel = new Channel<HudEvent>();
     channel.onmessage = (event: HudEvent) => {
-      safeDispatch(event);
+      safeDispatch(event, 'channel');
     };
 
     invoke('start_copilot_stream', { onEvent: channel }).catch((err) => {
@@ -74,7 +80,7 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
     });
 
     const unlistenGlobal = listenTauriEvent<HudEvent>('hud-event', (event) => {
-      safeDispatch(event);
+      safeDispatch(event, 'global');
     });
 
     return () => {
@@ -87,6 +93,33 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
     return () => {
       active = false;
     };
+  }
+}
+
+/**
+ * Streams AI answer directly via Rust LLM client (supporting offline Next.js fallback and manual prompt).
+ */
+export async function streamAiAnswer(
+  question: string,
+  options?: {
+    outputLanguage?: string;
+    helperLanguage?: string;
+    modifier?: string;
+  }
+): Promise<string> {
+  if (!isTauriEnvironment()) {
+    return '';
+  }
+  try {
+    return await invoke<string>('stream_ai_answer', {
+      question,
+      outputLanguage: options?.outputLanguage ?? null,
+      helperLanguage: options?.helperLanguage ?? null,
+      modifier: options?.modifier ?? null,
+    });
+  } catch (err) {
+    console.warn('[tauriBridge] stream_ai_answer invocation error:', err);
+    throw err;
   }
 }
 

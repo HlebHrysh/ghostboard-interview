@@ -5,6 +5,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     testTimeout: 20000,
+    env: {
+      DATABASE_URL: '',
+    },
   },
   resolve: {
     dedupe: ['react', 'react-dom'],

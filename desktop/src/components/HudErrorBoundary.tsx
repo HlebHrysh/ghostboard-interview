@@ -64,7 +64,7 @@ export class HudErrorBoundary extends Component<HudErrorBoundaryProps, HudErrorB
           {/* Stealth Dark Luxury HUD Error Card */}
           <div
             data-tauri-drag-region
-            className="w-full max-w-md rounded-2xl bg-[#08090a]/95 backdrop-blur-2xl border border-rose-500/30 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-zinc-100 flex flex-col gap-3 relative cursor-move"
+            className="w-full max-w-md rounded-2xl bg-[#08090a]/98 border border-rose-500/30 p-5 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-zinc-100 flex flex-col gap-3 relative cursor-move"
           >
             {/* Header pill with drag indicator */}
             <div className="flex items-center justify-between no-drag pb-2 border-b border-white/[0.08]">

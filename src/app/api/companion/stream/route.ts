@@ -21,7 +21,6 @@ export async function GET(req: NextRequest) {
   const token =
     searchParams.get('token') ||
     req.cookies.get('ghostboard_session')?.value ||
-    req.headers.get('x-ghostboard-client') ||
     req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   const user = token ? await getSessionUser(token) : null;
@@ -145,4 +144,113 @@ export async function GET(req: NextRequest) {
       'Connection': 'keep-alive',
     },
   });
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client',
+    },
+  });
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const token =
+      searchParams.get('token') ||
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
+
+    const user = token ? await getSessionUser(token) : null;
+    if (!user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+
+    const userId = user.id;
+    const body = await req.json().catch(() => ({}));
+    const { action, activeId, isFrozen, isPanic } = body;
+
+    const currentState = await syncStore.getState(userId);
+    let updatedActiveQA = null;
+
+    if (action === 'FREEZE_TOGGLE' || action === 'SET_FREEZE') {
+      const nextFrozen = typeof isFrozen === 'boolean' ? isFrozen : !currentState.isFrozen;
+      await syncStore.setFrozen(nextFrozen, userId);
+    } else if (action === 'PANIC_TOGGLE' || action === 'SET_PANIC') {
+      const nextPanic = typeof isPanic === 'boolean' ? isPanic : !currentState.isPanic;
+      await syncStore.setPanic(nextPanic, userId);
+    } else if (action === 'SELECT_QA' && activeId) {
+      await syncStore.setActiveId(activeId, userId);
+    } else if (action === 'MAKE_CONCISE' || action === 'shorter') {
+      const active = currentState.qas.find((q) => q.id === (activeId || currentState.activeId)) || currentState.qas[0];
+      if (active) {
+        const conciseQA = {
+          ...active,
+          startHook: active.startHook ? active.startHook.slice(0, 160) : active.quickAnswer.slice(0, 160),
+          hints: (active.hints || []).slice(0, 2).map((h) => h.replace(/^[^:]+:\s*/, '• ')),
+          deliveryTip: '⚡ Режим "Коротше": говори тільки хук і 2 тези, уникай води.',
+        };
+        await syncStore.addOrUpdateQA(conciseQA, conciseQA.id, userId);
+        updatedActiveQA = conciseQA;
+      }
+    } else if (action === 'SIMPLIFY' || action === 'simpler') {
+      const active = currentState.qas.find((q) => q.id === (activeId || currentState.activeId)) || currentState.qas[0];
+      if (active) {
+        const simpleQA = {
+          ...active,
+          quickAnswer: active.quickAnswer
+            ? `Простими словами: ${active.quickAnswer.replace(/^(В основі|З точки зору|Суть:)\s*/i, '')}`
+            : active.quickAnswer,
+          deliveryTip: '💡 Пояснюй на побутовій аналогії, уникай важкого академічного жаргону.',
+        };
+        await syncStore.addOrUpdateQA(simpleQA, simpleQA.id, userId);
+        updatedActiveQA = simpleQA;
+      }
+    } else if (action === 'SHOW_CODE' || action === 'code') {
+      const active = currentState.qas.find((q) => q.id === (activeId || currentState.activeId)) || currentState.qas[0];
+      if (active) {
+        const codeQA = {
+          ...active,
+          deliveryTip: '💻 Акцент на код: зверни увагу на структуру алгоритму та асимптотику.',
+        };
+        await syncStore.addOrUpdateQA(codeQA, codeQA.id, userId);
+        updatedActiveQA = codeQA;
+      }
+    } else if (action === 'RE_ANGLE' || action === 're_angle') {
+      const active = currentState.qas.find((q) => q.id === (activeId || currentState.activeId)) || currentState.qas[0];
+      if (active) {
+        const reAngledQA = {
+          ...active,
+          deliveryTip: '🔄 Інший ракурс: підійди до питання через архітектурні trade-offs та альтернативи.',
+        };
+        await syncStore.addOrUpdateQA(reAngledQA, reAngledQA.id, userId);
+        updatedActiveQA = reAngledQA;
+      }
+    }
+
+    const state = await syncStore.getState(userId);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        action,
+        activeId: state.activeId,
+        isFrozen: !!state.isFrozen,
+        isPanic: !!state.isPanic,
+        updatedActiveQA,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  } catch (err: unknown) {
+    return new Response(JSON.stringify({ error: (err as { message?: string })?.message || 'Server error' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }

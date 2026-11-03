@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSessionUser } from '@/lib/serverDb';
-import { FLASH_MODELS, getCleanGeminiKey } from '@/lib/geminiApi';
+import { getSessionUser, DbUser } from '@/lib/serverDb';
+import {
+  FLASH_MODELS,
+  getCleanGeminiKey,
+  getCleanGroqKey,
+  modelsRejectingThinking,
+  getPrioritizedModels,
+  recordModelSuccess,
+  recordModelFailure,
+  runHedgedStreamRace,
+  iterateHedgedStreamChunks,
+} from '@/lib/geminiApi';
 import { normalizeTechnicalSpeech } from '@/lib/techSpeechNormalizer';
 import { checkRateLimit, validateOrigin } from '@/lib/rateLimit';
 import {
@@ -12,6 +22,29 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+type FastUser = DbUser | { id: string; email: string; plan: string; createdAt: Date };
+
+interface CachedUserRecord {
+  user: FastUser;
+  cachedAt: number;
+}
+const sessionUserCache = new Map<string, CachedUserRecord>();
+const USER_CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute in-memory cache for 0ms pre-flight
+
+async function resolveSessionUserFast(token: string | undefined): Promise<FastUser | null> {
+  if (!token) return null;
+  const cached = sessionUserCache.get(token);
+  const now = Date.now();
+  if (cached && now - cached.cachedAt < USER_CACHE_TTL_MS) {
+    return cached.user;
+  }
+  const user = await getSessionUser(token);
+  if (user) {
+    sessionUserCache.set(token, { user, cachedAt: now });
+  }
+  return user;
+}
 
 const ALLOWED_MODIFIERS = [
   'normal',
@@ -60,7 +93,7 @@ export async function OPTIONS() {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
     },
   });
 }
@@ -77,12 +110,21 @@ export async function POST(req: NextRequest) {
       req.cookies.get('ghostboard_session')?.value ||
       req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
-    let user = token ? await getSessionUser(token) : null;
-    if (!user && process.env.NODE_ENV === 'development') {
+    const isDesktopClient =
+      req.headers.get('x-ghostboard-client') === 'desktop-app' ||
+      req.headers.get('origin')?.startsWith('tauri://') ||
+      req.headers.get('origin')?.includes('tauri.localhost');
+
+    const isDemo =
+      req.headers.get('x-ghostboard-demo') === 'true' ||
+      req.nextUrl.searchParams.get('demo') === '1';
+
+    let user = token ? await resolveSessionUserFast(token) : null;
+    if (!user && (process.env.NODE_ENV === 'development' || isDemo)) {
       user = {
-        id: 'dev-local-user',
-        email: 'developer@ghostboard.local',
-        plan: 'pro',
+        id: isDemo ? 'demo-guest-user' : 'dev-local-user',
+        email: isDemo ? 'guest@ghostboard.local' : 'developer@ghostboard.local',
+        plan: isDemo ? 'free' : 'pro',
         createdAt: new Date(),
       };
     }
@@ -90,14 +132,30 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json(
         { error: 'Unauthorized. Please sign in to access Dual-Stream Copilot.', code: 'AUTH_REQUIRED' },
-        { status: 401 }
+        {
+          status: 401,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
+          },
+        }
       );
     }
 
-    const rateLimit = await checkRateLimit(req, 40, 60000, 'dual_stream_ai');
+    const rateLimit = await checkRateLimit(
+      req,
+      isDemo ? 15 : 40,
+      60000,
+      isDemo ? 'dual_stream_demo' : 'dual_stream_ai'
+    );
     if (!rateLimit.allowed) {
       return NextResponse.json(
-        { error: `Rate limit exceeded. Please wait ${rateLimit.retryAfterSec}s.` },
+        {
+          error: isDemo
+            ? `Demo rate limit reached. Please wait ${rateLimit.retryAfterSec}s or sign up for full access.`
+            : `Rate limit exceeded. Please wait ${rateLimit.retryAfterSec}s.`,
+        },
         { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
       );
     }
@@ -127,15 +185,16 @@ export async function POST(req: NextRequest) {
 
     const normalizedQuestion = normalizeTechnicalSpeech(question.trim());
     const apiKey = getCleanGeminiKey();
+    const groqKey = getCleanGroqKey();
 
-    if (!apiKey) {
+    if (!apiKey && !groqKey) {
       return NextResponse.json(
-        { error: 'GEMINI_API_KEY is not configured on the server.' },
+        { error: 'AI API Key (GEMINI_API_KEY or GROQ_API_KEY) is not configured on the server.' },
         { status: 500 }
       );
     }
 
-    // Build the zero-fluff system prompt with domain auto-classification
+    // Build the zero-fluff system prompt with domain auto-classification (<450 tokens)
     const { systemPrompt, domain, level, langTag } = buildGhostboardSystemPrompt({
       question: normalizedQuestion,
       modifier: directorModifier as AiModifier,
@@ -173,7 +232,7 @@ export async function POST(req: NextRequest) {
 
     const encoder = new TextEncoder();
 
-    // Establish Server-Sent Events stream
+    // Establish true Server-Sent Events stream without buffering
     const readableStream = new ReadableStream({
       async start(controller) {
         let firstTokenTimestamp: number | null = null;
@@ -187,198 +246,63 @@ export async function POST(req: NextRequest) {
           );
         };
 
-        // Try models with low-latency fallback
-        let streamSuccess = false;
+        const maxTokens = directorModifier === 'shorter' ? 350 : 850;
 
-        for (const model of FLASH_MODELS) {
-          try {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+        const winner = await runHedgedStreamRace({
+          contents,
+          systemPrompt,
+          normalizedQuestion,
+          history,
+          maxTokens,
+          temperature: 0.3,
+          signal: req.signal,
+        });
 
-            const geminiRes = await fetch(url, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents,
-                generationConfig: {
-                  temperature: 0.2,
-                  topP: 0.9,
-                  maxOutputTokens: directorModifier === 'shorter' ? 350 : 850,
-                  thinkingConfig: {
-                    thinkingBudget: 0,
-                  },
-                },
-              }),
-            });
-
-            if (!geminiRes.ok) {
-              const errBody = await geminiRes.text();
-              console.warn(`[DualStream] Model ${model} returned ${geminiRes.status}:`, errBody);
-
-              // If thinkingConfig is unsupported on this specific model/API version, retry without thinkingConfig
-              if (geminiRes.status === 400 && (errBody.includes('thinkingConfig') || errBody.includes('unknown field'))) {
-                const retryRes = await fetch(url, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents,
-                    generationConfig: {
-                      temperature: 0.2,
-                      topP: 0.9,
-                      maxOutputTokens: directorModifier === 'shorter' ? 350 : 850,
-                    },
-                  }),
-                });
-                if (!retryRes.ok || !retryRes.body) continue;
-                // Retry succeeded without thinkingConfig
-                activeModelUsed = model;
-                const reader = retryRes.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                  const { value, done } = await reader.read();
-                  if (done) break;
-
-                  buffer += decoder.decode(value, { stream: true });
-                  const lines = buffer.split('\n');
-                  buffer = lines.pop() || '';
-
-                  for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed || !trimmed.startsWith('data:')) continue;
-
-                    const jsonStr = trimmed.replace(/^data:\s*/, '');
-                    if (jsonStr === '[DONE]') continue;
-
-                    try {
-                      const parsed = JSON.parse(jsonStr);
-                      const textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                      if (textChunk) {
-                        if (!firstTokenTimestamp) {
-                          firstTokenTimestamp = Date.now();
-                          const ttftMs = firstTokenTimestamp - requestStartTime;
-                          sendEvent('telemetry', {
-                            type: 'TTFT',
-                            ttftMs,
-                            model,
-                            timestamp: firstTokenTimestamp,
-                          });
-                        }
-
-                        fullGeneratedText += textChunk;
-
-                        // Check for meta tag on early tokens
-                        if (!metaDispatched) {
-                          const metaMatch = fullGeneratedText.match(/<<<META:\s*([^>]+)>>>/i);
-                          if (metaMatch) {
-                            metaDispatched = true;
-                            const parts = metaMatch[1].split('|').map((p) => p.trim());
-                            sendEvent('meta', {
-                              domain: parts[0] || domain,
-                              level: parts[1] || level,
-                              language: parts[2] || langTag,
-                              raw: metaMatch[1].trim(),
-                            });
-                          }
-                        }
-
-                        sendEvent('chunk', {
-                          text: textChunk,
-                          model,
-                        });
-                      }
-                    } catch {}
-                  }
-                }
-                streamSuccess = true;
-                break;
-              }
-              continue;
-            }
-
-            if (!geminiRes.body) {
-              continue;
-            }
-
-            activeModelUsed = model;
-            const reader = geminiRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split('\n');
-              buffer = lines.pop() || '';
-
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed || !trimmed.startsWith('data:')) continue;
-
-                const jsonStr = trimmed.replace(/^data:\s*/, '');
-                if (jsonStr === '[DONE]') continue;
-
-                try {
-                  const parsed = JSON.parse(jsonStr);
-                  const candidate = parsed.candidates?.[0];
-                  const textChunk = candidate?.content?.parts?.[0]?.text;
-
-                  if (textChunk) {
-                    if (!firstTokenTimestamp) {
-                      firstTokenTimestamp = Date.now();
-                      const ttftMs = firstTokenTimestamp - requestStartTime;
-                      sendEvent('telemetry', {
-                        type: 'TTFT',
-                        ttftMs,
-                        model,
-                        timestamp: firstTokenTimestamp,
-                      });
-                    }
-
-                    fullGeneratedText += textChunk;
-
-                    // Immediately dispatch meta event when meta-tag arrives
-                    if (!metaDispatched) {
-                      const metaMatch = fullGeneratedText.match(/<<<META:\s*([^>]+)>>>/i);
-                      if (metaMatch) {
-                        metaDispatched = true;
-                        const parts = metaMatch[1].split('|').map((p) => p.trim());
-                        sendEvent('meta', {
-                          domain: parts[0] || domain,
-                          level: parts[1] || level,
-                          language: parts[2] || langTag,
-                          raw: metaMatch[1].trim(),
-                        });
-                      }
-                    }
-
-                    sendEvent('chunk', {
-                      text: textChunk,
-                      model,
-                    });
-                  }
-                } catch {
-                  // Partial chunk in SSE buffer; continue accumulating
-                }
-              }
-            }
-
-            streamSuccess = true;
-            break;
-          } catch (err: unknown) {
-            console.warn(`[DualStream] Error streaming model ${model}:`, (err as { message?: string })?.message);
-          }
-        }
-
-        if (!streamSuccess) {
+        if (!winner) {
           sendEvent('error', {
-            message: 'All Gemini Flash models unavailable or quota exhausted. Please retry.',
+            message: 'All AI models unavailable or quota exhausted. Please retry.',
           });
           controller.close();
           return;
+        }
+
+        activeModelUsed = winner.model;
+        firstTokenTimestamp = Date.now();
+        const initialTtftMs = firstTokenTimestamp - requestStartTime;
+        sendEvent('telemetry', {
+          type: 'TTFT',
+          ttftMs: initialTtftMs,
+          model: activeModelUsed,
+          timestamp: firstTokenTimestamp,
+        });
+
+        const checkMeta = (text: string) => {
+          if (!metaDispatched) {
+            const metaMatch = text.match(/<<<META:\s*([^>]+)>>>/i);
+            if (metaMatch) {
+              metaDispatched = true;
+              const parts = metaMatch[1].split('|').map((p) => p.trim());
+              sendEvent('meta', {
+                domain: parts[0] || domain,
+                level: parts[1] || level,
+                language: parts[2] || langTag,
+                raw: metaMatch[1].trim(),
+              });
+            }
+          }
+        };
+
+        try {
+          for await (const chunk of iterateHedgedStreamChunks(winner, req.signal)) {
+            fullGeneratedText += chunk;
+            checkMeta(fullGeneratedText);
+            sendEvent('chunk', {
+              text: chunk,
+              model: activeModelUsed,
+            });
+          }
+        } catch (streamErr) {
+          console.warn(`[DualStream] Stream pump error on ${winner.model}:`, streamErr);
         }
 
         // Parse structured output phases
@@ -390,7 +314,7 @@ export async function POST(req: NextRequest) {
         const finalMetaRaw =
           structured.meta?.raw || `${domain} | ${level} | ${langTag}`;
 
-        // Fallback pillars if LLM failed to produce 3 bullets
+        // Fallback pillars if LLM produced fewer than 2 bullets
         const finalPillars =
           structured.pillars.length >= 2
             ? structured.pillars
@@ -424,10 +348,13 @@ export async function POST(req: NextRequest) {
 
     return new Response(readableStream, {
       headers: {
-        'Content-Type': 'text/event-stream',
+        'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
       },
     });
   } catch (error: unknown) {

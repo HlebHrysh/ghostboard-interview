@@ -125,12 +125,12 @@ export function DesktopAiLanguageSelector({
       <button
         type="button"
         onClick={() => setIsOpen((p) => !p)}
-        className={`inline-flex items-center gap-1.5 rounded-full border text-[11px] font-mono font-medium backdrop-blur-md transition-all cursor-pointer select-none ${
+        className={`inline-flex items-center gap-1.5 rounded-full border text-[11px] font-mono font-medium transition-all cursor-pointer select-none ${
           compact ? 'px-2 py-0.5' : 'px-2.5 py-1'
         } ${
           isOpen
             ? 'border-white/30 bg-white/10 text-white shadow-[0_0_12px_rgba(255,255,255,0.08)]'
-            : 'border-white/[0.08] bg-[#0d0d12]/90 hover:bg-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
+            : 'border-white/[0.08] bg-[#0d0d12]/95 hover:bg-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white'
         }`}
         title={`Мова відповідей ШІ: ${activeOpt.label}`}
         aria-expanded={isOpen}
@@ -155,7 +155,7 @@ export function DesktopAiLanguageSelector({
               align === 'right' ? 'right-0' : 'left-0'
             }`}
           >
-            <div className="rounded-2xl bg-[#0e0f14]/98 backdrop-blur-2xl border border-white/15 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-left">
+            <div className="rounded-2xl bg-[#0e0f14]/98 border border-white/15 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.85)] text-left">
               <div className="px-2.5 py-1 text-[10px] font-mono text-zinc-500 uppercase tracking-wider font-semibold border-b border-white/[0.06] mb-1 flex items-center justify-between">
                 <span>Мова відповідей ШІ</span>
                 <span className="text-zinc-600">10 режимів</span>

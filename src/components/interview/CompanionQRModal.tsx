@@ -19,6 +19,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [hudUrl, setHudUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
+  const [isUnauthorized, setIsUnauthorized] = useState<boolean>(false);
 
   useEffect(() => {
     if (!isOpen || typeof window === 'undefined') return;
@@ -34,6 +35,8 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
           if (data.companionUrl) {
             url = data.companionUrl;
           }
+        } else if (res.status === 401) {
+          if (isMounted) setIsUnauthorized(true);
         }
       } catch (err) {
         // Fallback to local url
@@ -116,6 +119,13 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
           <p className="text-xs text-zinc-400 font-sans leading-relaxed mb-5">
             {c.desc}
           </p>
+
+          {isUnauthorized && (
+            <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1.5 animate-pulse" />
+              <span>Увійдіть у свій акаунт Ghostboard, щоб надійно зв&apos;язати телефон з вашою персональною сесією.</span>
+            </div>
+          )}
 
           {/* QR Code Container */}
           <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.08] mb-5">

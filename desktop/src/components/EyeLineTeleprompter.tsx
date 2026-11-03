@@ -57,7 +57,7 @@ export interface EyeLineTeleprompterProps {
   speaker?: string;
   opacity?: number;
   isClickThrough?: boolean;
-  levelsRef?: React.RefObject<{ interlocutor: number; candidate: number }> | any;
+  levelsRef?: React.RefObject<{ interlocutor: number; candidate: number } | null> | { current: { interlocutor: number; candidate: number } | null };
   isAuthenticated?: boolean;
   user?: { email?: string; plan?: string } | null;
   plan?: string;
@@ -338,6 +338,24 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             </span>
           </div>
 
+          {/* TTFT Badge */}
+          {activeAnswer?.ttftMs ? (
+            <div
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-300 font-semibold cursor-default"
+              title={`Time To First Token: ${activeAnswer.ttftMs}ms`}
+            >
+              <Zap className="w-2.5 h-2.5 text-emerald-400" />
+              <span>TTFT {activeAnswer.ttftMs}ms</span>
+            </div>
+          ) : isStreaming ? (
+            <div
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[10px] font-mono text-cyan-300 animate-pulse cursor-default"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              <span>STREAMING...</span>
+            </div>
+          ) : null}
+
           {/* Session Timer */}
           <div className="flex items-center gap-1 text-zinc-400 font-mono text-[10px]">
             <Clock className="w-3 h-3 text-zinc-500" />
@@ -612,7 +630,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
       <motion.div
         layout
         transition={SPRING_PHYSICS}
-        className="w-full max-w-[720px] sm:max-w-[760px] mt-1 h-8 px-3 rounded-xl bg-[#090b0e]/95 backdrop-blur-md border border-white/[0.1] shadow-lg flex items-center overflow-hidden relative select-none"
+        className="w-full max-w-[720px] sm:max-w-[760px] mt-1 h-8 px-3 rounded-xl bg-[#09090b]/95 border border-white/10 shadow-lg flex items-center overflow-hidden relative select-none"
         style={{
           maskImage:
             'linear-gradient(to right, transparent 0, black 16px, black calc(100% - 16px), transparent 100%)',
@@ -651,7 +669,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             animate={{ height: 'auto', opacity: 1, scale: 1 }}
             exit={{ height: 0, opacity: 0, scale: 0.98 }}
             transition={SPRING_PHYSICS}
-            className="w-full max-w-[720px] sm:max-w-[760px] mt-1.5 rounded-2xl bg-[#0d0f14]/90 backdrop-blur-xl border border-white/[0.14] shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-3.5 flex flex-col gap-2.5 select-text relative"
+            className="w-full max-w-[720px] sm:max-w-[760px] mt-1.5 rounded-2xl bg-[#09090b]/95 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.95)] p-3.5 flex flex-col gap-2.5 select-text relative"
           >
             {/* Header: Question & Modifiers */}
             <div className="flex items-center justify-between pb-2 border-b border-white/[0.08]">
@@ -665,6 +683,11 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                     Питання
                   </span>
                 )}
+                {activeAnswer?.ttftMs ? (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 font-mono text-[9px] font-semibold shrink-0">
+                    ⚡ TTFT {activeAnswer.ttftMs}ms
+                  </span>
+                ) : null}
                 <h2 className="text-xs font-semibold text-zinc-100 truncate">
                   {activeQuestion || 'Очікування запитання співрозмовника...'}
                 </h2>
@@ -757,11 +780,11 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                   </button>
                 </div>
 
-                <div className="text-xs sm:text-[13px] font-medium text-white leading-relaxed tracking-tight font-sans">
+                <div className="text-[16px] leading-relaxed font-semibold text-white tracking-tight font-sans">
                   {activeAnswer?.hook ? (
                     renderBilingualPhrase(activeAnswer.hook)
                   ) : (
-                    <span className="text-zinc-500 italic text-[11px]">
+                    <span className="text-zinc-500 italic text-[13px]">
                       Аналізую запитання та готую влучну голосову відповідь...
                     </span>
                   )}
@@ -853,7 +876,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={SPRING_PHYSICS}
-            className="absolute top-12 right-0 w-80 p-4 rounded-2xl bg-[#090b0e]/95 backdrop-blur-2xl border border-white/20 shadow-2xl z-50 text-xs text-zinc-100 flex flex-col gap-3"
+            className="absolute top-12 right-0 w-80 p-4 rounded-2xl bg-[#09090b]/98 border border-white/10 shadow-2xl z-50 text-xs text-zinc-100 flex flex-col gap-3"
           >
             <div className="flex items-center justify-between pb-2 border-b border-white/10">
               <div className="flex items-center gap-1.5 font-bold text-white">

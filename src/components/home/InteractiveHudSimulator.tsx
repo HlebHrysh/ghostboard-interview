@@ -3,180 +3,72 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
+  Sparkles,
+  Zap,
+  Code2,
+  Copy,
+  Check,
+  Pause,
+  Play,
+  X,
+  Send,
+  Mic,
+  MicOff,
+  Volume2,
+  AlertTriangle,
+  Layers,
+  Search,
+  MessageSquare,
+  Terminal,
   Eye,
   Monitor,
   ShieldCheck,
-  Zap,
-  RotateCcw,
-  Snowflake,
-  EyeOff,
-  Terminal,
+  RefreshCw,
+  ChevronDown,
   Globe,
-  Code2,
-  Mic,
-  Sparkles,
 } from 'lucide-react';
 import type { HomeTranslations } from '@/lib/homeI18n';
 import { trackFunnelEvent } from '@/lib/croTelemetry';
 import { useLocale } from '@/contexts/LocaleContext';
+import { AudioWaveEqualizer } from '@/components/interview/AudioWaveEqualizer';
+import { parseStructuredGhostboardOutput, MetaTagInfo } from '@/lib/aiPromptCore';
 
 interface Props {
   t: HomeTranslations;
 }
 
-type ScenarioKey = 'behavioral' | 'systemDesign' | 'bilingual';
+type DirectorModifier = 'normal' | 'shorter' | 'simpler' | 'code' | 're_angle';
 type ViewMode = 'candidate' | 'recruiter';
-type Density = 'full' | 'short';
+type LanguageOption = 'auto' | 'bilingual' | 'uk' | 'en';
 
-interface HudCard {
-  label: string;
+interface DialogueMessage {
+  id: string;
+  speaker: 'interlocutor' | 'candidate';
   text: string;
+  timestamp: number;
 }
 
-interface Scenario {
-  key: ScenarioKey;
-  tabLabel: string;
-  tag: string;
-  file: string;
-  cursor: string;
-  code: string[];
-  question: string;
-  translation?: string;
-  hookLabel: string;
-  hook: string;
-  hookIsEnglish: boolean;
-  cards: HudCard[];
-  short: string[];
-  takeaway: string;
-}
-
-const SCENARIOS: Record<ScenarioKey, Scenario> = {
-  behavioral: {
-    key: 'behavioral',
-    tabLabel: 'Поведінкове / STAR',
-    tag: 'BEHAVIORAL',
-    file: 'service_orchestration.ts',
-    cursor: 'Ln 142, Col 18',
-    code: [
-      '// Production ledger: distributed lock with fencing token',
-      "import { redis, db } from './infra';",
-      '',
-      'export async function processLedger(txId: string): Promise<Result> {',
-      "  const token = await redis.eval(FENCING_ACQUIRE_LUA, ['lock:' + txId]);",
-      "  if (!token) throw new LockAcquisitionError('Redlock contention');",
-      '',
-      '  return db.transaction(async (tx) => {',
-      '    const ok = await tx.ledger.verifyToken(txId, token);',
-      '    if (!ok) throw new StaleLockError(txId);',
-      '    return tx.executeTransfer({ txId, at: Date.now() });',
-      '  });',
-      '}',
-      '',
-      'const LOCK_TTL_MS = 30000;',
-      'const MAX_RETRIES = 5;',
-    ],
-    question: 'Розкажіть про випадок, коли ви виправили критичний інцидент у продакшені під тиском часу.',
-    hookLabel: 'ХУК',
-    hook: 'Подвійні списання на 12% платежів — я за 40 хвилин локалізував race condition і впровадив fencing-токени.',
-    hookIsEnglish: false,
-    cards: [
-      { label: 'СИТУАЦІЯ', text: 'Peak-навантаження, дублі транзакцій у ledger, SLA під загрозою.' },
-      { label: 'ЗАВДАННЯ', text: 'Зупинити втрати грошей і не покласти платіжний контур.' },
-      { label: 'ДІЯ', text: 'Redlock + fencing token, ідемпотентні ключі, feature-flag rollout.' },
-      { label: 'РЕЗУЛЬТАТ', text: 'Дублі: 12% → 0%, p99 без регресії, постмортем для команди.' },
-    ],
-    short: [
-      'Race condition → дублі списань (12%)',
-      'Fencing token + ідемпотентність',
-      'Результат: 0 дублів, p99 стабільний',
-    ],
-    takeaway: 'Назви цифри першими — вони запам’ятовуються.',
-  },
-  systemDesign: {
-    key: 'systemDesign',
-    tabLabel: 'System Design',
-    tag: 'SYSTEM DESIGN',
-    file: 'cluster_topology.ts',
-    cursor: 'Ln 38, Col 9',
-    code: [
-      '// Rate limiter + event pipeline topology (100k RPS)',
-      'export const topology = {',
-      '  shards: 64,',
-      "  hashing: 'consistent-ring',",
-      '  replicas: 3,',
-      '  limiter: {',
-      "    algorithm: 'sliding-window-counter',",
-      "    store: 'redis-cluster',",
-      '    failOpen: true,',
-      '    localBurstCache: 2000,',
-      '  },',
-      '  queue: {',
-      "    broker: 'kafka',",
-      '    partitions: 128,',
-      "    delivery: 'at-least-once',",
-      "    dlq: 'events.dead-letter',",
-      '  },',
-      '};',
-    ],
-    question: 'Спроєктуйте відмовостійкий Rate Limiter та Event Pipeline на 100k RPS.',
-    hookLabel: 'ХУК',
-    hook: 'Edge-limiter на sliding window у Redis Cluster, а події — через Kafka з партиціонуванням за tenant-ключем.',
-    hookIsEnglish: false,
-    cards: [
-      { label: 'АРХІТЕКТУРА', text: 'API GW → локальний лімітер → Redis Cluster → Kafka → воркери.' },
-      { label: 'ВУЗЬКІ МІСЦЯ', text: 'Hot keys, мережа до Redis, rebalance партицій при деплої.' },
-      { label: 'МАСШТАБУВАННЯ', text: 'Consistent hashing, 64 шарди, автоскейл консюмерів за lag.' },
-      { label: 'TRADE-OFFS', text: 'Fail-open проти точності; at-least-once + ідемпотентні споживачі.' },
-    ],
-    short: [
-      'Sliding window у Redis Cluster',
-      'Kafka: партиції за tenant, DLQ',
-      'Fail-open + ідемпотентність',
-    ],
-    takeaway: 'Спершу озвуч trade-off — це сигнал рівня Senior.',
-  },
-  bilingual: {
-    key: 'bilingual',
-    tabLabel: 'Bilingual (EN → UA)',
-    tag: 'BILINGUAL',
-    file: 'cache_guard.ts',
-    cursor: 'Ln 61, Col 24',
-    code: [
-      '// Multi-region cache with stampede protection',
-      'export async function getWithGuard<T>(key: string, load: () => Promise<T>): Promise<T> {',
-      '  const hit = await redis.get(key);',
-      '  if (hit) return JSON.parse(hit) as T;',
-      '',
-      "  const lock = await redis.set('lock:' + key, '1', 'PX', 5000, 'NX');",
-      '  if (!lock) return waitForFill<T>(key);',
-      '',
-      '  const value = await load();',
-      '  const ttl = 60000 + Math.floor(Math.random() * 10000); // jitter',
-      '  await redis.set(key, JSON.stringify(value), "PX", ttl);',
-      '  return value;',
-      '}',
-    ],
-    question: 'How do you prevent cache stampede and stale reads in a multi-region Redis setup?',
-    translation: 'Як ви запобігаєте cache stampede та застарілим читанням у multi-region Redis?',
-    hookLabel: 'READ ALOUD · EN',
-    hook: 'I combine request coalescing with a short-lived lock, add TTL jitter, and serve stale-while-revalidate so a single region refills the key while others keep reading.',
-    hookIsEnglish: true,
-    cards: [
-      { label: 'ТЕЗА 1', text: 'Request coalescing + lock з NX і коротким TTL.' },
-      { label: 'ТЕЗА 2', text: 'TTL jitter, щоб ключі не вигорали одночасно.' },
-      { label: 'ТЕЗА 3', text: 'Stale-while-revalidate для плавного оновлення.' },
-      { label: 'ТЕЗА 4', text: 'Версії ключів та pub/sub інвалідація між регіонами.' },
-    ],
-    short: [
-      'Coalescing + lock (NX)',
-      'TTL jitter + stale-while-revalidate',
-      'Versioned keys між регіонами',
-    ],
-    takeaway: 'Читай англійською повільно — переклад-підказки поруч.',
-  },
+const SPRING_PHYSICS = {
+  type: 'spring' as const,
+  stiffness: 350,
+  damping: 28,
+  mass: 0.6,
 };
 
-const SCENARIO_ORDER: ScenarioKey[] = ['behavioral', 'systemDesign', 'bilingual'];
+const QUICK_CHIPS = [
+  'React + SQL',
+  'Docker vs VM',
+  'Event Loop у JS',
+  'Проектування Rate Limiter',
+  'REST vs gRPC',
+] as const;
+
+const MODIFIERS: Array<{ id: DirectorModifier; label: string; title: string }> = [
+  { id: 'shorter', label: 'Коротше', title: 'Стиснути до 3 коротких тез' },
+  { id: 'simpler', label: 'Простіше', title: 'Пояснити на пальцях без важкого жаргону' },
+  { id: 'code', label: 'Код', title: 'Одразу чистий робочий код + O(n)' },
+  { id: 're_angle', label: 'Інший підхід', title: 'Альтернативна архітектура та компроміси' },
+];
 
 const PYTEST_LINES: string[] = [
   '$ pytest -q tests/',
@@ -191,623 +83,1226 @@ const PYTEST_LINES: string[] = [
   '============ 48 passed in 2.14s ============',
 ];
 
-/* Stream timing (one tick = 25ms) */
-const TICK_MS = 25;
-const QUESTION_TICKS = 14; // ~350ms
-const TTFT_TICKS = 16; // ~400ms blink
-const HOOK_CHARS_PER_TICK = 3;
-const CARD_STAGGER = 6;
+interface ISpeechRecognitionEvent {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: {
+      isFinal: boolean;
+      [index: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
 
-const SYNTAX_RE =
-  /(\/\/.*$|'[^']*'|"[^"]*"|`[^`]*`|\b(?:export|async|function|const|await|return|if|throw|new|import|from)\b|\b\d+\b)/;
-const KEYWORD_RE = /^(?:export|async|function|const|await|return|if|throw|new|import|from)$/;
+interface ISpeechRecognitionErrorEvent {
+  error: string;
+}
 
-function highlight(line: string): React.ReactNode[] {
-  return line.split(SYNTAX_RE).map((part, i) => {
-    if (!part) return null;
-    let cls = 'text-zinc-300';
-    if (part.startsWith('//')) cls = 'text-zinc-600 italic';
-    else if (/^['"`]/.test(part)) cls = 'text-amber-300/90';
-    else if (KEYWORD_RE.test(part)) cls = 'text-violet-400';
-    else if (/^\d+$/.test(part)) cls = 'text-cyan-300';
-    return (
-      <span key={i} className={cls}>
-        {part}
-      </span>
-    );
+interface ISpeechRecognitionInstance {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onresult: ((event: ISpeechRecognitionEvent) => void) | null;
+  onerror: ((event: ISpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => ISpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => ISpeechRecognitionInstance;
+  }
+}
+
+/**
+ * Format markdown **bold** text without raw asterisks
+ */
+function renderFormattedInlineText(text: string): React.ReactNode {
+  if (!text) return null;
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return (
+        <strong key={i} className="font-semibold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
   });
 }
 
-const SPRING = { type: 'spring', stiffness: 350, damping: 28, mass: 0.6 } as const;
+/**
+ * Renders bilingual phrases (Ukrainian translation in subtle pill)
+ */
+function renderBilingualPhrase(text: string): React.ReactNode {
+  if (!text) return null;
+  const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
+  const parts = text.split(regex);
+  if (parts.length === 1) {
+    return <span>{renderFormattedInlineText(text)}</span>;
+  }
+  return parts.map((part, idx) => {
+    if (regex.test(part)) {
+      regex.lastIndex = 0;
+      return (
+        <span
+          key={idx}
+          className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
+        >
+          {part}
+        </span>
+      );
+    }
+    return <span key={idx}>{renderFormattedInlineText(part)}</span>;
+  });
+}
+
+/**
+ * Renders pillars with bold anchor keywords at the beginning (Rule of 2 Seconds).
+ */
+function renderPillarWithAnchor(text: string): React.ReactNode {
+  const colonIdx = text.indexOf(':');
+  if (colonIdx > 0 && colonIdx <= 45) {
+    const rawAnchor = text.slice(0, colonIdx).trim();
+    const cleanAnchor = rawAnchor.replace(/^\*\*|\*\*$/g, '').trim();
+    const rest = text.slice(colonIdx + 1);
+    return (
+      <>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+          {cleanAnchor}
+        </span>
+        {renderBilingualPhrase(rest)}
+      </>
+    );
+  }
+  const dashMatch = text.match(/^([^-—]{3,35})\s*[-—]\s*(.*)$/);
+  if (dashMatch) {
+    const cleanAnchor = dashMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
+    return (
+      <>
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
+          {cleanAnchor}
+        </span>
+        <span className="text-zinc-400 mx-1">—</span>
+        {renderBilingualPhrase(dashMatch[2])}
+      </>
+    );
+  }
+  return renderBilingualPhrase(text);
+}
 
 export function InteractiveHudSimulator({ t }: Props) {
   const { locale } = useLocale();
-  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>('behavioral');
+
+  // Mode and Views
   const [viewMode, setViewMode] = useState<ViewMode>('candidate');
-  const [density, setDensity] = useState<Density>('full');
-  const [frozen, setFrozen] = useState(false);
+  const [isFrozen, setIsFrozen] = useState(false);
   const [panic, setPanic] = useState(false);
-  const [runId, setRunId] = useState(0);
-  const [tick, setTick] = useState(0);
   const [hovered, setHovered] = useState(false);
 
-  const frozenRef = useRef(false);
-  const tickRef = useRef(0);
+  // Settings & Language
+  const [selectedLanguage, setSelectedLanguage] = useState<LanguageOption>('uk');
+  const [activeModifier, setActiveModifier] = useState<DirectorModifier>('normal');
 
-  const scenario = SCENARIOS[scenarioKey];
+  // Input & Dialogue State
+  const [isMounted, setIsMounted] = useState(false);
+  const [manualInput, setManualInput] = useState('');
+  const [searchDialogue, setSearchDialogue] = useState('');
+  const [dialogueMessages, setDialogueMessages] = useState<DialogueMessage[]>([
+    {
+      id: 'init-msg',
+      speaker: 'interlocutor',
+      text: 'Як влаштовані B-Tree індекси в PostgreSQL і коли вони стають неефективними?',
+      timestamp: 1710000000000,
+    },
+  ]);
+  const [liveInterim, setLiveInterim] = useState('');
+  const [activeQuestion, setActiveQuestion] = useState('Як влаштовані B-Tree індекси в PostgreSQL?');
 
-  const questionEnd = QUESTION_TICKS;
-  const hookStart = QUESTION_TICKS + TTFT_TICKS;
-  const hookTicks = Math.ceil(scenario.hook.length / HOOK_CHARS_PER_TICK);
-  const cardsStart = hookStart + hookTicks;
-  const totalTicks = cardsStart + 4 * CARD_STAGGER + 6;
+  // Voice Recognition
+  const [isListening, setIsListening] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(15);
+  const recognitionRef = useRef<ISpeechRecognitionInstance | null>(null);
 
-  const questionChars = Math.min(
-    scenario.question.length,
-    Math.ceil((tick / questionEnd) * scenario.question.length),
+  // Real AI Streaming State
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [ttftMs, setTtftMs] = useState<number | null>(180);
+  const [liveTtftCounter, setLiveTtftCounter] = useState('0.18s');
+  const [aiMeta, setAiMeta] = useState<MetaTagInfo | null>({
+    domain: 'Backend',
+    level: 'Senior',
+    language: 'UK',
+    raw: 'Databases • PostgreSQL • Senior',
+  });
+  const [hudError, setHudError] = useState<{ code: string; message: string } | null>(null);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedHook, setCopiedHook] = useState(false);
+
+  // Typewriter progressive display state
+  const [displayedHook, setDisplayedHook] = useState(
+    'Індекси в Postgres — це окремі збалансовані B-Tree структури, що вказують на TID сторінок Heap за O(log N).'
   );
-  const questionDone = tick >= questionEnd;
-  const ttftVisible = tick >= questionEnd;
-  const ttftBlinking = tick >= questionEnd && tick < hookStart;
-  const hookChars =
-    tick < hookStart ? 0 : Math.min(scenario.hook.length, (tick - hookStart) * HOOK_CHARS_PER_TICK);
-  const done = tick >= totalTicks;
-  const streaming = !done && !frozen;
-  const cardVisible = (i: number): boolean => tick >= cardsStart + i * CARD_STAGGER;
+  const [displayedPillars, setDisplayedPillars] = useState<string[]>([
+    'B-Tree Механіка: Швидкий бінарний пошук діапазонів значень без повного сканування таблиці.',
+    'HOT Updates: Heap-Only Tuples дозволяють уникнути оновлення індексу при зміні неіндексованих полів.',
+    'Write Overhead: Кожен INSERT/UPDATE оновлює сторінки індексу та створює Table Bloat.',
+  ]);
+  const [displayedDeepDive, setDisplayedDeepDive] = useState(
+    '```sql\nCREATE INDEX CONCURRENTLY idx_users_org ON users (org_id)\nWHERE deleted_at IS NULL;\n```'
+  );
+
+  // Targets from real streaming parser
+  const targetAnswerRef = useRef<{
+    hook: string;
+    pillars: string[];
+    deepDive: string;
+  }>({
+    hook: displayedHook,
+    pillars: displayedPillars,
+    deepDive: displayedDeepDive,
+  });
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const pacerTimerRef = useRef<number | null>(null);
+  const ttftTimerRef = useRef<number | null>(null);
+  const frozenRef = useRef(false);
+  const dialogueEndRef = useRef<HTMLDivElement>(null);
+  const answerScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    frozenRef.current = frozen;
-  }, [frozen]);
+    setIsMounted(true);
+  }, []);
 
-  // Restart stream whenever scenario or runId changes
   useEffect(() => {
-    tickRef.current = 0;
-    frozenRef.current = false;
-    setTick(0);
-    setFrozen(false);
-    setPanic(false);
-    const total = totalTicks;
-    const id = window.setInterval(() => {
-      if (frozenRef.current || tickRef.current >= total) return;
-      tickRef.current += 1;
-      setTick(tickRef.current);
-      if (tickRef.current >= total) window.clearInterval(id);
-    }, TICK_MS);
-    return () => window.clearInterval(id);
-    // totalTicks derives from scenarioKey
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scenarioKey, runId]);
+    frozenRef.current = isFrozen;
+  }, [isFrozen]);
 
-  // Spacebar = Freeze (only while pointer is over the simulator)
+  // Audio level animation effect
+  useEffect(() => {
+    if (!isListening && !isGenerating) {
+      setAudioLevel(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setAudioLevel(isListening ? Math.floor(Math.random() * 65 + 30) : Math.floor(Math.random() * 25 + 10));
+    }, 120);
+    return () => clearInterval(interval);
+  }, [isListening, isGenerating]);
+
+  // Proximity auto-scroll dialogue to bottom
+  useEffect(() => {
+    dialogueEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [dialogueMessages, liveInterim]);
+
+  /**
+   * Smooth Token Pacer: High-frequency client loop (13ms tick)
+   * Progressively reveals characters into Hook -> Pillars -> Deep Dive
+   * Blinking cursor '▍' shows active typing position
+   * Spacebar Freeze halts typing instantly
+   */
+  const startSmoothPacer = useCallback(() => {
+    if (pacerTimerRef.current) clearInterval(pacerTimerRef.current);
+
+    pacerTimerRef.current = window.setInterval(() => {
+      if (frozenRef.current) return;
+
+      const target = targetAnswerRef.current;
+      const targetHook = target.hook;
+      const targetPillars = target.pillars;
+      const targetDeepDive = target.deepDive;
+
+      // 1. Advance Hook
+      let hookDone = false;
+      setDisplayedHook((prev) => {
+        if (prev.length < targetHook.length) {
+          return targetHook.slice(0, prev.length + 2);
+        }
+        hookDone = true;
+        return prev;
+      });
+
+      if (!hookDone) return;
+
+      // 2. Advance Pillars
+      let pillarsDone = false;
+      setDisplayedPillars((prevPillars) => {
+        const next = [...prevPillars];
+        for (let i = 0; i < targetPillars.length; i++) {
+          const cur = next[i] || '';
+          const tgt = targetPillars[i] || '';
+          if (cur.length < tgt.length) {
+            next[i] = tgt.slice(0, cur.length + 2);
+            return next;
+          }
+        }
+        pillarsDone = true;
+        return next;
+      });
+
+      if (!pillarsDone) return;
+
+      // 3. Advance Deep Dive
+      setDisplayedDeepDive((prev) => {
+        if (prev.length < targetDeepDive.length) {
+          return targetDeepDive.slice(0, prev.length + 3);
+        }
+        return prev;
+      });
+    }, 13);
+  }, []);
+
+  /**
+   * REAL SSE Streaming: Calls /api/ai/dual-stream without fake canned fallbacks!
+   */
+  const triggerAiQuery = useCallback(
+    async (queryText: string, modifier: DirectorModifier = activeModifier, lang: LanguageOption = selectedLanguage) => {
+      const q = queryText.trim();
+      if (!q) return;
+
+      // Abort previous stream if active
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      setActiveQuestion(q);
+      setIsGenerating(true);
+      setHudError(null);
+      setTtftMs(null);
+      setIsFrozen(false);
+      frozenRef.current = false;
+      setPanic(false);
+
+      // Clear previous output targets
+      targetAnswerRef.current = { hook: '', pillars: [], deepDive: '' };
+      setDisplayedHook('');
+      setDisplayedPillars([]);
+      setDisplayedDeepDive('');
+
+      // Start live TTFT millisecond stopwatch
+      const requestStartMs = performance.now();
+      setLiveTtftCounter('0.02s');
+      if (ttftTimerRef.current) clearInterval(ttftTimerRef.current);
+      ttftTimerRef.current = window.setInterval(() => {
+        if (frozenRef.current) return;
+        const elapsed = ((performance.now() - requestStartMs) / 1000).toFixed(2) + 's';
+        setLiveTtftCounter(elapsed);
+      }, 16);
+
+      // Start token pacer loop
+      startSmoothPacer();
+
+      trackFunnelEvent('simulator_question_triggered', {
+        locale,
+        questionId: q.slice(0, 32),
+        mode: viewMode,
+      });
+
+      try {
+        const response = await fetch('/api/ai/dual-stream?demo=1', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-ghostboard-demo': 'true',
+          },
+          body: JSON.stringify({
+            question: q,
+            directorModifier: modifier,
+            outputLanguage: lang,
+            helperLanguage: 'uk',
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${response.status}: Помилка з'єднання з ШІ-сервісом`);
+        }
+
+        if (!response.body) {
+          throw new Error('Отримано порожнє тіло відповіді від сервера.');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullText = '';
+        let firstTokenTime: number | null = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = 'chunk';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('event:')) {
+              currentEvent = trimmed.replace(/^event:\s*/, '').trim();
+              continue;
+            }
+
+            if (trimmed.startsWith('data:')) {
+              const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
+              if (jsonStr === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+
+                if (currentEvent === 'telemetry') {
+                  const ms = parsed.ttftMs || Math.round(performance.now() - requestStartMs);
+                  setTtftMs(ms);
+                  setLiveTtftCounter(`${(ms / 1000).toFixed(2)}s`);
+                  if (ttftTimerRef.current) clearInterval(ttftTimerRef.current);
+                } else if (currentEvent === 'meta') {
+                  setAiMeta({
+                    domain: parsed.domain || 'Engineering',
+                    level: parsed.level || 'Senior',
+                    language: parsed.language || 'UA',
+                    raw: parsed.raw || `${parsed.domain} • ${parsed.level}`,
+                  });
+                } else if (currentEvent === 'chunk' && parsed.text) {
+                  fullText += parsed.text;
+
+                  // Parse structured phases from accumulated text in real time
+                  const structured = parseStructuredGhostboardOutput(fullText);
+
+                  // Visible TTFT: moment first human-readable hook token is ready for render
+                  if (!firstTokenTime && (structured.hook.length > 0 || (!fullText.startsWith('<<<') && fullText.trim().length > 0))) {
+                    firstTokenTime = performance.now();
+                    const ms = Math.round(firstTokenTime - requestStartMs);
+                    setTtftMs(ms);
+                    setLiveTtftCounter(`${(ms / 1000).toFixed(2)}s`);
+                    if (ttftTimerRef.current) clearInterval(ttftTimerRef.current);
+                  }
+                  targetAnswerRef.current = {
+                    hook: structured.hook,
+                    pillars: structured.pillars,
+                    deepDive: structured.deepDive,
+                  };
+                  if (structured.meta) {
+                    setAiMeta(structured.meta);
+                  }
+                } else if (currentEvent === 'error') {
+                  throw new Error(parsed.message || 'Помилка генерації відповіді ШІ.');
+                }
+              } catch (e: unknown) {
+                // If explicit throw, propagate
+                if ((e as Error)?.message?.includes('Помилка')) throw e;
+              }
+            }
+          }
+        }
+
+        // Finalize parsed structured content
+        const finalStructured = parseStructuredGhostboardOutput(fullText);
+        targetAnswerRef.current = {
+          hook: finalStructured.hook || fullText.slice(0, 160),
+          pillars: finalStructured.pillars.length > 0 ? finalStructured.pillars : [fullText.slice(160, 320)],
+          deepDive: finalStructured.deepDive,
+        };
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError') return;
+        const msg = (err as Error)?.message || 'Не вдалося отримати відповідь від ШІ. Спробуйте ще раз.';
+        setHudError({ code: 'AI_STREAM_ERROR', message: msg });
+      } finally {
+        setIsGenerating(false);
+        if (ttftTimerRef.current) clearInterval(ttftTimerRef.current);
+      }
+    },
+    [activeModifier, locale, selectedLanguage, startSmoothPacer, viewMode]
+  );
+
+  // Submit manual text question
+  const handleManualSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!manualInput.trim() || isGenerating) return;
+
+    const q = manualInput.trim();
+    setDialogueMessages((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        speaker: 'candidate',
+        text: q,
+        timestamp: Date.now(),
+      },
+    ]);
+    setManualInput('');
+    triggerAiQuery(q, activeModifier, selectedLanguage);
+  };
+
+  // Click quick chip
+  const handleChipClick = (chip: string) => {
+    setDialogueMessages((prev) => [
+      ...prev,
+      {
+        id: `chip-${Date.now()}`,
+        speaker: 'interlocutor',
+        text: chip,
+        timestamp: Date.now(),
+      },
+    ]);
+    triggerAiQuery(chip, activeModifier, selectedLanguage);
+  };
+
+  // Modifier click
+  const handleModifierClick = (mod: DirectorModifier) => {
+    setActiveModifier(mod);
+    triggerAiQuery(activeQuestion, mod, selectedLanguage);
+  };
+
+  // Language switch
+  const handleLanguageChange = (lang: LanguageOption) => {
+    setSelectedLanguage(lang);
+    triggerAiQuery(activeQuestion, activeModifier, lang);
+  };
+
+  // Web Speech API Voice Recognition Toggle
+  const toggleSpeech = () => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognitionAPI =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionAPI) {
+      setHudError({
+        code: 'SPEECH_UNSUPPORTED',
+        message: 'Розпізнавання голосу не підтримується цим браузером. Використовуйте Chrome, Edge або текстовий ввід.',
+      });
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionAPI();
+      recognitionRef.current = recognition;
+      recognition.lang = selectedLanguage === 'en' ? 'en-US' : 'uk-UA';
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setHudError(null);
+      };
+
+      recognition.onresult = (event: ISpeechRecognitionEvent) => {
+        let finalTrans = '';
+        let interimTrans = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTrans += event.results[i][0].transcript;
+          } else {
+            interimTrans += event.results[i][0].transcript;
+          }
+        }
+        const text = finalTrans || interimTrans;
+        if (text) {
+          setLiveInterim(text);
+        }
+      };
+
+      recognition.onerror = (e: ISpeechRecognitionErrorEvent) => {
+        setIsListening(false);
+        if (e.error === 'not-allowed') {
+          setHudError({
+            code: 'MIC_DENIED',
+            message: 'Доступ до мікрофона заблоковано в браузері. Дозвольте доступ для запитань голосом.',
+          });
+        }
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        setLiveInterim((latest) => {
+          if (latest.trim().length > 3) {
+            const spoken = latest.trim();
+            setDialogueMessages((prev) => [
+              ...prev,
+              {
+                id: `voice-${Date.now()}`,
+                speaker: 'interlocutor',
+                text: spoken,
+                timestamp: Date.now(),
+              },
+            ]);
+            triggerAiQuery(spoken, activeModifier, selectedLanguage);
+          }
+          return '';
+        });
+      };
+
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
+  };
+
+  // Keyboard Shortcuts: Space = Freeze, Esc = Panic Hide
   useEffect(() => {
     if (!hovered) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Space') return;
-      const el = e.target as HTMLElement | null;
-      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON')) return;
-      e.preventDefault();
-      setFrozen((f) => !f);
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        if (e.key === 'Escape') target.blur();
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsFrozen((f) => !f);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setPanic((p) => !p);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [hovered]);
 
-  const handleScenario = useCallback(
-    (key: ScenarioKey) => {
-      setScenarioKey(key);
-      setRunId((r) => r + 1);
-      trackFunnelEvent('simulator_question_triggered', { locale, questionId: key, mode: viewMode });
-    },
-    [locale, viewMode],
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyHook = (hook: string) => {
+    navigator.clipboard.writeText(hook);
+    setCopiedHook(true);
+    setTimeout(() => setCopiedHook(false), 2000);
+  };
+
+  const filteredDialogue = dialogueMessages.filter((m) =>
+    m.text.toLowerCase().includes(searchDialogue.toLowerCase())
   );
-
-  const handleView = useCallback(
-    (mode: ViewMode) => {
-      setViewMode(mode);
-      trackFunnelEvent('stealth_toggle_switched', { locale, mode, questionId: scenarioKey });
-    },
-    [locale, scenarioKey],
-  );
-
-  const handleReplay = useCallback(() => setRunId((r) => r + 1), []);
-
-  const hudStatus = panic ? null : frozen ? 'FROZEN' : streaming ? 'STREAMING' : 'LIVE';
-  const statusCls =
-    hudStatus === 'FROZEN'
-      ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
-      : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40';
-  const dotCls = hudStatus === 'FROZEN' ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse';
-
-  const eqBars = [5, 14, 8, 18, 10, 16, 6, 12, 9, 15];
-  const eqActive = !frozen && tick < hookStart + 20;
 
   return (
     <section id="simulator" className="relative py-16 sm:py-24 px-4 sm:px-6 scroll-mt-24">
       <div className="max-w-6xl mx-auto">
-        {/* Section header */}
-        <div className="text-center max-w-3xl mx-auto mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-mono text-indigo-300 mb-4">
-            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse" />
-            <span>{t.simulator.badge}</span>
+        {/* Section Header */}
+        <div className="text-center max-w-3xl mx-auto mb-8">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-zinc-900 border border-white/10 text-xs font-mono text-zinc-300 mb-4 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>GHOSTBOARD COPILOT • LIVE STREAM HUD</span>
           </div>
           <h2 className="text-3xl sm:text-5xl font-bold tracking-tight text-white">
             {t.simulator.title}
           </h2>
-          <p className="mt-4 text-sm sm:text-base text-zinc-400 leading-relaxed">
-            {t.simulator.subtitle}
+          <p className="mt-3 text-sm sm:text-base text-zinc-400 leading-relaxed">
+            Справжній бойовий інтерфейс десктопного Ghostboard. Введіть будь-яке тех-запитання чи говоріть у мікрофон — ШІ відповідає наживо без затримок.
           </p>
         </div>
 
-        {/* Control bar */}
-        <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 mb-6">
-          <div
-            role="tablist"
-            aria-label="Сценарії"
-            className="flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-md"
-          >
-            {SCENARIO_ORDER.map((key) => {
-              const active = scenarioKey === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => handleScenario(key)}
-                  className="relative px-3.5 py-2 rounded-lg text-xs font-medium cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
-                >
-                  {active && (
-                    <motion.span
-                      layoutId="scenario-pill"
-                      transition={SPRING}
-                      className="absolute inset-0 rounded-lg bg-white shadow-md"
-                    />
-                  )}
-                  <span
-                    className={`relative z-10 whitespace-nowrap transition-colors ${
-                      active ? 'text-zinc-950 font-semibold' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {SCENARIOS[key].tabLabel}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center xl:justify-end gap-3">
-            <motion.button
-              type="button"
-              onClick={handleReplay}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.96 }}
-              transition={SPRING}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-zinc-300 bg-white/[0.04] border border-white/[0.1] hover:text-white cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Повторити стрім</span>
-            </motion.button>
-
-            <div className="relative flex items-center p-1.5 rounded-xl bg-zinc-900 border border-white/[0.12] shadow-xl">
-              {(
-                [
-                  { mode: 'candidate', label: 'Режим кандидата', icon: <Eye className="w-3.5 h-3.5" />, emoji: '👁' },
-                  { mode: 'recruiter', label: 'Режим рекрутера', icon: <Monitor className="w-3.5 h-3.5" />, emoji: '🖥' },
-                ] as const
-              ).map((item) => {
-                const active = viewMode === item.mode;
-                return (
-                  <button
-                    key={item.mode}
-                    type="button"
-                    onClick={() => handleView(item.mode)}
-                    aria-pressed={active}
-                    className="relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="mode-pill"
-                        transition={SPRING}
-                        className={`absolute inset-0 rounded-lg border ${
-                          item.mode === 'candidate'
-                            ? 'bg-emerald-500/20 border-emerald-500/50 shadow-[0_0_18px_rgba(16,185,129,0.25)]'
-                            : 'bg-emerald-500 border-emerald-300 shadow-[0_0_22px_rgba(16,185,129,0.45)]'
-                        }`}
-                      />
-                    )}
-                    <span
-                      className={`relative z-10 flex items-center gap-2 whitespace-nowrap transition-colors ${
-                        active
-                          ? item.mode === 'candidate'
-                            ? 'text-emerald-200'
-                            : 'text-zinc-950'
-                          : 'text-zinc-400'
-                      }`}
-                    >
-                      <span aria-hidden>{item.emoji}</span>
-                      {item.icon}
-                      {item.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Zoom window */}
+        {/* HUD Window Container matching desktop/src/components/HudWindow.tsx */}
         <div
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          className={`relative rounded-2xl overflow-hidden border transition-[border-color,box-shadow] duration-300 ${
+          className={`relative rounded-2xl overflow-hidden border transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.95)] ring-1 ring-inset ring-white/[0.04] ${
             viewMode === 'recruiter'
-              ? 'border-emerald-500 ring-4 ring-emerald-500/20 shadow-[0_0_50px_rgba(16,185,129,0.25)]'
-              : 'border-white/[0.1] bg-[#0c0d12] shadow-2xl'
+              ? 'border-emerald-500/80 ring-2 ring-emerald-500/20'
+              : 'border-white/[0.12] bg-[#09090b]/95'
           }`}
         >
+          {/* Recruiter Stealth Mode Banner */}
           <AnimatePresence initial={false}>
             {viewMode === 'recruiter' && (
               <motion.div
-                key="recruiter-bar"
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                transition={SPRING}
+                transition={SPRING_PHYSICS}
                 className="overflow-hidden bg-emerald-600 text-white"
               >
                 <div className="px-4 py-2 flex items-center justify-between gap-3 text-xs font-medium">
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
-                    <span>Recruiter View — Захоплення екрана Zoom (WDA_EXCLUDEFROMCAPTURE)</span>
+                    <span>Recruiter View — Захоплення екрана Zoom/Meet (WDA_EXCLUDEFROMCAPTURE)</span>
                   </div>
-                  <div className="hidden sm:flex items-center gap-1.5 font-mono text-[11px] bg-emerald-700/80 px-2.5 py-0.5 rounded">
+                  <div className="flex items-center gap-1.5 font-mono text-[11px] bg-emerald-700 px-2.5 py-0.5 rounded">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>ACTIVE</span>
+                    <span>ACTIVE STEALTH</span>
                   </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
-          {/* Window chrome */}
-          <div className="px-4 py-3 bg-white/[0.02] border-b border-white/[0.06] flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-3 h-3 rounded-full bg-red-500/60" />
-              <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
-              <div className="w-3 h-3 rounded-full bg-green-500/60" />
-              <span className="ml-2 text-xs font-mono text-zinc-500 truncate">
-                Zoom Meeting — Senior Distributed Systems Round (45:00)
+          {/* 1. TOP FLOATING NOTCH / TITLEBAR (Exact clone of HudWindow.tsx) */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 py-2.5 border-b border-zinc-800/80 bg-zinc-950/80 select-none">
+            {/* Left: Indicator, Title, Audio Equalizer, Status, Meta Pill */}
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${panic ? 'bg-zinc-600' : 'bg-emerald-400 animate-pulse'}`} />
+              <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200">
+                Ghostboard Copilot
               </span>
+              <span className="text-[11px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md font-medium hidden sm:inline">
+                Gemini 2.5 Flash
+              </span>
+
+              {/* 5-bar live Audio Equalizer */}
+              <AudioWaveEqualizer level={audioLevel} isActive={isListening || isGenerating} />
+
+              {/* Live Status Badge */}
+              {isListening ? (
+                <span className="text-xs font-mono font-semibold text-rose-400 bg-rose-950/70 border border-rose-700/60 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                  Слухаю...
+                </span>
+              ) : isGenerating ? (
+                <span className="text-xs font-mono font-semibold text-cyan-300 bg-cyan-950/70 border border-cyan-700/60 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                  {ttftMs ? `⚡ TTFT ${ttftMs}ms` : liveTtftCounter}
+                </span>
+              ) : ttftMs ? (
+                <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-700/60 px-2 py-0.5 rounded-md">
+                  ⚡ TTFT {ttftMs}ms
+                </span>
+              ) : null}
+
+              {isFrozen && (
+                <span className="text-xs font-mono font-semibold text-amber-300 bg-amber-950/70 border border-amber-700/60 px-2 py-0.5 rounded-md">
+                  ⏸ FROZEN [Space]
+                </span>
+              )}
+
+              {/* AI Meta Context Pill from <<<META>>> */}
+              {aiMeta && !panic && (
+                <motion.span
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="hidden md:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-mono text-[9px] font-semibold"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <span>{aiMeta.domain}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-zinc-400">{aiMeta.level}</span>
+                  <span className="text-zinc-600">•</span>
+                  <span className="text-cyan-300 uppercase">{aiMeta.language}</span>
+                </motion.span>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-zinc-400 font-mono shrink-0">
-              <Mic className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">16kHz PCM</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+
+            {/* Right: Language switch, Freeze, Stealth View, Panic */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Language Selector */}
+              <div className="flex items-center bg-zinc-900 border border-zinc-800 rounded-lg p-0.5 text-[11px] font-mono">
+                {(['uk', 'en', 'bilingual'] as const).map((lng) => (
+                  <button
+                    key={lng}
+                    onClick={() => handleLanguageChange(lng)}
+                    className={`px-2 py-0.5 rounded transition cursor-pointer ${
+                      selectedLanguage === lng
+                        ? 'bg-zinc-800 text-white font-bold shadow-sm'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {lng === 'uk' ? 'UA' : lng === 'en' ? 'EN' : 'Білінгв'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Freeze Toggle */}
+              <button
+                onClick={() => setIsFrozen((f) => !f)}
+                title={isFrozen ? 'Розморозити (Space)' : 'Заморозити (Space)'}
+                className={`p-1.5 rounded-md border transition cursor-pointer ${
+                  isFrozen
+                    ? 'text-amber-400 bg-amber-950/60 border-amber-500/40'
+                    : 'text-zinc-400 hover:text-white bg-zinc-900 border-zinc-800 hover:bg-zinc-800'
+                }`}
+              >
+                {isFrozen ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+              </button>
+
+              {/* View Mode Toggle */}
+              <button
+                onClick={() => {
+                  const next = viewMode === 'candidate' ? 'recruiter' : 'candidate';
+                  setViewMode(next);
+                  trackFunnelEvent('stealth_toggle_switched', { locale, mode: next });
+                }}
+                title={viewMode === 'candidate' ? 'Перемкнути на Режим рекрутера' : 'Повернути вигляд кандидата'}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium border transition cursor-pointer ${
+                  viewMode === 'recruiter'
+                    ? 'bg-emerald-500 text-zinc-950 font-bold border-emerald-400 shadow-md'
+                    : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800'
+                }`}
+              >
+                {viewMode === 'candidate' ? (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Кандидат</span>
+                  </>
+                ) : (
+                  <>
+                    <Monitor className="w-3.5 h-3.5" />
+                    <span>Рекрутер</span>
+                  </>
+                )}
+              </button>
+
+              {/* Panic Hide */}
+              <button
+                onClick={() => setPanic((p) => !p)}
+                title="Panic Hide (Esc)"
+                className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          {/* Workspace */}
-          <div className="relative min-h-[540px] lg:h-[620px] bg-[#090a0f] flex flex-col gap-3 p-3 lg:p-0">
-            {/* Layer 0: candidate's shared screen — VS Code */}
-            <div className="absolute inset-0 flex flex-col bg-[#1e1e1e]/90 select-none">
-              <div className="flex items-center justify-between h-9 px-3 bg-[#181818] border-b border-white/[0.05] text-[11px] font-mono">
-                <div className="flex items-center gap-2 px-3 h-full bg-[#1e1e1e] border-t border-t-blue-500 text-zinc-300">
-                  <Code2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{scenario.file}</span>
-                </div>
-                <span className="text-zinc-600 hidden sm:inline">{scenario.cursor} · TypeScript</span>
-              </div>
-              <div className="flex-1 overflow-hidden px-4 pt-3 font-mono text-[11px] sm:text-xs leading-[1.7]">
-                {scenario.code.map((line, i) => (
-                  <div key={`${scenarioKey}-${i}`} className="flex gap-4 whitespace-pre">
-                    <span className="w-5 text-right text-zinc-700 shrink-0">{i + 1}</span>
-                    <span>{highlight(line)}</span>
+          {/* 2. MAIN TWO-COLUMN DISPLAY (Clone of DualColumnChat.tsx) */}
+          <div className="relative min-h-[490px]">
+            {panic ? (
+              /* Simulated Terminal on Panic Hide (Esc) */
+              <div className="p-4 bg-black font-mono text-xs text-zinc-300 min-h-[490px] flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center gap-2 text-zinc-500 pb-2 mb-2 border-b border-zinc-900">
+                    <Terminal className="w-3.5 h-3.5" />
+                    <span>zsh — ~/work/backend/tests</span>
                   </div>
-                ))}
-              </div>
-              <div className="h-6 px-3 flex items-center justify-between bg-blue-600/80 text-[10px] font-mono text-white/90">
-                <span>main* · 0 ⚠ 0 ✕</span>
-                <span>UTF-8 · LF</span>
-              </div>
-            </div>
-
-            {/* Interviewer PiP card (top right) */}
-            <div className="relative z-20 lg:absolute lg:top-4 lg:right-4 lg:w-[31%] rounded-xl bg-zinc-950/85 backdrop-blur-xl border border-white/[0.1] p-3 shadow-xl">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-[10px] font-bold text-white">
-                    IV
-                  </div>
-                  <div className="leading-tight">
-                    <div className="text-[11px] font-semibold text-white">Interviewer</div>
-                    <div className="text-[9px] font-mono text-indigo-300">{scenario.tag}</div>
-                  </div>
-                </div>
-                <div className="flex items-end gap-0.5 h-5">
-                  {eqBars.map((h, i) => (
-                    <motion.span
-                      key={i}
-                      animate={eqActive ? { height: [3, h, 3] } : { height: 3 }}
-                      transition={{ repeat: eqActive ? Infinity : 0, duration: 0.7, delay: i * 0.06 }}
-                      className="w-[3px] rounded-full bg-indigo-400"
-                      style={{ height: 3 }}
-                    />
+                  {PYTEST_LINES.map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={
+                        line.includes('passed')
+                          ? 'text-emerald-400 font-bold'
+                          : line.startsWith('$')
+                          ? 'text-zinc-100 font-bold'
+                          : line.includes('.')
+                          ? 'text-emerald-500'
+                          : 'text-zinc-500'
+                      }
+                    >
+                      {line || '\u00A0'}
+                    </div>
                   ))}
                 </div>
-              </div>
-              <div className="min-h-[3.5rem] text-[11px] sm:text-xs leading-snug text-zinc-100">
-                «{scenario.question.slice(0, questionChars)}
-                {!questionDone && <span className="inline-block w-px h-3 bg-white ml-0.5 animate-pulse align-middle" />}
-                {questionDone ? '»' : ''}
-              </div>
-              {scenario.translation && questionDone && (
-                <motion.div
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-1.5 pt-1.5 border-t border-white/[0.08] flex items-start gap-1.5 text-[11px] text-indigo-300 leading-snug"
+                <button
+                  onClick={() => setPanic(false)}
+                  className="self-start mt-4 px-3 py-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-mono cursor-pointer"
                 >
-                  <Globe className="w-3 h-3 mt-0.5 shrink-0" />
-                  <span>{scenario.translation}</span>
-                </motion.div>
-              )}
-              <div className="mt-2 text-[10px] font-mono text-zinc-500">Deepgram Nova-3 • 340мс</div>
-            </div>
+                  Повернути суфлер (Esc)
+                </button>
+              </div>
+            ) : viewMode === 'recruiter' ? (
+              /* Recruiter Invisibility View */
+              <div className="flex flex-col items-center justify-center p-12 text-center min-h-[490px] bg-zinc-950/70 select-none">
+                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mb-4">
+                  <ShieldCheck className="w-8 h-8 text-emerald-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">
+                  Повна невидимість на демонстрації екрана
+                </h3>
+                <p className="text-xs text-zinc-400 max-w-md leading-relaxed mb-6">
+                  Завдяки системному прапору <code className="text-emerald-300">WDA_EXCLUDEFROMCAPTURE</code> вікно Ghostboard не потрапляє у стрім Zoom, Google Meet чи Teams. Рекрутер бачить лише ваш робочий стіл або код.
+                </p>
+                <button
+                  onClick={() => setViewMode('candidate')}
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs transition cursor-pointer shadow-lg shadow-emerald-500/20"
+                >
+                  Повернутися до суфлера кандидата
+                </button>
+              </div>
+            ) : (
+              /* Dual Column Interactive HUD */
+              <div className="grid grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-zinc-800/80 min-h-[490px]">
+                {/* ── LEFT COLUMN: LIVE DIALOGUE ── */}
+                <div className="col-span-12 lg:col-span-5 flex flex-col min-h-0 p-3.5 bg-zinc-950/40 relative overflow-hidden">
+                  <div className="pointer-events-none absolute -top-24 -left-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
 
-            {/* Layer 1: floating Eyeline HUD */}
-            <div className="relative z-30 lg:absolute lg:top-4 lg:left-4 lg:w-[62%] lg:order-first order-first">
-              <AnimatePresence mode="wait" initial={false}>
-                {viewMode === 'candidate' ? (
-                  <motion.div
-                    key="hud"
-                    initial={{ opacity: 0, y: -16, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-                    exit={{ opacity: 0, scale: 1.01, filter: 'blur(12px)' }}
-                    transition={SPRING}
-                    className="rounded-2xl backdrop-blur-xl bg-zinc-950/85 border border-emerald-500/30 shadow-2xl shadow-black/70 overflow-hidden"
-                  >
-                    {/* HUD header */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-white/10">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${panic ? 'bg-zinc-500' : dotCls}`} />
-                        <span className="text-[10px] sm:text-[11px] font-mono tracking-tight text-emerald-400 font-semibold uppercase truncate">
-                          GHOSTBOARD TELEPROMPTER • EYELINE LOCKED
-                        </span>
-                        {hudStatus && (
-                          <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${statusCls}`}>
-                            {hudStatus}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <AnimatePresence>
-                          {ttftVisible && !panic && (
-                            <motion.span
-                              key={`ttft-${runId}-${scenarioKey}`}
-                              initial={{ opacity: 0, scale: 0.8 }}
-                              animate={ttftBlinking ? { opacity: [1, 0.3, 1], scale: 1 } : { opacity: 1, scale: 1 }}
-                              transition={ttftBlinking ? { repeat: Infinity, duration: 0.4 } : SPRING}
-                              className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/30"
-                            >
-                              0.38s TTFT
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                        <button
-                          type="button"
-                          onClick={() => setFrozen((f) => !f)}
-                          aria-pressed={frozen}
-                          disabled={panic}
-                          className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono font-semibold border cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                            frozen
-                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                              : 'bg-white/[0.05] text-zinc-300 border-white/10 hover:text-white'
+                  {/* Header */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-zinc-800/80 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+                      <span className="text-xs font-semibold tracking-wider uppercase text-zinc-300">
+                        Живий діалог
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500 font-mono">
+                      {dialogueMessages.length} реплік
+                    </span>
+                  </div>
+
+                  {/* Search within dialogue */}
+                  <div className="py-2 border-b border-zinc-800/60">
+                    <div className="relative flex items-center">
+                      <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5" />
+                      <input
+                        type="text"
+                        value={searchDialogue}
+                        onChange={(e) => setSearchDialogue(e.target.value)}
+                        placeholder="Пошук у репліках..."
+                        className="w-full pl-8 pr-3 py-1 text-xs bg-white/[0.03] border border-white/[0.06] rounded-lg text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-500/50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dialogue Messages Container */}
+                  <div className="flex-1 overflow-y-auto py-2.5 space-y-2.5 pr-1 text-xs select-text max-h-[300px] lg:max-h-[340px] scrollbar-thin">
+                    {filteredDialogue.map((msg) => {
+                      const isInterlocutor = msg.speaker === 'interlocutor';
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`p-3 rounded-xl border transition-all ${
+                            isInterlocutor
+                              ? 'bg-[#101014] border-white/10 text-zinc-100 shadow-md'
+                              : 'bg-white/[0.04] border-white/[0.08] text-zinc-300 ml-4'
                           }`}
                         >
-                          <Snowflake className="w-3 h-3" />
-                          Freeze (Пробіл)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setPanic(true)}
-                          disabled={panic}
-                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-mono font-semibold border border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          <EyeOff className="w-3 h-3" />
-                          Panic Hide
-                        </button>
+                          <div className="flex items-center justify-between gap-1.5 mb-1.5 text-xs font-mono">
+                            {isInterlocutor ? (
+                              <span className="text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/40 font-bold flex items-center gap-1 text-[11px]">
+                                <Volume2 className="w-3 h-3 text-cyan-400" /> Інтерв&apos;юер
+                              </span>
+                            ) : (
+                              <span className="text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50 font-bold flex items-center gap-1 text-[11px]">
+                                <Mic className="w-3 h-3 text-emerald-400" /> Ви
+                              </span>
+                            )}
+                            <span className="text-zinc-500 text-[10px]" suppressHydrationWarning>
+                              {isMounted
+                                ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                                : '12:00:00'}
+                            </span>
+                          </div>
+                          <p className="leading-relaxed whitespace-pre-wrap text-xs sm:text-sm font-medium text-zinc-100">
+                            {msg.text}
+                          </p>
+                        </div>
+                      );
+                    })}
+
+                    {/* Live speech interim transcription */}
+                    {liveInterim && (
+                      <div className="p-3 rounded-xl bg-cyan-950/20 border border-dashed border-cyan-500/40 text-xs text-zinc-200 animate-pulse">
+                        <div className="flex items-center gap-2 mb-1 text-[11px] font-mono text-cyan-400 font-bold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                          <span>Розпізнавання наживо...</span>
+                        </div>
+                        <p className="italic text-xs text-cyan-200">{liveInterim}▍</p>
                       </div>
+                    )}
+                    <div ref={dialogueEndRef} />
+                  </div>
+
+                  {/* 1-Click Quick Speed Chips inside Left Column */}
+                  <div className="pt-2 border-t border-zinc-800/80 mt-auto">
+                    <div className="text-[10px] font-mono text-zinc-500 mb-1.5 flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-cyan-400" />
+                      <span>Перевірити швидкість в 1 клік:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {QUICK_CHIPS.map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => handleChipClick(chip)}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-white/[0.04] hover:bg-white/[0.09] border border-white/10 text-zinc-300 hover:text-white transition cursor-pointer whitespace-nowrap active:scale-95"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── RIGHT COLUMN: AI TELEPROMPTER (Hook -> Pillars -> Deep Dive) ── */}
+                <div
+                  ref={answerScrollRef}
+                  className="col-span-12 lg:col-span-7 flex flex-col min-h-0 p-4 bg-zinc-950/60 relative overflow-hidden"
+                >
+                  <div className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-tr from-cyan-500/10 via-transparent to-violet-500/10 rounded-full blur-3xl" />
+
+                  {/* Right Header: Model, Status & Copy */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-zinc-800/80 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                      <span className="text-xs font-semibold tracking-wider uppercase text-zinc-300">
+                        AI Teleprompter
+                      </span>
+                      {activeModifier !== 'normal' && (
+                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                          {activeModifier}
+                        </span>
+                      )}
+                      {isGenerating && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                          STREAMING
+                        </span>
+                      )}
                     </div>
 
-                    {/* HUD body */}
-                    <div className="p-4 min-h-[300px]">
-                      <AnimatePresence mode="wait" initial={false}>
-                        {panic ? (
-                          <motion.div
-                            key="terminal"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="rounded-lg bg-black border border-white/10 p-3 font-mono text-[11px] leading-relaxed min-h-[290px] flex flex-col"
-                          >
-                            <div className="flex items-center gap-1.5 text-zinc-500 mb-2">
-                              <Terminal className="w-3 h-3" />
-                              <span>zsh — ~/projects/api</span>
+                    <div className="flex items-center gap-2 text-xs">
+                      {displayedHook && (
+                        <button
+                          onClick={() => handleCopyHook(displayedHook)}
+                          className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-white transition cursor-pointer"
+                        >
+                          {copiedHook ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedHook ? 'Скопійовано' : 'Копіювати хук'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Active Question Bar */}
+                  {activeQuestion && (
+                    <div className="py-2 text-[11px] font-mono text-zinc-400 border-l-2 border-zinc-700 pl-2.5 my-1 italic truncate">
+                      «{activeQuestion}»
+                    </div>
+                  )}
+
+                  {/* Content Area */}
+                  <div className="flex-1 overflow-y-auto space-y-3.5 pr-1 select-text scrollbar-thin max-h-[380px]">
+                    {hudError ? (
+                      /* Real Error Card (No fake fallback!) */
+                      <div className="p-3.5 rounded-xl bg-gradient-to-b from-rose-950/40 via-zinc-950/80 to-zinc-950 border border-rose-800/50 text-rose-200 space-y-2.5">
+                        <div className="flex items-center gap-2 text-rose-400 font-semibold text-xs">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+                          <span>Помилка генерації ({hudError.code})</span>
+                        </div>
+                        <p className="text-xs text-rose-300/90 leading-relaxed font-mono whitespace-pre-wrap bg-black/60 p-2.5 rounded-lg border border-rose-900/40">
+                          {hudError.message}
+                        </p>
+                        <button
+                          onClick={() => triggerAiQuery(activeQuestion, activeModifier, selectedLanguage)}
+                          className="px-3 py-1.5 rounded-lg bg-rose-900/70 hover:bg-rose-800 border border-rose-700/60 text-xs font-medium text-white transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Спробувати знову</span>
+                        </button>
+                      </div>
+                    ) : !displayedHook && !isGenerating ? (
+                      /* Empty State */
+                      <div className="h-full flex flex-col items-center justify-center text-center p-8 text-zinc-500">
+                        <Sparkles className="w-10 h-10 mb-3 opacity-30 text-amber-400" />
+                        <p className="text-sm font-medium text-zinc-300">Готовий генерувати відповіді</p>
+                        <p className="text-xs text-zinc-500 mt-1 max-w-xs">
+                          Задайте запитання в полі нижче або виберіть один із чипів — ШІ почне по-токенну трансляцію за ~180мс.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* PHASE 1: SPOKEN HOOK */}
+                        {displayedHook && (
+                          <div className="pl-4 pr-3.5 py-3 border-l-4 border-l-amber-400/90 rounded-r-xl bg-white/[0.02] border-y border-r border-white/[0.05] shadow-[0_4px_20px_rgba(245,158,11,0.06)] relative">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-[11px] font-mono uppercase tracking-wider text-amber-400 font-bold flex items-center gap-1.5">
+                                <Zap className="w-3.5 h-3.5" /> Фаза 1: Голосовий старт (Hook)
+                              </span>
                             </div>
-                            <div className="flex-1">
-                              {PYTEST_LINES.map((l, i) => (
+                            <div className="text-base sm:text-[17px] font-medium text-white leading-relaxed tracking-tight font-sans">
+                              {renderBilingualPhrase(displayedHook)}
+                              {isGenerating && displayedPillars.length === 0 && (
+                                <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* PHASE 2: CORE PILLARS (Clean Vertical List of 3 items with Anchors) */}
+                        {displayedPillars.length > 0 && (
+                          <div className="space-y-2">
+                            <span className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1.5 px-1">
+                              <Layers className="w-3.5 h-3.5" /> Фаза 2: Ключові тези (Pillars)
+                            </span>
+                            <div className="grid grid-cols-1 gap-2">
+                              {displayedPillars.map((pillar, idx) => (
                                 <div
-                                  key={i}
-                                  className={
-                                    l.includes('passed')
-                                      ? 'text-emerald-400 font-bold'
-                                      : l.startsWith('$')
-                                        ? 'text-zinc-200'
-                                        : l.includes('.')
-                                          ? 'text-emerald-500'
-                                          : 'text-zinc-500'
-                                  }
+                                  key={idx}
+                                  className="p-3 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-xs sm:text-sm leading-relaxed text-zinc-200 flex items-start gap-2.5 transition-all"
                                 >
-                                  {l || '\u00A0'}
+                                  <span className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-300 font-mono text-xs font-bold flex items-center justify-center shrink-0 border border-cyan-500/30 mt-0.5">
+                                    {idx + 1}
+                                  </span>
+                                  <div className="flex-1 text-zinc-100 font-medium">
+                                    {renderPillarWithAnchor(pillar)}
+                                    {isGenerating && idx === displayedPillars.length - 1 && !displayedDeepDive && (
+                                      <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                                    )}
+                                  </div>
                                 </div>
                               ))}
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => setPanic(false)}
-                              className="self-start mt-2 px-3 py-1.5 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold hover:bg-emerald-500/25 cursor-pointer transition-colors"
-                            >
-                              Відновити суфлер
-                            </button>
-                          </motion.div>
-                        ) : (
-                          <motion.div
-                            key={`answer-${density}`}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="space-y-3"
-                          >
-                            <div className="min-h-[3.5rem]">
-                              <div className="text-[9px] font-mono tracking-widest text-emerald-500/80 mb-1">
-                                {scenario.hookLabel}
-                              </div>
-                              <div
-                                className={`font-semibold text-white leading-snug ${
-                                  density === 'short' ? 'text-lg sm:text-xl' : 'text-base sm:text-lg'
-                                }`}
-                              >
-                                {scenario.hook.slice(0, hookChars)}
-                                {hookChars < scenario.hook.length && tick >= hookStart && (
-                                  <span className="inline-block w-0.5 h-4 bg-emerald-400 ml-0.5 animate-pulse align-middle" />
-                                )}
-                              </div>
-                            </div>
-
-                            {density === 'full' ? (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                                {scenario.cards.map((card, i) => (
-                                  <motion.div
-                                    key={`${scenarioKey}-${runId}-${card.label}`}
-                                    initial={false}
-                                    animate={
-                                      cardVisible(i)
-                                        ? { opacity: 1, y: 0 }
-                                        : { opacity: 0, y: 8 }
-                                    }
-                                    transition={SPRING}
-                                    className="p-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs leading-relaxed min-h-[76px]"
-                                  >
-                                    <span className="block font-mono font-bold text-emerald-400 tracking-wider text-[10px] mb-1">
-                                      {card.label}
-                                    </span>
-                                    <span className="text-zinc-200">{card.text}</span>
-                                  </motion.div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="space-y-2.5">
-                                {scenario.short.map((b, i) => (
-                                  <motion.div
-                                    key={`${scenarioKey}-${runId}-s${i}`}
-                                    initial={false}
-                                    animate={cardVisible(i) ? { opacity: 1, x: 0 } : { opacity: 0, x: -10 }}
-                                    transition={SPRING}
-                                    className="flex items-center gap-3 p-3.5 rounded-xl bg-emerald-500/[0.07] border border-emerald-500/20"
-                                  >
-                                    <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center justify-center shrink-0">
-                                      {i + 1}
-                                    </span>
-                                    <span className="text-base sm:text-lg font-semibold text-white leading-snug">
-                                      {b}
-                                    </span>
-                                  </motion.div>
-                                ))}
-                              </div>
-                            )}
-
-                            <motion.div
-                              initial={false}
-                              animate={{ opacity: done ? 1 : 0 }}
-                              className="text-xs text-amber-300/90 font-mono flex items-center gap-2"
-                            >
-                              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <span>{scenario.takeaway}</span>
-                            </motion.div>
-                          </motion.div>
+                          </div>
                         )}
-                      </AnimatePresence>
-                    </div>
 
-                    {/* HUD footer: density switch */}
-                    <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-white/10 bg-black/20">
-                      <div className="relative flex items-center p-1 rounded-lg bg-white/[0.04] border border-white/10">
-                        {(
-                          [
-                            { d: 'full', label: 'Повний розбір' },
-                            { d: 'short', label: '⚡ Коротко (Тези)' },
-                          ] as const
-                        ).map((opt) => {
-                          const active = density === opt.d;
-                          return (
-                            <button
-                              key={opt.d}
-                              type="button"
-                              onClick={() => setDensity(opt.d)}
-                              aria-pressed={active}
-                              className="relative px-3 py-1 rounded-md text-[11px] font-semibold cursor-pointer"
-                            >
-                              {active && (
-                                <motion.span
-                                  layoutId="density-pill"
-                                  transition={SPRING}
-                                  className="absolute inset-0 rounded-md bg-emerald-500/25 border border-emerald-500/40"
-                                />
-                              )}
-                              <span
-                                className={`relative z-10 whitespace-nowrap ${
-                                  active ? 'text-emerald-200' : 'text-zinc-400'
-                                }`}
-                              >
-                                {opt.label}
+                        {/* PHASE 3: DEEP DIVE & CODE */}
+                        {displayedDeepDive && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1.5">
+                                <Code2 className="w-3.5 h-3.5" /> Фаза 3: Deep Dive & Код
                               </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono text-zinc-500">
-                        <Zap className="w-3 h-3 text-emerald-500" />
-                        <span>Ctrl+Shift+H — Panic</span>
-                      </div>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="ghost"
-                    initial={{ opacity: 0, filter: 'blur(10px)' }}
-                    animate={{ opacity: 1, filter: 'blur(0px)' }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.45 }}
-                    className="rounded-2xl border-2 border-dashed border-emerald-400/40 bg-emerald-400/[0.03] min-h-[380px] flex items-center justify-center p-4"
+                              <button
+                                onClick={() => handleCopyCode(displayedDeepDive)}
+                                className="text-[11px] font-mono text-zinc-400 hover:text-white flex items-center gap-1 transition cursor-pointer"
+                              >
+                                {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedCode ? 'Скопійовано' : 'Копіювати код'}</span>
+                              </button>
+                            </div>
+                            <div className="rounded-xl overflow-hidden border border-white/[0.1] bg-[#050607]">
+                              <pre className="p-3 font-mono text-xs overflow-x-auto text-emerald-400 leading-relaxed whitespace-pre-wrap">
+                                <code>{displayedDeepDive}</code>
+                                {isGenerating && (
+                                  <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                                )}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 3. BOTTOM CONTROLS & MANUAL PROMPT BAR (Clone of HudWindow.tsx footer) */}
+          <div className="p-3 border-t border-zinc-800/80 bg-zinc-950/80 flex flex-col gap-2.5 select-none">
+            {/* Quick Modifiers Row */}
+            <div className="flex items-center justify-between gap-2 overflow-x-auto">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => triggerAiQuery('Як працюють індекси в Postgres і коли вони неефективні?', 'normal')}
+                  disabled={isGenerating}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/70 border border-emerald-700/70 text-emerald-300 hover:bg-emerald-900/90 hover:text-white transition flex items-center gap-1.5 disabled:opacity-40 shadow-sm cursor-pointer"
+                  title="Тестовий запит до реального ШІ"
+                >
+                  <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Тест ШІ</span>
+                </button>
+
+                {MODIFIERS.map((mod) => (
+                  <button
+                    key={mod.id}
+                    type="button"
+                    onClick={() => handleModifierClick(mod.id)}
+                    disabled={isGenerating}
+                    title={mod.title}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer disabled:opacity-40 shadow-sm ${
+                      activeModifier === mod.id
+                        ? 'bg-zinc-800 text-white border-zinc-600'
+                        : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 hover:text-white'
+                    }`}
                   >
-                    <div className="max-w-sm text-center p-5 rounded-2xl bg-zinc-950/80 backdrop-blur-md border border-emerald-500/30 shadow-xl">
-                      <div className="text-sm font-semibold text-white leading-snug mb-3">
-                        👻 Невидимо на записі та демонстрації екрана — рекрутер бачить лише чистий код у VS Code
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleView('candidate')}
-                        className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-semibold hover:bg-emerald-500/25 cursor-pointer transition-colors"
-                      >
-                        Повернути вигляд кандидата
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    {mod.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-zinc-500 shrink-0">
+                <span>Пробіл — Freeze</span>
+                <span>•</span>
+                <span>Esc — Panic Hide</span>
+              </div>
             </div>
+
+            {/* Manual Prompt Input with Mic inside HUD */}
+            <form onSubmit={handleManualSubmit} className="flex items-center gap-2">
+              <div className="relative flex-1 flex items-center">
+                <input
+                  type="text"
+                  value={manualInput}
+                  onChange={(e) => setManualInput(e.target.value)}
+                  placeholder="Запитати ШІ або перевірити своє питання... (Enter)"
+                  className="w-full bg-zinc-900/90 border border-zinc-800 rounded-xl pl-3.5 pr-10 py-2 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition"
+                />
+                <button
+                  type="button"
+                  onClick={toggleSpeech}
+                  title={isListening ? 'Зупинити запис' : 'Запитати голосом'}
+                  className={`absolute right-2 p-1.5 rounded-lg transition cursor-pointer ${
+                    isListening
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
+                >
+                  {isListening ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!manualInput.trim() || isGenerating}
+                className="px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-950 font-semibold text-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+              >
+                <span>Запитати</span>
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
           </div>
         </div>
+
+        {/* Post-Stream Conversion Banner */}
+        <AnimatePresence>
+          {!isGenerating && displayedHook && (
+            <motion.div
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={SPRING_PHYSICS}
+              className="mt-4 p-4 rounded-xl bg-[#09090b]/90 border border-white/[0.12] backdrop-blur-xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 text-zinc-300"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <Zap className="w-4 h-4 text-emerald-400 animate-pulse" />
+                </div>
+                <div className="text-xs leading-snug">
+                  <span className="font-semibold text-white">
+                    Перший токен за {ttftMs ? `${(ttftMs / 1000).toFixed(2)}с` : liveTtftCounter} • Відповідь надруковано наживо.
+                  </span>
+                  <span className="block text-[11px] text-zinc-400">
+                    У десктопній версії Ghostboard це працює автоматично через захоплення аудіо поверх Zoom/Meet.
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                <a
+                  href="/download"
+                  className="flex-1 sm:flex-initial text-center px-4 py-2 rounded-xl bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs transition shadow-md cursor-pointer"
+                >
+                  Завантажити Ghostboard Desktop
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setViewMode(viewMode === 'recruiter' ? 'candidate' : 'recruiter')}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-medium text-xs transition cursor-pointer"
+                >
+                  {viewMode === 'recruiter' ? 'Вигляд кандидата' : 'Перевірити Режим рекрутера'}
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </section>
   );
 }
+export default InteractiveHudSimulator;

@@ -272,7 +272,7 @@ export function CandidateProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[600] flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[600] flex items-center justify-center p-2 sm:p-4 bg-black/85 animate-in fade-in duration-200">
       {/* Outer Luxury Obsidian Window */}
       <div className="relative w-full max-w-3xl max-h-[92vh] bg-[#08090a] border border-white/[0.12] rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_35px_rgba(255,255,255,0.03)] text-zinc-100 flex flex-col overflow-hidden ring-1 ring-white/[0.05]">
         
@@ -280,7 +280,7 @@ export function CandidateProfileModal({
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-24 bg-gradient-to-b from-violet-500/10 via-cyan-500/5 to-transparent blur-2xl pointer-events-none" />
 
         {/* Modal Header */}
-        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[#0c0e12]/95 backdrop-blur-xl flex-shrink-0">
+        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[#0c0e12]/98 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500/20 to-cyan-500/20 border border-white/10 flex items-center justify-center text-zinc-200 shadow-inner">
               <Briefcase className="w-4 h-4 text-violet-300" />
@@ -697,7 +697,7 @@ export function CandidateProfileModal({
         )}
 
         {/* Modal Footer (Always Pinned at Bottom) */}
-        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-t border-white/[0.08] bg-[#0c0e12]/95 backdrop-blur-xl flex-shrink-0">
+        <div className="relative z-10 flex items-center justify-between px-5 py-3 border-t border-white/[0.08] bg-[#0c0e12]/98 flex-shrink-0">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
             <span className="text-[11px] text-zinc-400 font-mono">

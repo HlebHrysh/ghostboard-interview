@@ -31,6 +31,8 @@ import { DeviceManager, DeviceSession } from "@/components/cabinet/DeviceManager
 import { SecuritySettings } from "@/components/cabinet/SecuritySettings";
 import { SpecializationTab } from "@/components/cabinet/SpecializationTab";
 import { SessionHistoryTab } from "@/components/cabinet/SessionHistoryTab";
+import { BattleCheatSheetTab } from "@/components/cabinet/BattleCheatSheetTab";
+import { Flame } from "lucide-react";
 
 interface UserAccount {
   id: string;
@@ -40,7 +42,7 @@ interface UserAccount {
   role?: string | null;
 }
 
-type TabType = "specialization" | "sessions" | "security_billing";
+type TabType = "specialization" | "cheat_sheet" | "sessions" | "security_billing";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -215,7 +217,7 @@ export default function ProfilePage() {
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab");
-      if (tabParam === "sessions" || tabParam === "security_billing" || tabParam === "specialization") {
+      if (tabParam === "sessions" || tabParam === "security_billing" || tabParam === "specialization" || tabParam === "cheat_sheet") {
         setActiveTab(tabParam as TabType);
       }
     } catch {}
@@ -348,6 +350,11 @@ export default function ProfilePage() {
       icon: Sparkles,
     },
     {
+      id: "cheat_sheet",
+      label: locale === "ua" ? "Шпаргалка перед боєм" : "Battle Cheat-Sheet",
+      icon: Flame,
+    },
+    {
       id: "sessions",
       label: locale === "ua" ? "Історія сесій та Скоркарди" : "Sessions & Scorecards",
       icon: Activity,
@@ -474,6 +481,22 @@ export default function ProfilePage() {
                     onSaveProfile={handleSaveProfile}
                     onResumeContextChange={(val) => setResumeContext(val)}
                     onSaveResumeContext={handleSaveResumeContext}
+                  />
+                </motion.div>
+              )}
+
+              {activeTab === "cheat_sheet" && (
+                <motion.div
+                  key="cheat_sheet"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <BattleCheatSheetTab
+                    candidateProfile={candidateProfile}
+                    resumeContext={resumeContext}
+                    locale={locale}
                   />
                 </motion.div>
               )}

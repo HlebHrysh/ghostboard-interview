@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { NextRequest } from 'next/server';
-import { POST as copilotPost } from '../src/app/api/ai/interview-copilot/route';
+import { POST as copilotPost, CopilotPayloadSchema } from '../src/app/api/ai/interview-copilot/route';
 import { POST as dualStreamPost } from '../src/app/api/ai/dual-stream/route';
 import { GET as deepgramGet, POST as deepgramPost } from '../src/app/api/ai/deepgram/route';
 import { GET as screenshotGet, POST as screenshotPost } from '../src/app/api/ai/screenshot/route';
@@ -120,6 +120,40 @@ describe('Security Audit Remediations & Zero-Trust Verifications', () => {
       });
       const res = await dualStreamPost(req);
       expect(res.status).toBe(401);
+    });
+
+    it('blocks x-ghostboard-client: desktop-app header from minting free Pro sessions in dual-stream route in production', async () => {
+      const prevEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        const req = new NextRequest('http://localhost:3000/api/ai/dual-stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'cf-connecting-ip': '198.51.100.28',
+            'x-ghostboard-client': 'desktop-app',
+          },
+          body: JSON.stringify({ question: 'Explain TCP handshake' }),
+        });
+        const res = await dualStreamPost(req);
+        expect(res.status).toBe(401);
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = prevEnv;
+      }
+    });
+
+    it('validates bilingual options in CopilotPayloadSchema without schema rejection', () => {
+      const parsedBilingual = CopilotPayloadSchema.safeParse({
+        question: 'Explain the difference between process and thread',
+        outputLanguage: 'bilingual',
+      });
+      expect(parsedBilingual.success).toBe(true);
+
+      const parsedUk = CopilotPayloadSchema.safeParse({
+        question: 'Explain the difference between process and thread',
+        outputLanguage: 'bilingual_uk',
+      });
+      expect(parsedUk.success).toBe(true);
     });
 
     it('requires valid session for deepgram credentials GET and POST', async () => {

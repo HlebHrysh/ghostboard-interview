@@ -67,13 +67,14 @@ export interface OfficeWindowProps {
   user: UserProfileData | null;
   onLogout: () => void;
   onOpenAuth?: () => void;
+  onStartHud?: (mode?: CopilotMode) => void;
 }
 
 type OfficeTab = 'launch' | 'arena' | 'audio' | 'ai' | 'resume' | 'stealth';
 
 const SPRING = { type: 'spring' as const, stiffness: 380, damping: 28, mass: 0.6 };
 
-export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) => {
+export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout, onStartHud }) => {
   const [settings, updateSettings] = useDesktopSettings();
   const [activeTab, setActiveTab] = useState<OfficeTab>('launch');
   const [profile, setProfile] = useState<CandidateProfile>(() => getStoredProfile());
@@ -130,32 +131,36 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
     refreshAudioDevices();
   }, [refreshAudioDevices]);
 
-  // Handle Launch Copilot Window (Guaranteed action)
+  // Handle Launch Copilot Window (Guaranteed action: Detached Window with In-Window HUD Fallback)
   const handleLaunch = useCallback(
     async (overrideMode?: CopilotMode) => {
       const targetMode = overrideMode || settings.copilotMode;
       setLaunchError(null);
       setIsLaunching(true);
 
-      try {
-        // 1. Launch / show detached HUD window (MUST NEVER BE BLOCKED)
-        await launchCopilotWindow(targetMode);
+      // Start audio pipeline in background (never blocks the window)
+      startAudioCaptureDetailed('dual', {
+        loopbackDevice: settings.loopbackDevice,
+        micDevice: settings.micDevice,
+      }).catch((err) => {
+        console.warn('[Office] Audio start warning:', err);
+      });
 
-        // 2. Start audio pipeline in background (never blocks the window)
-        startAudioCaptureDetailed('dual', {
-          loopbackDevice: settings.loopbackDevice,
-          micDevice: settings.micDevice,
-        }).catch((err) => {
-          console.warn('[Office] Audio start warning:', err);
-        });
+      try {
+        // 1. Attempt to launch / show detached HUD window
+        await launchCopilotWindow(targetMode);
       } catch (err) {
-        console.error('[Office] Launch failed:', err);
+        console.warn('[Office] Secondary window launch failed, instantly falling back to in-window HUD:', err);
+        if (onStartHud) {
+          onStartHud(targetMode);
+          return;
+        }
         setLaunchError(err instanceof Error ? err.message : String(err));
       } finally {
         setIsLaunching(false);
       }
     },
-    [settings.copilotMode, settings.loopbackDevice, settings.micDevice]
+    [settings.copilotMode, settings.loopbackDevice, settings.micDevice, onStartHud]
   );
 
   // Keyboard shortcut Ctrl+Enter to launch from anywhere in the Office
@@ -676,7 +681,7 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
             </div>
 
             {/* Launch Big White Button (Guaranteed Action) */}
-            <div className="pt-4">
+            <div className="pt-4 space-y-2.5">
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}
@@ -698,8 +703,21 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
                   Ctrl+Enter
                 </kbd>
               </motion.button>
-              <p className="text-[11px] text-zinc-500 text-center font-mono mt-2">
-                Окно Копайлота відкриється в окремому прозорому вікні з авто-налаштуванням Hyprland / Wayland.
+
+              <div className="flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => onStartHud?.(settings.copilotMode)}
+                  className="w-full py-2.5 px-4 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-xs text-zinc-300 hover:text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                  title="Миттєво відкрити бойовий HUD прямо в поточному вікні (In-Window режим)"
+                >
+                  <Layers className="w-4 h-4 text-zinc-400" />
+                  <span>Швидкий перехід у бойовий HUD (In-Window)</span>
+                </button>
+              </div>
+
+              <p className="text-[11px] text-zinc-500 text-center font-mono mt-1">
+                Окреме вікно Копайлота з авто-налаштуванням Wayland / Hyprland або миттєвий In-Window режим.
               </p>
             </div>
           </div>
@@ -726,6 +744,43 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({ user, onLogout }) =>
                 <span>Оновити список</span>
               </button>
             </div>
+
+            {/* Platform Loopback Diagnostics & Guidance Banner */}
+            {envInfo?.platform === 'macos' || (!envInfo && typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')) ? (
+              <div className="p-4 rounded-2xl bg-[#0d0d10] border border-zinc-800 text-xs text-zinc-300 space-y-1.5">
+                <div className="flex items-center gap-2 text-white font-semibold">
+                  <AlertCircle className="w-4 h-4 text-zinc-300" />
+                  <span>Підказка для macOS (CoreAudio System Loopback)</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  На macOS для прямого захоплення системного аудіо зі співрозмовника у Zoom / Google Meet / MS Teams
+                  рекомендується безкоштовний віртуальний аудіо-драйвер <strong>BlackHole 2ch</strong> або налаштування
+                  агрегатного пристрою (Multi-Output Device) у <em>Audio MIDI Setup</em>.
+                </p>
+              </div>
+            ) : envInfo?.platform === 'windows' ? (
+              <div className="p-4 rounded-2xl bg-[#0d0d10] border border-zinc-800 text-xs text-zinc-300 space-y-1.5">
+                <div className="flex items-center gap-2 text-white font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>Нативний WASAPI Loopback (Windows 10/11)</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Ghostboard автоматично захоплює системний звук співрозмовника з активного аудіо-виходу (динаміки/навушники)
+                  через апаратний WASAPI Loopback без потреби у додаткових віртуальних кабелях.
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 rounded-2xl bg-[#0d0d10] border border-zinc-800 text-xs text-zinc-300 space-y-1.5">
+                <div className="flex items-center gap-2 text-white font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  <span>PipeWire / PulseAudio Direct Stream (Linux)</span>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Використовується пряме неблокуюче захоплення через <code>.monitor</code> потік PulseAudio / PipeWire
+                  із затримкою менше 20мс без спаму ALSA /dev/dsp.
+                </p>
+              </div>
+            )}
 
             {/* Device selection cards */}
             <div className="space-y-4">

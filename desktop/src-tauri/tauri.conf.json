@@ -111,7 +111,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["copilot"]
+        "schemes": ["copilot", "ghostboard"]
       }
     },
     "updater": {

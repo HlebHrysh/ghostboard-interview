@@ -8,6 +8,7 @@ import { UnifiedFooter } from '@/components/ui/UnifiedFooter';
 import { ArrowLeft, Sparkles, CheckCircle2, Clock, HelpCircle, ShieldCheck, ChevronRight } from 'lucide-react';
 import { CodeBlock } from '@/components/ui/CodeBlock';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
+import { PostInterviewCheatSheetClient } from './PostInterviewCheatSheetClient';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -149,6 +150,9 @@ interface ScorecardItem {
               </div>
             </div>
           </div>
+
+          {/* Post-Interview Remediation AI Cheat-Sheet */}
+          <PostInterviewCheatSheetClient slug={slug} items={rawItems} overallScore={baseScore} />
 
           {/* Detailed Question & Answer Breakdown */}
           {rawItems.length > 0 && (

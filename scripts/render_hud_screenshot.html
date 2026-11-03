@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="uk" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ghostboard HUD — Modern Dark Luxury</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Geist:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg-base: #060709;
+      --hud-surface: rgba(14, 16, 22, 0.84);
+      --hud-border: rgba(255, 255, 255, 0.08);
+      --hud-highlight: rgba(255, 255, 255, 0.12);
+      --hud-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.85), 0 8px 20px rgba(0, 0, 0, 0.5);
+      --pill-bg: rgba(255, 255, 255, 0.04);
+      --pill-border: rgba(255, 255, 255, 0.07);
+      --pill-hover: rgba(255, 255, 255, 0.075);
+      --text-main: #f4f4f6;
+      --text-muted: #8e919d;
+      --text-faint: #5a5d68;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --font-sans: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'Geist Mono', 'JetBrains Mono', monospace;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      background-color: var(--bg-base);
+      background-image: 
+        radial-gradient(ellipse 65% 55% at 50% 0%, rgba(38, 46, 64, 0.32), transparent 75%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 28px 28px, 28px 28px;
+      font-family: var(--font-sans);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      user-select: none;
+    }
+
+    .font-mono {
+      font-family: var(--font-mono);
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    /* HUD Bar Main Shell */
+    .hud-bar {
+      position: relative;
+      width: 980px;
+      max-width: calc(100vw - 36px);
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px 0 12px;
+      border-radius: 9999px;
+      background: var(--hud-surface);
+      backdrop-filter: blur(28px) saturate(170%);
+      -webkit-backdrop-filter: blur(28px) saturate(170%);
+      border: 1px solid var(--hud-border);
+      box-shadow: 
+        var(--hud-shadow),
+        inset 0 1px 0 0 var(--hud-highlight),
+        inset 0 -1px 0 0 rgba(0, 0, 0, 0.6);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 50;
+    }
+
+    .hud-bar.is-paused {
+      border-color: rgba(245, 158, 11, 0.25);
+      box-shadow: 
+        0 20px 48px -8px rgba(0, 0, 0, 0.85),
+        0 0 24px rgba(245, 158, 11, 0.12),
+        inset 0 1px 0 0 rgba(245, 158, 11, 0.3);
+    }
+
+    .hud-bar.is-stealth {
+      opacity: 0.25;
+      transform: scale(0.985);
+    }
+
+    /* Left Group */
+    .left-group {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    /* Brand Cluster */
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 7.5px;
+      padding: 3px 6px 3px 4px;
+      border-radius: 9999px;
+      background: transparent;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s ease, transform 0.15s ease;
+    }
+
+    .brand-cluster:hover {
+      opacity: 0.85;
+      transform: scale(1.02);
+    }
+
+    .brand-cluster:active {
+      transform: scale(0.97);
+    }
+
+    .ghost-icon-wrap {
+      position: relative;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.5));
+    }
+
+    .brand-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      color: #f1f2f6;
+      text-transform: uppercase;
+      line-height: 1;
+    }
+
+    /* Exit Session Button */
+    .exit-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .exit-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+      transform: scale(1.05);
+    }
+
+    .exit-btn:active {
+      transform: scale(0.94);
+    }
+
+    /* Hairline Divider */
+    .divider {
+      width: 1px;
+      height: 18px;
+      background: rgba(255, 255, 255, 0.09);
+      margin: 0 1px;
+    }
+
+    /* User Profile Avatar with Online Dot */
+    .avatar-btn {
+      position: relative;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #12141a;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #d1d3dc;
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .avatar-btn:hover {
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #ffffff;
+      transform: scale(1.06);
+    }
+
+    .avatar-btn:active {
+      transform: scale(0.95);
+    }
+
+    .online-dot {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      border: 1.8px solid #0d0f14;
+      box-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+      animation: pulse-ring 2.8s infinite;
+    }
+
+    @keyframes pulse-ring {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.9; }
+    }
+
+    /* Button-link to /profile for Stack Selection */
+    .capsule-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 30px;
+      padding: 0 11px 0 9px;
+      border-radius: 9999px;
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-border);
+      color: #e2e4e9;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .capsule-btn:hover {
+      background: var(--pill-hover);
+      border-color: rgba(255, 255, 255, 0.14);
+      color: #ffffff;
+      transform: translateY(-0.5px);
+    }
+
+    .capsule-btn:active {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: scale(0.98);
+    }
+
+    .code-icon {
+      color: #9da0aa;
+      display: flex;
+      align-items: center;
+    }
+
+    .chevron-icon {
+      color: #71717a;
+      display: flex;
+      align-items: center;
+      margin-left: 1px;
+    }
+
+    /* Popover Menu for Language */
+    .dropdown-container {
+      position: relative;
+    }
+
+    .popover-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      min-width: 170px;
+      background: rgba(14, 16, 22, 0.96);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 5px;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      display: none;
+      flex-direction: column;
+      gap: 2px;
+      z-index: 100;
+      animation: popover-in 0.15s ease-out;
+    }
+
+    .popover-menu.right-aligned {
+      left: auto;
+      right: 0;
+    }
+
+    .popover-menu.show {
+      display: flex;
+    }
+
+    @keyframes popover-in {
+      from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: #d1d3dc;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.12s ease;
+    }
+
+    .menu-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #ffffff;
+    }
+
+    .menu-item.selected {
+      color: #10b981;
+      background: rgba(16, 185, 129, 0.1);
+      font-weight: 600;
+    }
+
+    /* Right Group */
+    .right-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* Action Buttons (Pause & Stealth) */
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .icon-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.08);
+      transform: scale(1.06);
+    }
+
+    .icon-btn:active {
+      transform: scale(0.93);
+    }
+
+    .icon-btn.is-active-pause {
+      color: var(--accent-amber);
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .icon-btn.is-active-stealth {
+      color: #f43f5e;
+      background: rgba(244, 63, 94, 0.15);
+      border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    /* Toast Notification for Interactivity */
+    .hud-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(18, 20, 26, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f4f4f6;
+      font-size: 11.5px;
+      font-family: var(--font-mono);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1000;
+    }
+
+    .hud-toast.visible {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating HUD Top Bar -->
+  <header class="hud-bar" id="hudBar">
+    <!-- LEFT SECTION -->
+    <div class="left-group">
+      <!-- Brand: Ghost icon + GHOSTBOARD text (link to home /) -->
+      <a href="/" class="brand-cluster" id="brandBtn" title="На головну сторінку Ghostboard">
+        <div class="ghost-icon-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a8 8 0 0 0-8 8v12l3-3 3 3 2-2 2 2 3-3 3 3V10a8 8 0 0 0-8-8z"/>
+            <circle cx="9" cy="10" r="1.2" fill="#ffffff"/>
+            <circle cx="15" cy="10" r="1.2" fill="#ffffff"/>
+          </svg>
+        </div>
+        <span class="brand-title">GHOSTBOARD</span>
+      </a>
+
+      <!-- Exit session button-link to home (door + right arrow) -->
+      <a href="/" class="exit-btn" id="exitBtn" title="Вихід на головний екран" aria-label="Exit to home">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </a>
+
+      <!-- Delicate vertical divider -->
+      <div class="divider"></div>
+
+      <!-- User Profile Avatar with Online Dot (button-link to http://localhost:3001/profile) -->
+      <a href="http://localhost:3001/profile" class="avatar-btn" id="profileBtn" title="Профіль кандидата (http://localhost:3001/profile)" aria-label="User profile">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span class="online-dot"></span>
+      </a>
+
+      <!-- Stack / Profession Selector (direct button-link to http://localhost:3001/profile) -->
+      <a href="http://localhost:3001/profile" class="capsule-btn" id="stackBtn" title="Змінити спеціалізацію на сторінці профілю (http://localhost:3001/profile)">
+        <span class="code-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"/>
+            <polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </span>
+        <span id="stackLabel">React / Next.js</span>
+      </a>
+    </div>
+
+    <!-- RIGHT SECTION -->
+    <div class="right-group">
+      <!-- Language Selector Dropdown: 🌐 Авто ▾ -->
+      <div class="dropdown-container">
+        <button class="capsule-btn" id="langBtn" title="Мова відповідей копайлота">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          <span id="langLabel">Авто</span>
+          <span class="chevron-icon">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </span>
+        </button>
+
+        <div class="popover-menu right-aligned" id="langMenu">
+          <button class="menu-item selected" onclick="selectLang('Авто')"><span>Авто (Auto-detect)</span><span>✓</span></button>
+          <button class="menu-item" onclick="selectLang('UA')"><span>Українська</span></button>
+          <button class="menu-item" onclick="selectLang('EN')"><span>English</span></button>
+          <button class="menu-item" onclick="selectLang('PL')"><span>Polski</span></button>
+          <button class="menu-item" onclick="selectLang('DE')"><span>Deutsch</span></button>
+        </div>
+      </div>
+
+      <!-- Pause button || -->
+      <button class="icon-btn" id="pauseBtn" title="Пауза / Заморозити екран (Space)" aria-label="Pause">
+        <svg id="pauseIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="6" y="4" width="3.5" height="16" rx="1.5"/>
+          <rect x="14.5" y="4" width="3.5" height="16" rx="1.5"/>
+        </svg>
+      </button>
+
+      <!-- Stealth / EyeOff button -->
+      <button class="icon-btn" id="stealthBtn" title="Панічний режим / Приховати (Esc)" aria-label="Stealth hide">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+          <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+          <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+          <line x1="2" y1="2" x2="22" y2="22"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Interactive Feedback Toast -->
+  <div class="hud-toast" id="hudToast"></div>
+
+  <script>
+    const hudBar = document.getElementById('hudBar');
+    const toast = document.getElementById('hudToast');
+    let toastTimeout;
+
+    function triggerToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('visible');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => toast.classList.remove('visible'), 2200);
+    }
+
+    // Language dropdown logic
+    const langBtn = document.getElementById('langBtn');
+    const langMenu = document.getElementById('langMenu');
+
+    langBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = langMenu.classList.contains('show');
+      langMenu.classList.toggle('show', !isOpen);
+      langBtn.classList.toggle('is-active', !isOpen);
+    });
+
+    function selectLang(lang) {
+      document.getElementById('langLabel').textContent = lang;
+      document.querySelectorAll('#langMenu .menu-item').forEach(el => {
+        el.classList.toggle('selected', el.firstElementChild.textContent.startsWith(lang));
+        el.lastElementChild.textContent = el.classList.contains('selected') ? '✓' : '';
+      });
+      langMenu.classList.remove('show');
+      langBtn.classList.remove('is-active');
+      triggerToast('Мову ШІ перемкнуто на: ' + lang);
+    }
+
+    // Pause toggle
+    let isPaused = false;
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pauseIcon = document.getElementById('pauseIcon');
+    pauseBtn.addEventListener('click', () => {
+      isPaused = !isPaused;
+      hudBar.classList.toggle('is-paused', isPaused);
+      pauseBtn.classList.toggle('is-active-pause', isPaused);
+      if (isPaused) {
+        pauseIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3" fill="currentColor"/>';
+        triggerToast('⏸ Екран заморожено (Пауза)');
+      } else {
+        pauseIcon.innerHTML = '<rect x="6" y="4" width="3.5" height="16" rx="1.5"/><rect x="14.5" y="4" width="3.5" height="16" rx="1.5"/>';
+        triggerToast('▶ Відновлено прослуховування');
+      }
+    });
+
+    // Stealth toggle
+    let isStealth = false;
+    const stealthBtn = document.getElementById('stealthBtn');
+    stealthBtn.addEventListener('click', () => {
+      isStealth = !isStealth;
+      hudBar.classList.toggle('is-stealth', isStealth);
+      stealthBtn.classList.toggle('is-active-stealth', isStealth);
+      triggerToast(isStealth ? '🛡 Стелс-режим увімкнено' : '👁 Звичайний режим');
+    });
+
+    // Global click listener to close popovers
+    document.addEventListener('click', () => {
+      langMenu.classList.remove('show');
+      langBtn.classList.remove('is-active');
+    });
+
+    // Keyboard shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault();
+        pauseBtn.click();
+      } else if (e.code === 'Escape') {
+        stealthBtn.click();
+      }
+    });
+  </script>
+</body>
+</html>

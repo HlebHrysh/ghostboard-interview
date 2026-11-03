@@ -163,7 +163,7 @@ export const SourcePickerModal: React.FC<SourcePickerModalProps> = ({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
           onClick={onCancel}
-          className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+          className="absolute inset-0 bg-black/85"
         />
 
         {/* Modal Surface */}
@@ -172,7 +172,7 @@ export const SourcePickerModal: React.FC<SourcePickerModalProps> = ({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 8 }}
           transition={SPRING_TRANSITION}
-          className="relative w-full max-w-[780px] h-[560px] rounded-2xl glass-panel border border-white/[0.08] shadow-[0_25px_60px_rgba(0,0,0,0.8),inset_0_1px_0_0_rgba(255,255,255,0.08)] bg-[#0d0f12]/95 flex flex-col overflow-hidden text-zinc-100 select-none z-10"
+          className="relative w-full max-w-[780px] h-[560px] rounded-2xl border border-white/10 shadow-[0_25px_60px_rgba(0,0,0,0.8)] bg-[#09090b]/98 flex flex-col overflow-hidden text-zinc-100 select-none z-10"
         >
           {/* Ambient Mesh Glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-28 mesh-glow pointer-events-none" />
@@ -345,7 +345,7 @@ export const SourcePickerModal: React.FC<SourcePickerModalProps> = ({
 
                         {/* Meeting Badge Overlay */}
                         {isMeeting && (
-                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-cyan-500/80 text-black uppercase tracking-wider backdrop-blur-md">
+                          <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-cyan-400 text-black uppercase tracking-wider">
                             Конференція
                           </span>
                         )}

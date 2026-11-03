@@ -19,6 +19,7 @@ export type AiLanguageMode =
 export interface AiLanguageOption {
   id: AiLanguageMode;
   label: string;
+  shortLabel: string;
   flag: string;
   sublabel: string;
   category: 'smart' | 'direct';
@@ -28,20 +29,23 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'auto',
     label: 'Авто',
+    shortLabel: 'Авто',
     flag: '🌐',
     sublabel: 'Мова співрозмовника',
     category: 'smart',
   },
   {
     id: 'bilingual_uk',
-    label: 'Билингва (EN + UA)',
+    label: 'Білінгв (EN + UA)',
+    shortLabel: 'Білінгв',
     flag: '🇬🇧🇺🇦',
     sublabel: 'Англійська мова + UA підказки',
     category: 'smart',
   },
   {
     id: 'bilingual_ru',
-    label: 'Билингва (EN + RU)',
+    label: 'Білінгв (EN + RU)',
+    shortLabel: 'Білінгв',
     flag: '🇬🇧🇷🇺',
     sublabel: 'Английская речь + RU подсказки',
     category: 'smart',
@@ -49,6 +53,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'uk',
     label: 'Українська',
+    shortLabel: 'UA',
     flag: '🇺🇦',
     sublabel: 'Чиста українська мова',
     category: 'direct',
@@ -56,6 +61,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'en',
     label: 'English',
+    shortLabel: 'EN',
     flag: '🇬🇧',
     sublabel: 'Technical English (B2/C1)',
     category: 'direct',
@@ -63,6 +69,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'ru',
     label: 'Русский',
+    shortLabel: 'RU',
     flag: '🇷🇺',
     sublabel: 'Чистый русский язык',
     category: 'direct',
@@ -70,6 +77,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'pl',
     label: 'Polski',
+    shortLabel: 'PL',
     flag: '🇵🇱',
     sublabel: 'Język polski',
     category: 'direct',
@@ -77,6 +85,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'de',
     label: 'Deutsch',
+    shortLabel: 'DE',
     flag: '🇩🇪',
     sublabel: 'Deutsche Sprache',
     category: 'direct',
@@ -84,6 +93,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'es',
     label: 'Español',
+    shortLabel: 'ES',
     flag: '🇪🇸',
     sublabel: 'Idioma español',
     category: 'direct',
@@ -91,6 +101,7 @@ export const AI_LANGUAGE_OPTIONS: AiLanguageOption[] = [
   {
     id: 'fr',
     label: 'Français',
+    shortLabel: 'FR',
     flag: '🇫🇷',
     sublabel: 'Langue française',
     category: 'direct',
@@ -151,7 +162,7 @@ export function AiLanguageSelector({
         type="button"
         onClick={() => setIsOpen((p) => !p)}
         className={`inline-flex items-center gap-1.5 rounded-full border text-xs font-mono font-medium backdrop-blur-md transition-all cursor-pointer select-none ${
-          compact ? 'px-2 py-1' : 'px-2.5 py-1 sm:px-3'
+          compact ? 'px-2 py-0.5 text-[11px] h-7' : 'px-2.5 py-1 sm:px-3'
         } ${
           isOpen
             ? 'border-white/30 bg-white/10 text-white shadow-[0_0_12px_rgba(255,255,255,0.08)]'
@@ -160,8 +171,8 @@ export function AiLanguageSelector({
         title={`Мова генерації ШІ: ${activeOpt.label}`}
         aria-expanded={isOpen}
       >
-        <span className="text-sm leading-none">{activeOpt.flag}</span>
-        <span className="truncate max-w-[110px]">{activeOpt.label}</span>
+        <span className="text-xs leading-none">{activeOpt.flag}</span>
+        <span className="truncate max-w-[85px]">{compact ? activeOpt.shortLabel : activeOpt.label}</span>
         <ChevronDown
           className={`w-3 h-3 text-zinc-400 transition-transform duration-200 ${
             isOpen ? 'rotate-180 text-white' : ''

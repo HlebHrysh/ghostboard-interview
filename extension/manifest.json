@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Ghostboard LeetCode Copilot",
-  "version": "1.0.0",
-  "description": "Instant 1-click LeetCode problem extractor to Ghostboard Copilot HUD. Zero OCR delays, 100% technical accuracy.",
+  "version": "2.0.0",
+  "description": "Universal 1-click coding problem extractor for LeetCode, HackerRank, Codeforces, CodeSignal & web selection to Ghostboard HUD. Zero OCR delay, 100% technical accuracy.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -10,7 +10,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Ghostboard LeetCode Copilot",
+    "default_title": "Ghostboard Universal Coding Copilot",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
@@ -18,17 +18,27 @@
     }
   },
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab"
   ],
   "host_permissions": [
     "*://leetcode.com/*",
     "*://*.leetcode.com/*",
     "*://leetcode.cn/*",
     "*://*.leetcode.cn/*",
+    "*://hackerrank.com/*",
+    "*://*.hackerrank.com/*",
+    "*://codeforces.com/*",
+    "*://*.codeforces.com/*",
+    "*://app.codesignal.com/*",
+    "*://*.codesignal.com/*",
     "http://localhost:3000/*",
     "http://localhost:3001/*",
     "http://127.0.0.1:3000/*",
-    "http://127.0.0.1:3001/*"
+    "http://127.0.0.1:3001/*",
+    "https://ghostboard.ai/*",
+    "https://*.ghostboard.ai/*",
+    "<all_urls>"
   ],
   "commands": {
     "send_to_ghostboard": {
@@ -36,7 +46,7 @@
         "default": "Alt+Shift+G",
         "mac": "Alt+Shift+G"
       },
-      "description": "Extract LeetCode problem & send to Ghostboard Copilot"
+      "description": "Extract problem or selection & send to Ghostboard Copilot"
     }
   },
   "background": {
@@ -48,7 +58,18 @@
         "*://leetcode.com/problems/*",
         "*://*.leetcode.com/problems/*",
         "*://leetcode.cn/problems/*",
-        "*://*.leetcode.cn/problems/*"
+        "*://*.leetcode.cn/problems/*",
+        "*://leetcode.com/*",
+        "*://*.leetcode.com/*",
+        "*://leetcode.cn/*",
+        "*://*.leetcode.cn/*",
+        "*://hackerrank.com/*",
+        "*://*.hackerrank.com/*",
+        "*://codeforces.com/*",
+        "*://*.codeforces.com/*",
+        "*://app.codesignal.com/*",
+        "*://*.codesignal.com/*",
+        "<all_urls>"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

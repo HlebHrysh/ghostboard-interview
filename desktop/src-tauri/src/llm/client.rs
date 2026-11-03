@@ -125,6 +125,21 @@ pub fn parse_sse_data_chunk(provider: LlmProviderType, data_str: &str) -> Option
     }
 }
 
+static SHARED_LLM_CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+
+pub fn get_shared_llm_client() -> reqwest::Client {
+    SHARED_LLM_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .pool_idle_timeout(Duration::from_secs(90))
+                .tcp_nodelay(true)
+                .timeout(Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new())
+        })
+        .clone()
+}
+
 /// Speculative HTTP/2 SSE streaming client with instant CancellationToken cancellation support.
 pub struct SpeculativeLlmClient {
     client: reqwest::Client,
@@ -138,11 +153,9 @@ impl Default for SpeculativeLlmClient {
 
 impl SpeculativeLlmClient {
     pub fn new() -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
-        Self { client }
+        Self {
+            client: get_shared_llm_client(),
+        }
     }
 
     /// Initiates speculative streaming generation for a detected question.
@@ -186,8 +199,8 @@ impl SpeculativeLlmClient {
                         { "role": "user", "content": user_prompt }
                     ],
                     "stream": true,
-                    "temperature": 0.2,
-                    "max_tokens": 1024
+                    "temperature": 0.3,
+                    "max_tokens": 850
                 });
 
                 (url, body, headers)
@@ -212,8 +225,8 @@ impl SpeculativeLlmClient {
                         { "role": "user", "content": user_prompt }
                     ],
                     "stream": true,
-                    "temperature": 0.2,
-                    "max_tokens": 1024
+                    "temperature": 0.3,
+                    "max_tokens": 850
                 });
 
                 (url, body, headers)
@@ -238,55 +251,168 @@ impl SpeculativeLlmClient {
                         { "role": "user", "content": user_prompt }
                     ],
                     "stream": true,
-                    "max_tokens": 1024,
-                    "temperature": 0.2
+                    "max_tokens": 850,
+                    "temperature": 0.3
                 });
 
                 (url, body, headers)
             }
             LlmProviderType::Gemini => {
-                let url = config
-                    .endpoint_url
-                    .clone()
-                    .unwrap_or_else(|| "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions".to_string());
-                let mut headers = HeaderMap::new();
-                headers.insert(
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&format!("Bearer {}", config.api_key.trim()))
-                        .map_err(|e| e.to_string())?,
-                );
-                headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
                 let model = if config.model.is_empty() {
                     "gemini-3.8-flash".to_string()
                 } else {
                     config.model.clone()
                 };
 
+                let url = config
+                    .endpoint_url
+                    .clone()
+                    .unwrap_or_else(|| {
+                        format!(
+                            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+                            model,
+                            config.api_key.trim()
+                        )
+                    });
+
+                let mut headers = HeaderMap::new();
+                headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+                let combined_prompt = if system_prompt.is_empty() {
+                    user_prompt.to_string()
+                } else {
+                    format!("{}\n\n{}", system_prompt, user_prompt)
+                };
+
+                let mut gen_config = serde_json::json!({
+                    "temperature": 0.3,
+                    "maxOutputTokens": 850
+                });
+
+                if !model.contains("flash-lite") {
+                    gen_config["thinkingConfig"] = serde_json::json!({ "thinkingBudget": 0 });
+                }
+
                 let body = serde_json::json!({
-                    "model": model,
-                    "messages": [
-                        { "role": "system", "content": system_prompt },
-                        { "role": "user", "content": user_prompt }
+                    "contents": [
+                        {
+                            "role": "user",
+                            "parts": [
+                                { "text": combined_prompt }
+                            ]
+                        }
                     ],
-                    "stream": true,
-                    "temperature": 0.2,
-                    "max_tokens": 1024
+                    "generationConfig": gen_config
                 });
 
                 (url, body, headers)
             }
         };
 
-        // Send HTTP request with cancellation protection
-        let request = self.client.post(&url).headers(headers).json(&body_json);
+        // Send HTTP request with cancellation protection and 600ms hedged racing for Gemini
+        let response = if config.provider == LlmProviderType::Gemini {
+            let primary_fut = self
+                .client
+                .post(&url)
+                .headers(headers.clone())
+                .timeout(Duration::from_millis(3000))
+                .json(&body_json)
+                .send();
+            tokio::pin!(primary_fut);
 
-        let response = tokio::select! {
-            _ = cancellation_token.cancelled() => {
-                return Ok(LlmStreamOutcome::Cancelled);
+            let primary_res = tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    return Ok(LlmStreamOutcome::Cancelled);
+                }
+                res = &mut primary_fut => Some(res),
+                _ = tokio::time::sleep(Duration::from_millis(600)) => None,
+            };
+
+            let primary_ok = match primary_res {
+                Some(Ok(ref r)) if r.status().is_success() => true,
+                _ => false,
+            };
+
+            if primary_ok {
+                primary_res.unwrap().unwrap()
+            } else {
+                let fallbacks = [
+                    "gemini-3.6-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-2.0-flash-lite",
+                    "gemini-flash-latest",
+                ];
+                let mut fallback_resp = None;
+
+                for fb_model in &fallbacks {
+                    if config.model == *fb_model {
+                        continue;
+                    }
+                    let fb_url = format!(
+                        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+                        fb_model,
+                        config.api_key.trim()
+                    );
+                    let mut fb_body = body_json.clone();
+                    if fb_model.contains("flash-lite") {
+                        if let Some(obj) = fb_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
+                            obj.remove("thinkingConfig");
+                        }
+                    }
+
+                    let fb_req = self
+                        .client
+                        .post(&fb_url)
+                        .headers(headers.clone())
+                        .timeout(Duration::from_millis(2500))
+                        .json(&fb_body);
+
+                    tokio::select! {
+                        _ = cancellation_token.cancelled() => {
+                            return Ok(LlmStreamOutcome::Cancelled);
+                        }
+                        res = &mut primary_fut, if primary_res.is_none() => {
+                            if let Ok(r) = res {
+                                if r.status().is_success() {
+                                    fallback_resp = Some(r);
+                                    break;
+                                }
+                            }
+                        }
+                        fb_res = fb_req.send() => {
+                            if let Ok(r) = fb_res {
+                                if r.status().is_success() {
+                                    fallback_resp = Some(r);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if let Some(r) = fallback_resp {
+                    r
+                } else if let Some(Ok(r)) = primary_res {
+                    r
+                } else {
+                    return Err("All Gemini models failed or timed out during hedged race".to_string());
+                }
             }
-            resp_res = request.send() => {
-                resp_res.map_err(|e| format!("HTTP request to {} failed: {}", url, e))?
+        } else {
+            let request = self
+                .client
+                .post(&url)
+                .headers(headers.clone())
+                .timeout(Duration::from_millis(4000))
+                .json(&body_json);
+
+            tokio::select! {
+                _ = cancellation_token.cancelled() => {
+                    return Ok(LlmStreamOutcome::Cancelled);
+                }
+                resp_res = request.send() => {
+                    resp_res.map_err(|e| format!("HTTP request to {} failed: {}", url, e))?
+                }
             }
         };
 

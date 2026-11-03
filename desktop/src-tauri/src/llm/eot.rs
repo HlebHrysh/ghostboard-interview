@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 pub const DEFAULT_SLIDING_WINDOW_MS: u64 = 90_000; // 90 seconds
-pub const MIN_QUESTION_WORD_COUNT: usize = 4;
+pub const MIN_QUESTION_WORD_COUNT: usize = 2;
 
 /// A recorded transcript chunk within the sliding 90-second context window.
 #[derive(Debug, Clone, PartialEq)]
@@ -231,8 +231,10 @@ mod tests {
         assert!(is_question_heuristic("How does PostgreSQL handle MVCC?"));
         assert!(is_question_heuristic("What is the difference between processes and threads"));
         assert!(is_question_heuristic("Can you describe B-Tree indexing?"));
+        assert!(is_question_heuristic("React SQL?"));
+        assert!(is_question_heuristic("Explain GIL"));
 
-        // Too short (< 4 words)
+        // Too short (< 2 words)
         assert!(!is_question_heuristic("Why?"));
         assert!(!is_question_heuristic("Okay?"));
         assert!(!is_question_heuristic("Really? Yes."));

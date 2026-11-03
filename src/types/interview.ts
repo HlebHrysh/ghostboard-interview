@@ -24,6 +24,10 @@ export interface InterviewQAItem {
   timestamp?: number;
   confidenceScore?: number;
   docReference?: string;
+  ttftMs?: number;
+  isStreaming?: boolean;
+  pillars?: string[];
+  deepDive?: string;
   meta?: {
     domain: string;
     level: string;

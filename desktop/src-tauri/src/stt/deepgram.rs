@@ -10,7 +10,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::ipc::events::HudEvent;
 
 pub const DEFAULT_DEEPGRAM_URL: &str =
-    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1";
+    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&smart_format=true&interim_results=true&endpointing=300&utterance_end_ms=1000&encoding=linear16&sample_rate=16000&channels=1";
 
 /// 45+ technical vocabulary keywords boosted for Deepgram Nova-3 recognition.
 pub const TECH_KEYTERMS: &[&str] = &[
@@ -47,7 +47,7 @@ pub fn build_deepgram_url(base_model: Option<&str>, language: Option<&str>) -> S
         Some(l) => l,
     };
     let mut url = format!(
-        "wss://api.deepgram.com/v1/listen?model={}&language={}&smart_format=true&interim_results=true&endpointing=300&encoding=linear16&sample_rate=16000&channels=1",
+        "wss://api.deepgram.com/v1/listen?model={}&language={}&smart_format=true&interim_results=true&endpointing=300&utterance_end_ms=1000&encoding=linear16&sample_rate=16000&channels=1",
         model, target_lang
     );
     for term in TECH_KEYTERMS {
@@ -529,6 +529,7 @@ mod tests {
         assert!(url.contains("smart_format=true"));
         assert!(url.contains("interim_results=true"));
         assert!(url.contains("endpointing=300"));
+        assert!(url.contains("utterance_end_ms=1000"));
         assert!(url.contains("encoding=linear16"));
         assert!(url.contains("sample_rate=16000"));
         assert!(url.contains("channels=1"));

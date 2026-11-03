@@ -23,8 +23,9 @@ import {
   Terminal,
   Volume2,
   Mic,
+  AlertTriangle,
 } from 'lucide-react';
-import { useDesktopSettings, saveSettings } from '../lib/desktopSettings';
+import { useDesktopSettings, saveSettings, type DesktopSettings } from '../lib/desktopSettings';
 import { streamAnswer, type AnswerStreamHandle, type DirectorModifier } from '../lib/answerStream';
 import { analyzeScreen } from '../lib/screenshotAnswer';
 import {
@@ -35,12 +36,13 @@ import {
   setScreenShareStealth,
   setWindowOpacity,
   listenTauriEvent,
+  isTauriEnvironment,
 } from '../lib/tauriBridge';
 import { useHudStream } from '../hooks/useHudStream';
 import { useSampledLevel } from '../hooks/useSampledLevel';
 import { AudioWaveEqualizer } from './AudioWaveEqualizer';
 import { loadStoredProfile } from '../lib/profileStore';
-import { parseStreamingMarkdown } from './DualColumnChat';
+import { parseStreamingMarkdown, renderBilingualPhrase } from './DualColumnChat';
 import { DesktopAiLanguageSelector } from './AiLanguageSelector';
 
 const SPRING_PHYSICS = {
@@ -57,7 +59,11 @@ interface DialogueMessage {
   timestamp: number;
 }
 
-export function HudWindow() {
+export interface HudWindowProps {
+  onReturnToOffice?: () => void;
+}
+
+export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
   const [settings, updateSettings] = useDesktopSettings();
 
   // Mode: initial from URL query param (?mode=chat | top_bar), falling back to settings
@@ -78,13 +84,38 @@ export function HudWindow() {
   const [liveInterim, setLiveInterim] = useState<string>('');
   const [manualInput, setManualInput] = useState('');
 
+interface WebSpeechRecognitionEvent {
+  resultIndex: number;
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>;
+}
+
+interface WebSpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: WebSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+  // Live audio frame & byte counters for audio activity indicator
+  const [audioFrames, setAudioFrames] = useState(0);
+  const [audioBytes, setAudioBytes] = useState(0);
+  const [isWebSpeechActive, setIsWebSpeechActive] = useState(false);
+  const webSpeechRecognitionRef = useRef<WebSpeechRecognitionInstance | null>(null);
+  const webSpeechSilenceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // AI Stream state
   const [streamingText, setStreamingText] = useState<string>('');
   const [activeQuestion, setActiveQuestion] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [hudError, setHudError] = useState<{ code: string; message: string } | null>(null);
   const [ttftMs, setTtftMs] = useState<number | null>(null);
   const [totalLatencyMs, setTotalLatencyMs] = useState<number | null>(null);
-  const [modelName, setModelName] = useState<string>('Gemini 2.5 Flash');
+  const [modelName, setModelName] = useState<string>('Gemini 3.8 Flash / Groq');
   const [activeModifier, setActiveModifier] = useState<DirectorModifier>('normal');
   const [isOcrActive, setIsOcrActive] = useState(false);
 
@@ -99,7 +130,10 @@ export function HudWindow() {
     autoConnect: true,
     onQuestionDetected: (question) => {
       if (isFrozen) return;
-      handleTriggerAi(question, 'normal');
+      setActiveQuestion(question);
+      setStreamingText('');
+      setHudError(null);
+      setIsGenerating(true);
     },
     onHotkey: (action) => {
       if (action === 'freeze') {
@@ -129,31 +163,46 @@ export function HudWindow() {
     }
   }, [hudStream.liveTranscript]);
 
-  // When speech ends (>350ms silence / speech boundary), commit to dialogue list
+  // Sync reactive state from native Rust hudStream
   useEffect(() => {
-    if (!hudStream.isSpeech && liveInterim.trim().length > 0) {
-      const text = liveInterim.trim();
-      if (text !== lastFinalTextRef.current) {
-        lastFinalTextRef.current = text;
-        const speaker = (hudStream.activeSpeaker === 'candidate' ? 'candidate' : 'interlocutor') as 'candidate' | 'interlocutor';
-        setDialogueMessages((prev) => [
-          ...prev.slice(-30),
-          {
-            id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            speaker,
-            text,
-            timestamp: Date.now(),
-          },
-        ]);
-        setLiveInterim('');
-
-        // Auto-trigger answer on speech pause if it looks like a question or prompt
-        if (!isGenerating && !isFrozen && text.length > 8) {
-          handleTriggerAi(text, 'normal');
-        }
-      }
+    if (hudStream.streamingAnswer) {
+      setStreamingText(hudStream.streamingAnswer);
     }
-  }, [hudStream.isSpeech, liveInterim, hudStream.activeSpeaker, isGenerating, isFrozen]);
+  }, [hudStream.streamingAnswer]);
+
+  useEffect(() => {
+    if (hudStream.currentQuestion) {
+      setActiveQuestion(hudStream.currentQuestion);
+    }
+  }, [hudStream.currentQuestion]);
+
+  useEffect(() => {
+    if (hudStream.ttftMs !== null && hudStream.ttftMs !== undefined) {
+      setTtftMs(hudStream.ttftMs);
+    }
+  }, [hudStream.ttftMs]);
+
+  useEffect(() => {
+    if (hudStream.latencyMs !== null && hudStream.latencyMs !== undefined) {
+      setTotalLatencyMs(hudStream.latencyMs);
+    }
+  }, [hudStream.latencyMs]);
+
+  useEffect(() => {
+    if (hudStream.isStreaming) {
+      setIsGenerating(true);
+      setHudError(null);
+    } else if (!activeStreamRef.current) {
+      setIsGenerating(false);
+    }
+  }, [hudStream.isStreaming]);
+
+  useEffect(() => {
+    if (hudStream.error) {
+      setHudError(hudStream.error);
+      setIsGenerating(false);
+    }
+  }, [hudStream.error]);
 
   // Listen to Tauri events for live mode changes and external hotkeys
   useEffect(() => {
@@ -163,7 +212,7 @@ export function HudWindow() {
       }
     });
 
-    const unlistenSettings = listenTauriEvent<any>('settings:updated', (newSettings) => {
+    const unlistenSettings = listenTauriEvent<Partial<DesktopSettings>>('settings:updated', (newSettings) => {
       if (newSettings?.copilotMode && (newSettings.copilotMode === 'chat' || newSettings.copilotMode === 'top_bar')) {
         setHudMode(newSettings.copilotMode);
       }
@@ -195,12 +244,12 @@ export function HudWindow() {
     }
   }, [dialogueMessages, liveInterim]);
 
-  // Trigger token-by-token answer generation
+  // Trigger token-by-token answer generation (manual prompt, modifiers, test)
   const handleTriggerAi = useCallback(
     async (questionText: string, modifier: DirectorModifier = 'normal') => {
       if (!questionText.trim()) return;
 
-      // Abort active stream if any
+      // Abort active HTTP stream if any
       if (activeStreamRef.current) {
         activeStreamRef.current.abort();
         activeStreamRef.current = null;
@@ -209,6 +258,7 @@ export function HudWindow() {
       setActiveQuestion(questionText);
       setActiveModifier(modifier);
       setStreamingText('');
+      setHudError(null);
       setTtftMs(null);
       setTotalLatencyMs(null);
       setIsGenerating(true);
@@ -219,7 +269,7 @@ export function HudWindow() {
       }));
 
       try {
-        const handle = await streamAnswer(
+        const handle = streamAnswer(
           {
             question: questionText,
             modifier,
@@ -240,23 +290,223 @@ export function HudWindow() {
             },
             onDone: (info) => {
               setIsGenerating(false);
+              activeStreamRef.current = null;
               setTotalLatencyMs(info.totalMs);
               if (info.model) setModelName(info.model);
             },
             onError: (err) => {
               setIsGenerating(false);
-              setStreamingText((prev) => (prev ? `${prev}\n\n[Помилка генерації: ${err}]` : `[Помилка генерації: ${err}]`));
+              activeStreamRef.current = null;
+              setHudError({ code: 'STREAM_ERROR', message: err });
             },
           }
         );
         activeStreamRef.current = handle;
-      } catch (err: any) {
+      } catch (err: unknown) {
         setIsGenerating(false);
-        setStreamingText(`[Помилка запиту: ${err?.message || 'Мережевий збій'}]`);
+        activeStreamRef.current = null;
+        const msg = err instanceof Error ? err.message : String(err);
+        setHudError({ code: 'INVOKE_ERROR', message: msg || 'Помилка виклику ШІ' });
       }
     },
     [dialogueMessages, isFrozen, settings]
   );
+
+  // Instant AI Pipeline self-test
+  const handleRunAiTest = useCallback(() => {
+    const testQuestion = 'Як влаштовані B-Tree індекси в PostgreSQL і коли вони неефективні?';
+    setDialogueMessages((prev) => [
+      ...prev,
+      {
+        id: `test-${Date.now()}`,
+        speaker: 'interlocutor',
+        text: testQuestion,
+        timestamp: Date.now(),
+      },
+    ]);
+    handleTriggerAi(testQuestion, 'normal');
+  }, [handleTriggerAi]);
+
+  // Clean close helper returning to Office if embedded or closing window
+  const handleClose = useCallback(() => {
+    if (onReturnToOffice) {
+      onReturnToOffice();
+    }
+    closeCopilotWindow().catch(() => {});
+  }, [onReturnToOffice]);
+
+  // Format audio data metrics
+  const formatAudioBytes = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const audioSourceLabel = isWebSpeechActive
+    ? isTauriEnvironment() && hudStream.sttStatus.status === 'connected'
+      ? '🎙️ PipeWire + Web Speech API'
+      : '🎙️ Web Speech (Мікрофон)'
+    : hudStream.listenMode === 'all'
+    ? '🎙️ PipeWire (Стерео Loopback + Мік)'
+    : '🎙️ PipeWire (Системний Loopback)';
+
+  // Increment live audio frame & byte metrics whenever sound or speech is detected
+  useEffect(() => {
+    if (currentRms > 0 || hudStream.isSpeech) {
+      setAudioFrames((f) => f + 1);
+      setAudioBytes((b) => b + 320); // ~320 bytes per 10ms PCM frame @ 16kHz
+    }
+  }, [currentRms, hudStream.isSpeech]);
+
+  // 100% reliable backup SpeechRecognition loop (Web Speech API)
+  // Activates if Deepgram does not connect within 2s, or in browser/mock mode, or on STT error.
+  useEffect(() => {
+    let recognition: WebSpeechRecognitionInstance | null = null;
+    let fallbackTimer: NodeJS.Timeout | null = null;
+
+    const startWebSpeech = () => {
+      if (typeof window === 'undefined') return;
+      const win = window as unknown as {
+        SpeechRecognition?: new () => WebSpeechRecognitionInstance;
+        webkitSpeechRecognition?: new () => WebSpeechRecognitionInstance;
+      };
+      const SpeechRecognition = win.SpeechRecognition || win.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        console.warn('[HudWindow] Web Speech API not supported in this environment');
+        return;
+      }
+      if (webSpeechRecognitionRef.current) return;
+
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang =
+          settings.hintLanguage === 'en'
+            ? 'en-US'
+            : settings.hintLanguage === 'ru'
+            ? 'ru-RU'
+            : 'uk-UA';
+
+        recognition.onstart = () => {
+          setIsWebSpeechActive(true);
+        };
+
+        recognition.onresult = (event: WebSpeechRecognitionEvent) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const piece = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += piece;
+            } else {
+              interimTranscript += piece;
+            }
+          }
+
+          const currentText = interimTranscript || finalTranscript;
+          if (currentText.trim()) {
+            setLiveInterim(currentText.trim());
+            setAudioFrames((f) => f + 2);
+            setAudioBytes((b) => b + 640);
+
+            // Silence pause trigger: after 1.2s silence following speech, commit to dialogue and trigger AI
+            if (webSpeechSilenceTimerRef.current) {
+              clearTimeout(webSpeechSilenceTimerRef.current);
+            }
+            webSpeechSilenceTimerRef.current = setTimeout(() => {
+              const fullSpeech = (finalTranscript || interimTranscript).trim();
+              if (fullSpeech && fullSpeech.length > 5) {
+                setDialogueMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `web-speech-${Date.now()}`,
+                    speaker: 'interlocutor',
+                    text: fullSpeech,
+                    timestamp: Date.now(),
+                  },
+                ]);
+                setLiveInterim('');
+                handleTriggerAi(fullSpeech, 'normal');
+              }
+            }, 1200);
+          }
+        };
+
+        recognition.onerror = (err: { error: string }) => {
+          if (err.error !== 'no-speech') {
+            console.warn('[HudWindow] Web Speech error:', err);
+          }
+        };
+
+        recognition.onend = () => {
+          // Keep listening while HUD is active if native Deepgram is not connected
+          if (hudStream.sttStatus.status !== 'connected' || !isTauriEnvironment()) {
+            try {
+              recognition?.start();
+            } catch {}
+          } else {
+            setIsWebSpeechActive(false);
+          }
+        };
+
+        recognition.start();
+        webSpeechRecognitionRef.current = recognition;
+      } catch (e) {
+        console.warn('[HudWindow] Failed to initialize Web Speech API:', e);
+      }
+    };
+
+    // Check after 2000ms if native Deepgram is connected; if not, activate Web Speech fallback
+    fallbackTimer = setTimeout(() => {
+      if (
+        hudStream.sttStatus.status !== 'connected' ||
+        !isTauriEnvironment() ||
+        hudStream.error?.code === 'AUDIO_PIPELINE_ERROR'
+      ) {
+        startWebSpeech();
+      }
+    }, 2000);
+
+    return () => {
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      if (webSpeechSilenceTimerRef.current) clearTimeout(webSpeechSilenceTimerRef.current);
+      if (webSpeechRecognitionRef.current) {
+        try {
+          webSpeechRecognitionRef.current.stop();
+        } catch {}
+        webSpeechRecognitionRef.current = null;
+      }
+    };
+  }, [hudStream.sttStatus.status, hudStream.error, settings.hintLanguage, handleTriggerAi]);
+
+  // When speech ends (>350ms silence / speech boundary), commit to dialogue list
+  useEffect(() => {
+    if (!hudStream.isSpeech && liveInterim.trim().length > 0) {
+      const text = liveInterim.trim();
+      if (text !== lastFinalTextRef.current) {
+        lastFinalTextRef.current = text;
+        const speaker = (hudStream.activeSpeaker === 'candidate' ? 'candidate' : 'interlocutor') as 'candidate' | 'interlocutor';
+        setDialogueMessages((prev) => [
+          ...prev.slice(-30),
+          {
+            id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            speaker,
+            text,
+            timestamp: Date.now(),
+          },
+        ]);
+        setLiveInterim('');
+
+        // In pure browser/mock mode (non-Tauri), auto-trigger answer on speech pause.
+        // In Tauri desktop, native SpeechTracker handles LLM streaming directly without duplicate requests.
+        if (!isTauriEnvironment() && !isGenerating && !isFrozen && text.length > 8) {
+          handleTriggerAi(text, 'normal');
+        }
+      }
+    }
+  }, [hudStream.isSpeech, liveInterim, hudStream.activeSpeaker, isGenerating, isFrozen, handleTriggerAi]);
 
   // Trigger Vision OCR Screenshot analysis
   const handleTriggerScreenshot = useCallback(async () => {
@@ -271,8 +521,9 @@ export function HudWindow() {
       setStreamingText(res.text);
       setModelName('Vision OCR');
       setTtftMs(null);
-    } catch (err: any) {
-      setStreamingText(`[Помилка скріншоту: ${err?.message || 'Не вдалося захопити екран'}]`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStreamingText(`[Помилка скріншоту: ${msg || 'Не вдалося захопити екран'}]`);
     } finally {
       setIsOcrActive(false);
       setIsGenerating(false);
@@ -336,9 +587,11 @@ export function HudWindow() {
     setLiveInterim('');
     setStreamingText('');
     setActiveQuestion('');
+    setHudError(null);
     setTtftMs(null);
     setTotalLatencyMs(null);
-  }, []);
+    hudStream.clearSession().catch(() => {});
+  }, [hudStream]);
 
   const handleCopy = useCallback((text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -362,7 +615,7 @@ export function HudWindow() {
         handleToggleFreeze();
       } else if (e.key === 'Escape') {
         e.preventDefault();
-        closeCopilotWindow().catch(() => {});
+        handleClose();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'm' || e.key === 'M')) {
         e.preventDefault();
         handleSwitchMode(hudMode === 'chat' ? 'top_bar' : 'chat');
@@ -383,7 +636,7 @@ export function HudWindow() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleToggleFreeze, handleSwitchMode, handleTriggerScreenshot, handleToggleClickThrough, hudMode]);
+  }, [handleToggleFreeze, handleSwitchMode, handleTriggerScreenshot, handleToggleClickThrough, handleClose, hudMode]);
 
   // Font size mapping from settings
   const fontSizeClass =
@@ -399,68 +652,87 @@ export function HudWindow() {
 
   const parsedSections = parseStreamingMarkdown(streamingText, isGenerating);
 
+  const effectiveError =
+    hudError ||
+    (streamingText.startsWith('[Помилка')
+      ? {
+          code: 'AI_ERROR',
+          message:
+            streamingText.replace(/^\[Помилка[^:]*:\s*/, '').replace(/\]$/, '') || streamingText,
+        }
+      : null);
+
   // =========================================================================
   // RENDER: TOP BAR (NOTCH) MODE (680x150, flush under webcam)
   // =========================================================================
   if (hudMode === 'top_bar') {
     return (
       <div
-        className="w-full h-full select-none flex flex-col justify-between overflow-hidden rounded-b-xl border border-white/10 bg-[#09090b]/95 backdrop-blur-xl text-zinc-100 shadow-2xl p-2.5"
+        className="w-full h-full select-none flex flex-col justify-between overflow-hidden rounded-b-xl border border-white/10 bg-[#09090b]/95 text-zinc-100 shadow-[0_16px_40px_rgba(0,0,0,0.95)] ring-1 ring-inset ring-white/[0.04] p-3"
         style={{ opacity: settings.hudOpacity ?? 0.95 }}
       >
         {/* Header row: drag region + controls */}
-        <div className="flex items-center justify-between gap-2 drag-region pb-1 border-b border-zinc-800/60">
+        <div className="flex items-center justify-between gap-2 drag-region pb-1.5 border-b border-zinc-800/80">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400">
+            <span className="text-xs font-mono uppercase tracking-wider text-zinc-300 font-bold">
               Ghostboard HUD
             </span>
             <AudioWaveEqualizer level={currentRms} />
             <button
               onClick={() => hudStream.switchListenMode(hudStream.listenMode === 'all' ? 'system_only' : 'all')}
               title={hudStream.listenMode === 'all' ? 'Слухати: Системний звук + Мікрофон' : 'Тільки Системний звук'}
-              className={`px-2 py-0.5 rounded-full text-[9px] font-mono flex items-center gap-1 border transition no-drag ${
+              className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium flex items-center gap-1.5 border transition no-drag ${
                 hudStream.listenMode === 'all'
-                  ? 'bg-zinc-800 text-white border-zinc-600'
-                  : 'bg-zinc-900 text-zinc-400 border-zinc-800'
+                  ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm'
+                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'
               }`}
             >
               {hudStream.listenMode === 'all' ? (
                 <>
-                  <Mic className="w-2.5 h-2.5 text-emerald-400" />
+                  <Mic className="w-3 h-3 text-emerald-400" />
                   <span>Всі</span>
                 </>
               ) : (
                 <>
-                  <Volume2 className="w-2.5 h-2.5 text-zinc-400" />
+                  <Volume2 className="w-3 h-3 text-zinc-400" />
                   <span>Звук</span>
                 </>
               )}
             </button>
             {ttftMs !== null && (
-              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-1.5 py-0.2 rounded">
+              <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-700/60 px-2 py-0.5 rounded-md">
                 ⚡ {ttftMs}ms
               </span>
             )}
             {isFrozen && (
-              <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.2 rounded">
+              <span className="text-xs font-mono font-semibold text-amber-300 bg-amber-950/70 border border-amber-700/60 px-2 py-0.5 rounded-md">
                 ⏸ FROZEN
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1 no-drag">
+          <div className="flex items-center gap-1.5 no-drag">
+            <button
+              onClick={handleRunAiTest}
+              disabled={isGenerating}
+              title="Запустити тест генерації відповіді ШІ"
+              className="px-2.5 py-1 rounded-md text-xs font-mono font-semibold bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 hover:bg-emerald-900 hover:text-white transition flex items-center gap-1.5 disabled:opacity-40 shadow-sm cursor-pointer"
+            >
+              <Zap className="w-3 h-3 text-emerald-400" />
+              <span>Тест ШІ</span>
+            </button>
             <button
               onClick={() => handleSwitchMode('chat')}
               title="Розгорнути у повний чат (Ctrl+M)"
-              className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+              className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
             >
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={handleToggleFreeze}
               title={isFrozen ? 'Розморозити (Space)' : 'Заморозити екран (Space)'}
-              className={`p-1 rounded transition ${isFrozen ? 'text-amber-400 bg-amber-950/50' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
+              className={`p-1.5 rounded-md transition cursor-pointer ${isFrozen ? 'text-amber-400 bg-amber-950/50' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
             >
               {isFrozen ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
             </button>
@@ -468,14 +740,23 @@ export function HudWindow() {
               onClick={handleTriggerScreenshot}
               disabled={isOcrActive}
               title="Скріншот екрана (Ctrl+Shift+S)"
-              className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
+              className="p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
             >
               <Camera className="w-3.5 h-3.5" />
             </button>
+            {onReturnToOffice && (
+              <button
+                onClick={handleClose}
+                title="Повернутися в Офіс"
+                className="px-2 py-1 rounded text-xs font-mono font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer"
+              >
+                <span>← Офіс</span>
+              </button>
+            )}
             <button
-              onClick={() => closeCopilotWindow().catch(() => {})}
+              onClick={handleClose}
               title="Закрити копайлот (Esc)"
-              className="p-1 rounded text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition"
+              className="p-1.5 rounded-md text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -483,30 +764,48 @@ export function HudWindow() {
         </div>
 
         {/* Line 1: Speech preview (Interlocutor or Candidate) */}
-        <div className="py-1 px-1 text-xs text-zinc-400 font-mono truncate flex items-center gap-1.5">
-          {hudStream.activeSpeaker === 'candidate' ? (
-            <Mic className="w-3 h-3 text-emerald-400 shrink-0" />
-          ) : (
-            <Volume2 className="w-3 h-3 text-zinc-400 shrink-0" />
-          )}
-          <span className="text-zinc-500">{hudStream.activeSpeaker === 'candidate' ? 'Ви:' : 'Співрозмовник:'}</span>
-          <span className="text-zinc-300">
-            {liveInterim || (dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1].text : 'Очікування мовлення...')}
+        <div className="py-1 px-2 my-1 text-xs text-zinc-200 font-mono truncate flex items-center gap-2 bg-zinc-900/60 rounded-md border border-zinc-800/80">
+          <div className="flex items-center gap-1 shrink-0 font-bold">
+            {hudStream.activeSpeaker === 'candidate' ? (
+              <span className="flex items-center gap-1 text-emerald-400 bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-800/40 text-[11px]">
+                <Mic className="w-3 h-3 text-emerald-400" /> Ви:
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-cyan-300 bg-cyan-950/50 px-1.5 py-0.5 rounded border border-cyan-800/40 text-[11px]">
+                <Volume2 className="w-3 h-3 text-cyan-400" /> Співрозмовник:
+              </span>
+            )}
+          </div>
+          <span className="text-white font-medium truncate flex-1">
+            {liveInterim || (dialogueMessages.length > 0 ? dialogueMessages[dialogueMessages.length - 1].text : 'Очікування запитання...')}
           </span>
         </div>
 
-        {/* Line 2: AI Live Suggestion (Prominent, large) */}
+        {/* Line 2: AI Live Suggestion or Error Card */}
         <div
           ref={answerScrollRef}
-          className={`flex-1 overflow-y-auto px-1 leading-snug select-text font-medium text-white ${fontSizeClass}`}
+          className={`flex-1 overflow-y-auto px-1.5 leading-relaxed select-text font-medium text-white ${fontSizeClass}`}
         >
-          {streamingText ? (
-            <span>
-              {streamingText}
-              {isGenerating && <span className="inline-block w-1.5 h-3.5 ml-1 bg-white animate-pulse" />}
-            </span>
+          {effectiveError ? (
+            <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-rose-950/60 border border-rose-800/70 text-rose-200 text-xs">
+              <div className="flex items-center gap-2 truncate">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 animate-pulse" />
+                <span className="truncate font-semibold">{effectiveError.message}</span>
+              </div>
+              <button
+                onClick={() => handleTriggerAi(activeQuestion || 'Як влаштовані B-Tree індекси в PostgreSQL?')}
+                className="px-2.5 py-1 rounded-md bg-rose-900/80 hover:bg-rose-800 border border-rose-700 text-xs font-mono shrink-0 transition text-white font-semibold cursor-pointer"
+              >
+                Повторити
+              </button>
+            </div>
+          ) : streamingText ? (
+            <div className="text-white text-[16px] leading-relaxed tracking-tight font-sans font-medium">
+              {renderBilingualPhrase(streamingText)}
+              {isGenerating && <span className="inline-block w-2 h-4 ml-1 bg-white animate-pulse align-middle" />}
+            </div>
           ) : (
-            <span className="text-zinc-500 italic font-normal">
+            <span className="text-zinc-400 italic font-normal text-xs sm:text-sm">
               ШІ-підказка з'явиться тут миттєво під час мовлення...
             </span>
           )}
@@ -520,17 +819,17 @@ export function HudWindow() {
   // =========================================================================
   return (
     <div
-      className="w-full h-full select-none flex flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-[#09090b]/95 backdrop-blur-xl text-zinc-100 shadow-2xl"
+      className="w-full h-full select-none flex flex-col justify-between overflow-hidden rounded-xl border border-white/10 bg-[#09090b]/95 text-zinc-100 shadow-[0_20px_50px_rgba(0,0,0,0.95)] ring-1 ring-inset ring-white/[0.04]"
       style={{ opacity: settings.hudOpacity ?? 0.95 }}
     >
       {/* 1. TOP HEADER / TITLEBAR */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 drag-region bg-zinc-950/40">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/80 drag-region bg-zinc-950/60">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-semibold tracking-wide text-zinc-200">
+          <span className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-200">
             Ghostboard Copilot
           </span>
-          <span className="text-[10px] font-mono text-zinc-500 bg-zinc-900 border border-zinc-800 px-1.5 py-0.5 rounded">
+          <span className="text-xs font-mono text-zinc-400 bg-zinc-900 border border-zinc-800 px-2 py-0.5 rounded-md font-medium">
             {modelName}
           </span>
           {/* Live 5-bar Equalizer */}
@@ -539,31 +838,31 @@ export function HudWindow() {
           <button
             onClick={() => hudStream.switchListenMode(hudStream.listenMode === 'all' ? 'system_only' : 'all')}
             title={hudStream.listenMode === 'all' ? 'Слухати: Системний звук + Мікрофон' : 'Тільки Системний звук (відфільтровувати мікрофон)'}
-            className={`px-2 py-0.5 rounded-full text-[10px] font-mono flex items-center gap-1 border transition no-drag ${
+            className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium flex items-center gap-1.5 border transition no-drag ${
               hudStream.listenMode === 'all'
                 ? 'bg-zinc-800 text-white border-zinc-600 shadow-sm'
-                : 'bg-zinc-900 text-zinc-400 border-zinc-800'
+                : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'
             }`}
           >
             {hudStream.listenMode === 'all' ? (
               <>
-                <Mic className="w-2.5 h-2.5 text-emerald-400" />
+                <Mic className="w-3 h-3 text-emerald-400" />
                 <span>Звук + Мік</span>
               </>
             ) : (
               <>
-                <Volume2 className="w-2.5 h-2.5 text-zinc-400" />
+                <Volume2 className="w-3 h-3 text-zinc-400" />
                 <span>Тільки Звук</span>
               </>
             )}
           </button>
           {ttftMs !== null && (
-            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/40 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-mono font-semibold text-emerald-400 bg-emerald-950/70 border border-emerald-700/60 px-2 py-0.5 rounded-md">
               ⚡ TTFT {ttftMs}ms
             </span>
           )}
           {isFrozen && (
-            <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 border border-amber-800/40 px-1.5 py-0.5 rounded">
+            <span className="text-xs font-mono font-semibold text-amber-300 bg-amber-950/70 border border-amber-700/60 px-2 py-0.5 rounded-md">
               ⏸ FROZEN
             </span>
           )}
@@ -571,6 +870,15 @@ export function HudWindow() {
 
         {/* Window action icons & Language Selector */}
         <div className="flex items-center gap-1.5 no-drag">
+          <button
+            onClick={handleRunAiTest}
+            disabled={isGenerating}
+            title="Запустити тестовий запит до ШІ"
+            className="px-2.5 py-1 rounded-md text-xs font-mono font-semibold bg-emerald-950/80 border border-emerald-600/70 text-emerald-300 hover:bg-emerald-900 hover:text-white transition flex items-center gap-1.5 disabled:opacity-40 mr-1 shadow-sm cursor-pointer"
+          >
+            <Zap className="w-3 h-3 text-emerald-400" />
+            <span>Тест ШІ</span>
+          </button>
           <DesktopAiLanguageSelector
             value={settings.hintLanguage || 'auto'}
             onChange={(lang) => {
@@ -607,10 +915,19 @@ export function HudWindow() {
           >
             {isClickThrough ? <Unlock className="w-3.5 h-3.5 text-amber-400" /> : <Lock className="w-3.5 h-3.5" />}
           </button>
+          {onReturnToOffice && (
+            <button
+              onClick={handleClose}
+              title="Повернутися в Офіс"
+              className="px-2 py-1 rounded text-xs font-mono font-medium bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white transition cursor-pointer mr-1"
+            >
+              <span>← Офіс</span>
+            </button>
+          )}
           <button
-            onClick={() => closeCopilotWindow().catch(() => {})}
+            onClick={handleClose}
             title="Закрити копайлот і повернутися в Офіс (Esc)"
-            className="p-1.5 rounded-md text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80 transition ml-1"
+            className="p-1.5 rounded-md text-zinc-400 hover:text-red-400 hover:bg-zinc-800/80 transition ml-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -622,13 +939,17 @@ export function HudWindow() {
         {/* LEFT COLUMN: LIVE SPEECH ONLY */}
         <div className="w-1/2 flex flex-col min-h-0 p-3 bg-zinc-950/30">
           <div className="flex items-center justify-between pb-2 border-b border-zinc-800/60 shrink-0">
-            <div className="flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs font-medium text-zinc-300">Живе мовлення</span>
+            <div className="flex items-center gap-2 truncate">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${currentRms > 5 || hudStream.isSpeech ? 'bg-emerald-400 animate-ping' : 'bg-emerald-600'}`} />
+              <span className="text-xs font-medium text-zinc-200 truncate">
+                {audioSourceLabel}
+              </span>
             </div>
-            <span className="text-[10px] font-mono text-zinc-500">
-              {hudStream.listenMode === 'all' ? 'Звук + Мікрофон' : 'Лише системний звук'}
-            </span>
+            <div className="flex items-center gap-1.5 font-mono text-[10px] text-zinc-400 shrink-0">
+              <span className="bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800 text-zinc-400">
+                {audioFrames} фр. ({formatAudioBytes(audioBytes)})
+              </span>
+            </div>
           </div>
 
           <div ref={chatScrollRef} className="flex-1 overflow-y-auto pt-2 space-y-2.5 pr-1 text-xs select-text">
@@ -645,51 +966,49 @@ export function HudWindow() {
                 {dialogueMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`p-2.5 rounded-lg border ${
+                    className={`p-3 rounded-xl border ${
                       msg.speaker === 'candidate'
-                        ? 'bg-zinc-900/40 border-zinc-800/80 text-zinc-300 ml-2'
-                        : 'bg-zinc-900/70 border-zinc-700/70 text-zinc-100 mr-2'
+                        ? 'bg-zinc-900/40 border-zinc-800 text-zinc-200 ml-3'
+                        : 'bg-zinc-900/80 border-cyan-500/30 text-white mr-3 shadow-sm'
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-1.5 mb-1 text-[10px] font-mono">
-                      <span className="flex items-center gap-1 font-semibold text-zinc-300">
+                    <div className="flex items-center justify-between gap-1.5 mb-1.5 text-xs font-mono">
+                      <span className="flex items-center gap-1.5 font-bold">
                         {msg.speaker === 'candidate' ? (
-                          <>
-                            <Mic className="w-2.5 h-2.5 text-emerald-400" />
-                            <span>Ви</span>
-                          </>
+                          <span className="text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50 flex items-center gap-1 text-[11px]">
+                            <Mic className="w-3 h-3 text-emerald-400" /> Ви
+                          </span>
                         ) : (
-                          <>
-                            <Volume2 className="w-2.5 h-2.5 text-blue-400" />
-                            <span>Інтерв'юер</span>
-                          </>
+                          <span className="text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50 flex items-center gap-1 text-[11px]">
+                            <Volume2 className="w-3 h-3 text-cyan-400" /> Інтерв'юер
+                          </span>
                         )}
                       </span>
-                      <span className="text-zinc-600">
+                      <span className="text-zinc-400 text-[11px]">
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </span>
                     </div>
-                    <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
+                    <p className="leading-relaxed whitespace-pre-wrap text-xs sm:text-sm font-medium text-zinc-100">{msg.text}</p>
                   </div>
                 ))}
 
                 {liveInterim && (
-                  <div className="p-2.5 rounded-lg bg-zinc-900/60 border border-zinc-700/80 text-zinc-200">
-                    <div className="flex items-center gap-1.5 mb-1 text-[10px] font-mono text-zinc-400">
+                  <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-700 text-zinc-100">
+                    <div className="flex items-center gap-2 mb-1.5 text-xs font-mono text-zinc-300">
                       {hudStream.activeSpeaker === 'candidate' ? (
-                        <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-                          <Mic className="w-2.5 h-2.5" /> Ви
+                        <span className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40 text-[11px]">
+                          <Mic className="w-3 h-3" /> Ви
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1 text-blue-400 font-semibold">
-                          <Volume2 className="w-2.5 h-2.5" /> Інтерв'юер
+                        <span className="flex items-center gap-1 text-cyan-300 font-bold bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40 text-[11px]">
+                          <Volume2 className="w-3 h-3" /> Інтерв'юер
                         </span>
                       )}
-                      <span className="text-zinc-500 text-[10px]">Слухаю...</span>
+                      <span className="text-zinc-400 text-xs">Слухаю...</span>
                     </div>
-                    <p className="leading-relaxed italic">
+                    <p className="leading-relaxed italic text-xs sm:text-sm text-zinc-200">
                       {liveInterim}
-                      <span className="inline-block w-1.5 h-3 ml-1 bg-white animate-pulse" />
+                      <span className="inline-block w-2 h-4 ml-1 bg-white animate-pulse align-middle" />
                     </p>
                   </div>
                 )}
@@ -732,7 +1051,32 @@ export function HudWindow() {
               </div>
             )}
 
-            {streamingText ? (
+            {effectiveError ? (
+              <div className="p-3.5 rounded-xl bg-gradient-to-b from-rose-950/40 via-zinc-950/80 to-zinc-950 border border-rose-800/50 text-rose-200 space-y-2.5">
+                <div className="flex items-center gap-2 text-rose-400 font-semibold text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+                  <span>Помилка генерації ({effectiveError.code})</span>
+                </div>
+                <p className="text-xs text-rose-300/90 leading-relaxed font-mono whitespace-pre-wrap bg-black/60 p-2.5 rounded-lg border border-rose-900/40">
+                  {effectiveError.message}
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => handleTriggerAi(activeQuestion || 'Як влаштовані B-Tree індекси в PostgreSQL?')}
+                    className="px-3 py-1 rounded-lg bg-rose-900/70 hover:bg-rose-800 border border-rose-700/60 text-xs font-medium text-white transition flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Спробувати знову</span>
+                  </button>
+                  <button
+                    onClick={handleRunAiTest}
+                    className="px-3 py-1 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs font-medium text-zinc-300 transition"
+                  >
+                    ⚡ Тест ШІ
+                  </button>
+                </div>
+              </div>
+            ) : streamingText ? (
               <div className="text-zinc-100 space-y-2">
                 {parsedSections.length > 0 ? (
                   parsedSections.map((sec, idx) => {
@@ -756,21 +1100,23 @@ export function HudWindow() {
                       );
                     }
                     return (
-                      <p key={idx} className="whitespace-pre-wrap">
-                        {sec.content}
-                      </p>
+                      <div key={idx} className="whitespace-pre-wrap leading-relaxed text-zinc-100 font-medium text-xs sm:text-sm">
+                        {renderBilingualPhrase(sec.content)}
+                      </div>
                     );
                   })
                 ) : (
-                  <p className="whitespace-pre-wrap">{streamingText}</p>
+                  <div className="whitespace-pre-wrap leading-relaxed text-zinc-100 font-medium text-xs sm:text-sm">
+                    {renderBilingualPhrase(streamingText)}
+                  </div>
                 )}
-                {isGenerating && <span className="inline-block w-2 h-4 ml-1 bg-white animate-pulse" />}
+                {isGenerating && <span className="inline-block w-2 h-4 ml-1 bg-white animate-pulse align-middle" />}
               </div>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-center px-4 py-8 text-zinc-500">
                 <Terminal className="w-8 h-8 stroke-1 mb-2 text-zinc-600" />
-                <p className="font-medium text-zinc-400">Готовий до стримінгу підказок</p>
-                <p className="text-[11px] mt-1 text-zinc-500 leading-relaxed">
+                <p className="font-medium text-zinc-300 text-xs sm:text-sm">Готовий до стримінгу підказок</p>
+                <p className="text-xs mt-1 text-zinc-400 leading-relaxed">
                   Відповідь надходитиме потоково токен за токеном без затримок (TTFT &lt; 300мс).
                 </p>
               </div>
@@ -780,14 +1126,23 @@ export function HudWindow() {
       </div>
 
       {/* 3. BOTTOM CONTROLS & MANUAL PROMPT BAR */}
-      <div className="p-2.5 border-t border-zinc-800/80 bg-zinc-950/70 flex flex-col gap-2">
+      <div className="p-2.5 border-t border-zinc-800/80 bg-zinc-950/80 flex flex-col gap-2">
         {/* Quick action buttons / modifiers */}
         <div className="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
+              onClick={handleRunAiTest}
+              disabled={isGenerating}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/70 border border-emerald-700/70 text-emerald-300 hover:bg-emerald-900/90 hover:text-white hover:border-emerald-500 transition flex items-center gap-1.5 disabled:opacity-40 shadow-sm cursor-pointer"
+              title="⚡ Тест генерації відповіді ШІ"
+            >
+              <Zap className="w-3.5 h-3.5 text-emerald-400" />
+              <span>⚡ Тест ШІ</span>
+            </button>
+            <button
               onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Поясни коротко', 'shorter')}
               disabled={isGenerating}
-              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-700/80 text-zinc-200 hover:text-white hover:border-zinc-500 transition shadow-sm cursor-pointer"
               title="⚡ Коротше"
             >
               ⚡ Коротше
@@ -795,7 +1150,7 @@ export function HudWindow() {
             <button
               onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Поясни простіше', 'simpler')}
               disabled={isGenerating}
-              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-700/80 text-zinc-200 hover:text-white hover:border-zinc-500 transition shadow-sm cursor-pointer"
               title="💡 Простіше"
             >
               💡 Простіше
@@ -803,7 +1158,7 @@ export function HudWindow() {
             <button
               onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Напиши код', 'code')}
               disabled={isGenerating}
-              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-700/80 text-zinc-200 hover:text-white hover:border-zinc-500 transition shadow-sm cursor-pointer"
               title="</> Код"
             >
               &lt;/&gt; Код
@@ -811,7 +1166,7 @@ export function HudWindow() {
             <button
               onClick={() => handleTriggerAi(activeQuestion || liveInterim || 'Запропонуй інший підхід', 're_angle')}
               disabled={isGenerating}
-              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-700/80 text-zinc-200 hover:text-white hover:border-zinc-500 transition shadow-sm cursor-pointer"
               title="🔄 Інший підхід"
             >
               🔄 Інший підхід
@@ -819,9 +1174,9 @@ export function HudWindow() {
             <button
               onClick={handleTriggerScreenshot}
               disabled={isOcrActive}
-              className="px-2 py-1 rounded text-[11px] font-medium bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition flex items-center gap-1"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-zinc-900 border border-zinc-700/80 text-zinc-200 hover:text-white hover:border-zinc-500 transition flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
-              <Camera className="w-3 h-3" />
+              <Camera className="w-3.5 h-3.5" />
               <span>{isOcrActive ? 'Аналіз...' : 'Скріншот'}</span>
             </button>
           </div>

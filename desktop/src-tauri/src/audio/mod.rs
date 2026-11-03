@@ -10,6 +10,7 @@ use crate::audio::capture::{
 use crate::audio::resampler::AudioResampler;
 use crate::audio::ringbuffer::{AudioBufferPool, AudioConsumer};
 use crate::audio::vad::{SileroVad, VadFrameResult};
+use cpal::traits::HostTrait;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -210,10 +211,50 @@ impl AudioEngine {
                                         Err(e) => last_error = Some(format!("Loopback resampler error: {}", e)),
                                     }
                                 }
-                                Err(e) => last_error = Some(format!("Loopback stream start error: {}", e)),
+                                Err(e) => {
+                                    tracing::warn!(target: "ghostboard::audio", "Loopback stream start error: {}, falling back to default input device", e);
+                                    if let Some(def_dev) = host.default_input_device().or_else(|| host.default_output_device()) {
+                                        let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                                        let (producer, consumer) = pool.split();
+                                        if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
+                                            let sample_rate = capture_stream.sample_rate();
+                                            let channels = capture_stream.channels();
+                                            if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
+                                                self.loopback_stream = Some(capture_stream);
+                                                self.loopback_consumer = Some(consumer);
+                                                self.loopback_resampler = Some(resampler);
+                                                self.loopback_vad = Some(vad);
+                                                loopback_started = true;
+                                            }
+                                        }
+                                    }
+                                    if !loopback_started {
+                                        last_error = Some(format!("Loopback stream start error: {}", e));
+                                    }
+                                }
                             }
                         }
-                        Err(e) => last_error = Some(format!("Loopback device discovery error: {}", e)),
+                        Err(e) => {
+                            tracing::warn!(target: "ghostboard::audio", "Loopback device discovery error: {}, falling back to default device", e);
+                            if let Some(def_dev) = host.default_input_device().or_else(|| host.default_output_device()) {
+                                let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                                let (producer, consumer) = pool.split();
+                                if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
+                                    let sample_rate = capture_stream.sample_rate();
+                                    let channels = capture_stream.channels();
+                                    if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
+                                        self.loopback_stream = Some(capture_stream);
+                                        self.loopback_consumer = Some(consumer);
+                                        self.loopback_resampler = Some(resampler);
+                                        self.loopback_vad = Some(vad);
+                                        loopback_started = true;
+                                    }
+                                }
+                            }
+                            if !loopback_started {
+                                last_error = Some(format!("Loopback device discovery error: {}", e));
+                            }
+                        }
                     }
                 }
             }
@@ -282,10 +323,50 @@ impl AudioEngine {
                                         Err(e) => last_error = Some(format!("Microphone resampler error: {}", e)),
                                     }
                                 }
-                                Err(e) => last_error = Some(format!("Microphone stream start error: {}", e)),
+                                Err(e) => {
+                                    tracing::warn!(target: "ghostboard::audio", "Microphone stream start error: {}, falling back to default mic", e);
+                                    if let Some(def_dev) = host.default_input_device() {
+                                        let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                                        let (producer, consumer) = pool.split();
+                                        if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
+                                            let sample_rate = capture_stream.sample_rate();
+                                            let channels = capture_stream.channels();
+                                            if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
+                                                self.mic_stream = Some(capture_stream);
+                                                self.mic_consumer = Some(consumer);
+                                                self.mic_resampler = Some(resampler);
+                                                self.mic_vad = Some(vad);
+                                                mic_started = true;
+                                            }
+                                        }
+                                    }
+                                    if !mic_started {
+                                        last_error = Some(format!("Microphone stream start error: {}", e));
+                                    }
+                                }
                             }
                         }
-                        Err(e) => last_error = Some(format!("Microphone device discovery error: {}", e)),
+                        Err(e) => {
+                            tracing::warn!(target: "ghostboard::audio", "Microphone device discovery error: {}, falling back to default mic", e);
+                            if let Some(def_dev) = host.default_input_device() {
+                                let pool = AudioBufferPool::new(self.config.buffer_capacity);
+                                let (producer, consumer) = pool.split();
+                                if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
+                                    let sample_rate = capture_stream.sample_rate();
+                                    let channels = capture_stream.channels();
+                                    if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
+                                        self.mic_stream = Some(capture_stream);
+                                        self.mic_consumer = Some(consumer);
+                                        self.mic_resampler = Some(resampler);
+                                        self.mic_vad = Some(vad);
+                                        mic_started = true;
+                                    }
+                                }
+                            }
+                            if !mic_started {
+                                last_error = Some(format!("Microphone device discovery error: {}", e));
+                            }
+                        }
                     }
                 }
             }

@@ -148,7 +148,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex justify-end"
+        className="fixed inset-0 z-50 bg-black/80 flex justify-end"
       >
         <motion.div
           initial={{ x: '100%' }}
@@ -165,7 +165,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -20, scale: 0.95 }}
                 transition={SPRING_PHYSICS}
-                className="absolute top-4 left-4 right-4 z-50 py-2.5 px-4 rounded-xl bg-cyan-950/90 border border-cyan-500/40 text-cyan-200 shadow-2xl backdrop-blur-xl flex items-center gap-2 text-xs font-mono"
+                className="absolute top-4 left-4 right-4 z-50 py-2.5 px-4 rounded-xl bg-cyan-950/95 border border-cyan-500/40 text-cyan-200 shadow-2xl flex items-center gap-2 text-xs font-mono"
               >
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                 <span className="truncate">{toastMessage}</span>

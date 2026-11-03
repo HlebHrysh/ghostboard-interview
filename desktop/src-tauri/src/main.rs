@@ -309,6 +309,95 @@ async fn trigger_manual_answer(
     Ok(())
 }
 
+/// Streams AI answer directly from Rust (supporting manual input, test question, and offline fallback)
+#[tauri::command]
+async fn stream_ai_answer(
+    question: String,
+    output_language: Option<String>,
+    helper_language: Option<String>,
+    modifier: Option<String>,
+    llm_orchestrator: tauri::State<'_, Arc<LlmOrchestrator>>,
+    hud_state: tauri::State<'_, HudChannelState>,
+) -> Result<String, String> {
+    if question.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    // 1. Always ensure environment variables from .env / .env.local are refreshed
+    load_env_files();
+
+    // 2. Discover and configure keys (prioritizing GEMINI_API_KEY)
+    if let Ok(key) = std::env::var("GEMINI_API_KEY") {
+        let trimmed = key.trim().to_string();
+        if !trimmed.is_empty() {
+            llm_orchestrator
+                .set_config(crate::llm::client::LlmConfig {
+                    provider: crate::llm::client::LlmProviderType::Gemini,
+                    api_key: trimmed,
+                    model: "gemini-3.8-flash".to_string(),
+                    endpoint_url: None,
+                })
+                .await;
+        }
+    } else if let Ok(key) = std::env::var("GROQ_API_KEY") {
+        let trimmed = key.trim().to_string();
+        if !trimmed.is_empty() {
+            llm_orchestrator
+                .set_config(crate::llm::client::LlmConfig {
+                    provider: crate::llm::client::LlmProviderType::Groq,
+                    api_key: trimmed,
+                    model: "llama-3.3-70b-versatile".to_string(),
+                    endpoint_url: None,
+                })
+                .await;
+        }
+    } else if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+        let trimmed = key.trim().to_string();
+        if !trimmed.is_empty() {
+            llm_orchestrator
+                .set_config(crate::llm::client::LlmConfig {
+                    provider: crate::llm::client::LlmProviderType::OpenAI,
+                    api_key: trimmed,
+                    model: "gpt-4o-mini".to_string(),
+                    endpoint_url: None,
+                })
+                .await;
+        }
+    }
+
+    // 3. Stream direct answer via LlmOrchestrator
+    llm_orchestrator
+        .stream_answer_direct(
+            &question,
+            modifier,
+            output_language,
+            helper_language,
+            (*hud_state).clone(),
+        )
+        .await
+}
+
+/// Native command alias for stream_ai_answer
+#[tauri::command]
+async fn ask_llm_stream(
+    question: String,
+    output_language: Option<String>,
+    helper_language: Option<String>,
+    modifier: Option<String>,
+    llm_orchestrator: tauri::State<'_, Arc<LlmOrchestrator>>,
+    hud_state: tauri::State<'_, HudChannelState>,
+) -> Result<String, String> {
+    stream_ai_answer(
+        question,
+        output_language,
+        helper_language,
+        modifier,
+        llm_orchestrator,
+        hud_state,
+    )
+    .await
+}
+
 /// Configures dynamic provider API keys (Deepgram, Groq, OpenAI, Anthropic)
 #[tauri::command]
 async fn configure_copilot_keys(
@@ -553,9 +642,18 @@ pub fn spawn_copilot_pipeline(
     llm_orchestrator: Arc<LlmOrchestrator>,
     mut transcript_rx: tokio::sync::mpsc::Receiver<crate::stt::deepgram::TranscriptToken>,
 ) {
+    #[derive(Default)]
+    struct SpeechTracker {
+        last_text: String,
+        last_token_instant: Option<std::time::Instant>,
+        triggered_text: String,
+    }
+    let tracker = Arc::new(tokio::sync::Mutex::new(SpeechTracker::default()));
+
     // 1. Task: Ingest normalized STT tokens, emit SttTranscript to HUD, and evaluate EoT
     let hud_for_stt = hud_state.clone();
     let llm_for_stt = llm_orchestrator.clone();
+    let tracker_for_stt = tracker.clone();
     tokio::spawn(async move {
         while let Some(token) = transcript_rx.recv().await {
             let is_candidate = token.speaker == "candidate" || token.speaker == "Ви";
@@ -573,10 +671,9 @@ pub fn spawn_copilot_pipeline(
                 timestamp_ms: token.timestamp_ms,
             });
 
-            // 🛡️ SPEAKER GUARDRAIL: When listen_all is false (strict mode), candidate speech tagged
-            // "Ви" / "candidate" strictly bypasses LLM prompt triggers and question ingestion.
-            // When listen_all is true (default), candidate and interlocutor speech can both trigger AI answers.
-            if is_candidate && !is_listen_all() {
+            // 🛡️ SPEAKER GUARDRAIL: Candidate speech tagged "Ви" / "candidate" is broadcast
+            // to HUD for full dialogue transcription, but strictly bypasses LLM generation triggers!
+            if is_candidate {
                 continue;
             }
 
@@ -589,8 +686,44 @@ pub fn spawn_copilot_pipeline(
                 )
                 .await;
 
-            // Immediate EoT check if speech_final is true or text ends in ?
-            if token.speech_final || token.text.ends_with('?') {
+            let clean = token.text.trim().to_string();
+            let word_count = clean.split_whitespace().count();
+            let mut should_trigger = false;
+            let mut text_to_trigger = String::new();
+
+            {
+                let mut tr = tracker_for_stt.lock().await;
+                if !clean.is_empty() {
+                    tr.last_text = clean.clone();
+                    tr.last_token_instant = Some(std::time::Instant::now());
+                }
+
+                // Trigger LLM whenever Deepgram returns a non-empty final phrase of >= 2 words
+                if (token.is_final || token.speech_final || clean.ends_with('?')) && word_count >= 2 {
+                    if clean != tr.triggered_text {
+                        tr.triggered_text = clean.clone();
+                        should_trigger = true;
+                        text_to_trigger = clean;
+                    }
+                }
+            }
+
+            if should_trigger {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let trigger = crate::llm::eot::EotTrigger {
+                    question_id: format!("q-stt-{}", now_ms),
+                    question_text: text_to_trigger,
+                    context_90s: String::new(),
+                    timestamp_ms: now_ms,
+                };
+                llm_for_stt
+                    .trigger_speculative_stream(trigger, hud_for_stt.clone())
+                    .await;
+            } else if token.speech_final || token.text.ends_with('?') {
                 if let Some(trigger) = llm_for_stt.evaluate_eot(false, token.timestamp_ms).await {
                     llm_for_stt
                         .trigger_speculative_stream(trigger, hud_for_stt.clone())
@@ -600,14 +733,58 @@ pub fn spawn_copilot_pipeline(
         }
     });
 
-    // 2. Task: Real-time Audio processing loop (30ms RMS level metering + VAD evaluation + PCM forwarding + EoT pause detection)
+    // 2. Periodic 400ms silence watcher: trigger if >= 400ms of silence after speech with >= 2 words
+    let tracker_for_silence = tracker.clone();
+    let hud_for_silence = hud_state.clone();
+    let llm_for_silence = llm_orchestrator.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(50));
+        loop {
+            interval.tick().await;
+            let mut should_trigger = false;
+            let mut text_to_trigger = String::new();
+            {
+                let mut tr = tracker_for_silence.lock().await;
+                if let Some(last_at) = tr.last_token_instant {
+                    if last_at.elapsed() >= std::time::Duration::from_millis(400) {
+                        let word_count = tr.last_text.split_whitespace().count();
+                        if word_count >= 2 && tr.last_text != tr.triggered_text {
+                            tr.triggered_text = tr.last_text.clone();
+                            should_trigger = true;
+                            text_to_trigger = tr.last_text.clone();
+                        }
+                    }
+                }
+            }
+            if should_trigger {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let trigger = crate::llm::eot::EotTrigger {
+                    question_id: format!("q-silence-{}", now_ms),
+                    question_text: text_to_trigger,
+                    context_90s: String::new(),
+                    timestamp_ms: now_ms,
+                };
+                llm_for_silence
+                    .trigger_speculative_stream(trigger, hud_for_silence.clone())
+                    .await;
+            }
+        }
+    });
+
+    // 3. Task: Real-time Audio processing loop (30ms RMS level metering + VAD evaluation + PCM forwarding + EoT pause detection)
     let hud_for_audio = hud_state.clone();
     let llm_for_audio = llm_orchestrator.clone();
     let stt_for_audio = stt_orchestrator.clone();
+    let tracker_for_audio = tracker.clone();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(30));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut last_audio_error_at: Option<std::time::Instant> = None;
+        let mut consecutive_speech_ticks: u32 = 0;
         const LEVEL_EMIT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(90);
         const LEVEL_DELTA_THRESHOLD: f32 = 0.5;
         let mut last_level_emit = std::time::Instant::now();
@@ -629,18 +806,26 @@ pub fn spawn_copilot_pipeline(
                             Some(t)
                         }
                         Err(e) => {
-                            // Report at most once every 5s so a persistent failure can't flood the HUD
                             let should_report = last_audio_error_at
                                 .map(|t| t.elapsed() >= std::time::Duration::from_secs(5))
                                 .unwrap_or(true);
                             if should_report {
                                 last_audio_error_at = Some(std::time::Instant::now());
                                 tracing::error!(target: "ghostboard::audio", "poll_and_process error: {}", e);
+                                hud_for_audio.broadcast(HudEvent::SttStatus {
+                                    speaker: "system".to_string(),
+                                    status: "reconnecting".to_string(),
+                                    attempt: 1,
+                                    retry_in_ms: 2000,
+                                    message: Some("Audio pipeline reconnecting...".to_string()),
+                                });
                                 hud_for_audio.broadcast(HudEvent::Error {
                                     code: "AUDIO_PIPELINE_ERROR".to_string(),
                                     message: format!("Audio processing error: {}", e),
                                 });
                             }
+                            // Auto-recover stream if disconnected
+                            let _ = engine.start();
                             None
                         }
                     }
@@ -688,9 +873,14 @@ pub fn spawn_copilot_pipeline(
                     });
                 }
 
-                // 3. If interlocutor resumed talking while LLM was streaming, cancel immediately
+                // 3. If speech resumed continuously (>=300ms) while LLM was streaming, cancel
                 if tick.speech_detected {
-                    llm_for_audio.abort_in_flight().await;
+                    consecutive_speech_ticks += 1;
+                    if consecutive_speech_ticks >= 10 {
+                        llm_for_audio.abort_in_flight().await;
+                    }
+                } else {
+                    consecutive_speech_ticks = 0;
                 }
 
                 // 4. Forward 16kHz linear PCM to Deepgram WebSocket
@@ -703,7 +893,26 @@ pub fn spawn_copilot_pipeline(
 
                 // 5. EoT trigger check on VAD pause boundary (>350ms silence after speech)
                 if tick.pause_boundary_triggered {
-                    if let Some(trigger) = llm_for_audio.evaluate_eot(true, now_ms).await {
+                    let mut trigger_from_tracker = None;
+                    {
+                        let mut tr = tracker_for_audio.lock().await;
+                        let word_count = tr.last_text.split_whitespace().count();
+                        if word_count >= 2 && tr.last_text != tr.triggered_text {
+                            tr.triggered_text = tr.last_text.clone();
+                            trigger_from_tracker = Some(tr.last_text.clone());
+                        }
+                    }
+                    if let Some(text) = trigger_from_tracker {
+                        let trigger = crate::llm::eot::EotTrigger {
+                            question_id: format!("q-pause-{}", now_ms),
+                            question_text: text,
+                            context_90s: String::new(),
+                            timestamp_ms: now_ms,
+                        };
+                        llm_for_audio
+                            .trigger_speculative_stream(trigger, hud_for_audio.clone())
+                            .await;
+                    } else if let Some(trigger) = llm_for_audio.evaluate_eot(true, now_ms).await {
                         llm_for_audio
                             .trigger_speculative_stream(trigger, hud_for_audio.clone())
                             .await;
@@ -714,11 +923,28 @@ pub fn spawn_copilot_pipeline(
     });
 }
 
-/// Walks up the directory tree looking for .env and .env.local and sets variables.
+/// Explicitly loads .env and .env.local from current and parent directories.
 fn load_env_files() {
-    let mut current_dir = std::env::current_dir().ok();
+    let explicit_paths = [
+        "../../.env.local",
+        "../../.env",
+        "../.env.local",
+        "../.env",
+        ".env.local",
+        ".env",
+    ];
     let mut loaded_any = false;
-    for _ in 0..5 {
+    for path_str in &explicit_paths {
+        let p = std::path::Path::new(path_str);
+        if p.is_file() {
+            load_single_env_file(p);
+            loaded_any = true;
+        }
+    }
+
+    // Walk up the directory tree looking for .env and .env.local
+    let mut current_dir = std::env::current_dir().ok();
+    for _ in 0..6 {
         if let Some(dir) = &current_dir {
             let env_local = dir.join(".env.local");
             if env_local.is_file() {
@@ -735,6 +961,29 @@ fn load_env_files() {
             break;
         }
     }
+
+    // Also walk up from current_exe directory
+    if let Ok(exe_path) = std::env::current_exe() {
+        let mut exe_dir = exe_path.parent().map(|p| p.to_path_buf());
+        for _ in 0..6 {
+            if let Some(dir) = &exe_dir {
+                let env_local = dir.join(".env.local");
+                if env_local.is_file() {
+                    load_single_env_file(&env_local);
+                    loaded_any = true;
+                }
+                let env_file = dir.join(".env");
+                if env_file.is_file() {
+                    load_single_env_file(&env_file);
+                    loaded_any = true;
+                }
+                exe_dir = dir.parent().map(|p| p.to_path_buf());
+            } else {
+                break;
+            }
+        }
+    }
+
     if loaded_any {
         tracing::info!(target: "ghostboard::env", "Environment files (.env / .env.local) discovered and loaded");
     }
@@ -750,12 +999,26 @@ fn load_single_env_file(path: &std::path::Path) {
             if let Some((k, v)) = trimmed.split_once('=') {
                 let key = k.trim();
                 let val = v.trim().trim_matches('"').trim_matches('\'');
-                if !key.is_empty() && std::env::var(key).is_err() {
-                    std::env::set_var(key, val);
+                if !key.is_empty() && !val.is_empty() {
+                    let should_override = match std::env::var(key) {
+                        Ok(existing) => existing.trim().is_empty(),
+                        Err(_) => true,
+                    };
+                    if should_override {
+                        std::env::set_var(key, val);
+                    }
                 }
             }
         }
     }
+}
+
+fn log_key_status(name: &str) {
+    let status = match std::env::var(name) {
+        Ok(v) if !v.trim().is_empty() => "loaded",
+        _ => "missing",
+    };
+    tracing::info!(target: "ghostboard::env", "{}: {}", name, status);
 }
 
 /// Fallback key retrieval from local Ghostboard web backend
@@ -783,14 +1046,19 @@ async fn fetch_deepgram_key_from_backend() -> Option<String> {
 // ============================================================================
 
 fn main() {
-    load_env_files();
-
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .try_init();
+
+    load_env_files();
+
+    log_key_status("DEEPGRAM_API_KEY");
+    log_key_status("GEMINI_API_KEY");
+    log_key_status("GROQ_API_KEY");
+    log_key_status("OPENAI_API_KEY");
 
     #[cfg(target_os = "linux")]
     {
@@ -828,20 +1096,25 @@ fn main() {
                     let _ = window.set_focus();
                 }
                 for arg in &args {
-                    if arg.starts_with("copilot://") {
-                        tracing::info!(target: "ghostboard::main", deep_link = %arg, "Handling copilot:// deep-link");
+                    if arg.starts_with("copilot://") || arg.starts_with("ghostboard://") {
+                        tracing::info!(target: "ghostboard::main", deep_link = %arg, "Handling deep-link");
                         let _ = app.emit("deep-link://new-url", vec![arg.clone()]);
                         let _ = app.emit("copilot://deep-link", arg.clone());
+                        let _ = app.emit("ghostboard://deep-link", arg.clone());
 
                         if let Ok(url) = url::Url::parse(arg) {
                             let mut code = None;
                             let mut state = None;
+                            let mut token = None;
                             for (k, v) in url.query_pairs() {
                                 if k == "code" {
                                     code = Some(v.to_string());
                                 }
                                 if k == "state" {
                                     state = Some(v.to_string());
+                                }
+                                if k == "token" {
+                                    token = Some(v.to_string());
                                 }
                             }
                             if let (Some(c), Some(s)) = (code, state) {
@@ -865,6 +1138,9 @@ fn main() {
                                         }
                                     }
                                 });
+                            } else if let Some(tok) = token {
+                                tracing::info!(target: "ghostboard::main", "Received companion pairing token via deep-link");
+                                let _ = app.emit("ghostboard://paired-token", tok);
                             }
                         }
                     }
@@ -893,22 +1169,28 @@ fn main() {
                         let f12 = Shortcut::new(None, Code::F12);
                         let panic_1 = "Ctrl+Shift+H".parse::<Shortcut>();
                         let panic_2 = "Super+Shift+H".parse::<Shortcut>();
+                        let panic_3 = "CommandOrControl+Shift+H".parse::<Shortcut>();
                         let click_1 = "Ctrl+Shift+X".parse::<Shortcut>();
                         let click_2 = "Super+Shift+X".parse::<Shortcut>();
+                        let click_3 = "CommandOrControl+Shift+X".parse::<Shortcut>();
                         let screen_1 = "Ctrl+Shift+S".parse::<Shortcut>();
                         let screen_2 = "Super+Shift+S".parse::<Shortcut>();
                         let screen_3 = "Alt+Shift+S".parse::<Shortcut>();
+                        let screen_4 = "CommandOrControl+Shift+S".parse::<Shortcut>();
 
                         let is_panic = shortcut == &f12
                             || panic_1.as_ref().map(|s| s == shortcut).unwrap_or(false)
-                            || panic_2.as_ref().map(|s| s == shortcut).unwrap_or(false);
+                            || panic_2.as_ref().map(|s| s == shortcut).unwrap_or(false)
+                            || panic_3.as_ref().map(|s| s == shortcut).unwrap_or(false);
 
                         let is_click = click_1.as_ref().map(|s| s == shortcut).unwrap_or(false)
-                            || click_2.as_ref().map(|s| s == shortcut).unwrap_or(false);
+                            || click_2.as_ref().map(|s| s == shortcut).unwrap_or(false)
+                            || click_3.as_ref().map(|s| s == shortcut).unwrap_or(false);
 
                         let is_screenshot = screen_1.as_ref().map(|s| s == shortcut).unwrap_or(false)
                             || screen_2.as_ref().map(|s| s == shortcut).unwrap_or(false)
-                            || screen_3.as_ref().map(|s| s == shortcut).unwrap_or(false);
+                            || screen_3.as_ref().map(|s| s == shortcut).unwrap_or(false)
+                            || screen_4.as_ref().map(|s| s == shortcut).unwrap_or(false);
 
                         // Panic / click-through / screenshot act on the detached HUD window only;
                         // the Office (main) window is a regular app window.
@@ -959,31 +1241,124 @@ fn main() {
                     });
                 }
 
+                // Register configured deep link schemes (ghostboard://, copilot://) to this desktop binary
+                #[cfg(any(target_os = "linux", windows))]
+                {
+                    use tauri_plugin_deep_link::DeepLinkExt;
+                    let _ = app.deep_link().register_all();
+                }
+
                 // Register global shortcuts: F12, Cmd/Ctrl+Shift+H, Cmd/Ctrl+Shift+X, Cmd/Ctrl/Alt+Shift+S
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut};
                 let f12 = Shortcut::new(None, Code::F12);
                 let _ = app.global_shortcut().register(f12);
-                if let Ok(s) = "Ctrl+Shift+H".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
+                for shortcut_str in [
+                    "Ctrl+Shift+H",
+                    "Super+Shift+H",
+                    "CommandOrControl+Shift+H",
+                    "Ctrl+Shift+X",
+                    "Super+Shift+X",
+                    "CommandOrControl+Shift+X",
+                    "Ctrl+Shift+S",
+                    "Super+Shift+S",
+                    "Alt+Shift+S",
+                    "CommandOrControl+Shift+S",
+                ] {
+                    if let Ok(s) = shortcut_str.parse::<Shortcut>() {
+                        let _ = app.global_shortcut().register(s);
+                    }
                 }
-                if let Ok(s) = "Super+Shift+H".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
-                if let Ok(s) = "Ctrl+Shift+X".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
-                if let Ok(s) = "Super+Shift+X".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
-                if let Ok(s) = "Ctrl+Shift+S".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
-                if let Ok(s) = "Super+Shift+S".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
-                if let Ok(s) = "Alt+Shift+S".parse::<Shortcut>() {
-                    let _ = app.global_shortcut().register(s);
-                }
+
+                // ====================================================================
+                // Cross-Platform Native System Tray
+                // ====================================================================
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+                let open_office_i = MenuItem::with_id(app, "open_office", "Відкрити Ghostboard Office", true, None::<&str>)?;
+                let launch_hud_i = MenuItem::with_id(app, "launch_hud", "Запустити Копайлот (HUD)", true, None::<&str>)?;
+                let panic_hide_i = MenuItem::with_id(app, "panic_hide", "Приховати / Показати все (Panic Hide)", true, None::<&str>)?;
+                let restart_audio_i = MenuItem::with_id(app, "restart_audio", "Перезапустити Аудіо / STT", true, None::<&str>)?;
+                let sep = PredefinedMenuItem::separator(app)?;
+                let quit_i = MenuItem::with_id(app, "quit", "Вийти", true, None::<&str>)?;
+
+                let tray_menu = Menu::with_items(
+                    app,
+                    &[
+                        &open_office_i,
+                        &launch_hud_i,
+                        &panic_hide_i,
+                        &restart_audio_i,
+                        &sep,
+                        &quit_i,
+                    ],
+                )?;
+
+                let tray_icon = if let Some(icon) = app.default_window_icon().cloned() {
+                    icon
+                } else {
+                    let img = image::load_from_memory(include_bytes!("../icons/icon.png"))
+                        .map_err(|e| format!("Failed to parse tray icon: {}", e))?
+                        .to_rgba8();
+                    let (width, height) = img.dimensions();
+                    tauri::image::Image::new_owned(img.into_raw(), width, height)
+                };
+
+                let _tray = TrayIconBuilder::with_id("ghostboard-tray")
+                    .icon(tray_icon)
+                    .tooltip("Ghostboard Office & Stealth Copilot")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(cfg!(target_os = "macos"))
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "open_office" => {
+                            crate::window::hud::restore_office(app);
+                        }
+                        "launch_hud" => {
+                            let handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = crate::window::hud::launch_copilot_window(&handle, "chat");
+                            });
+                        }
+                        "panic_hide" => {
+                            if let Some(w) = app.get_webview_window(crate::window::hud::HUD_LABEL) {
+                                let _ = crate::window::toggle_panic(&w);
+                            }
+                        }
+                        "restart_audio" => {
+                            if let Some(audio) = app.try_state::<crate::audio::GlobalAudioState>() {
+                                if let Ok(mut engine) = audio.engine.lock() {
+                                    engine.stop();
+                                    let _ = engine.start();
+                                }
+                            }
+                            if let Some(hud_st) = app.try_state::<HudChannelState>() {
+                                hud_st.broadcast(HudEvent::SttStatus {
+                                    speaker: "system".to_string(),
+                                    status: "reconnecting".to_string(),
+                                    attempt: 1,
+                                    retry_in_ms: 1000,
+                                    message: Some("Audio & STT restarted from system tray".to_string()),
+                                });
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        #[cfg(not(target_os = "macos"))]
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            crate::window::hud::restore_office(app);
+                        }
+                    })
+                    .build(app)?;
 
                 // Sub-50ms cold load from native OS Keyring on app start
                 let auth_for_cold = auth_manager.clone();
@@ -1024,11 +1399,11 @@ fn main() {
                             llm.set_config(crate::llm::client::LlmConfig {
                                 provider: crate::llm::client::LlmProviderType::Gemini,
                                 api_key: key,
-                                model: "gemini-2.5-flash".to_string(),
+                                model: "gemini-3.8-flash".to_string(),
                                 endpoint_url: None,
                             })
                             .await;
-                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 2.5 Flash LLM provider from GEMINI_API_KEY");
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 3.8 Flash LLM provider from GEMINI_API_KEY");
                         });
                     }
                 } else if let Ok(key) = std::env::var("GROQ_API_KEY") {
@@ -1134,6 +1509,8 @@ fn main() {
             crate::ipc::start_copilot_stream,
             crate::ipc::stop_hud_stream,
             trigger_manual_answer,
+            stream_ai_answer,
+            ask_llm_stream,
             configure_copilot_keys,
             clear_session,
             export_markdown,
@@ -1282,5 +1659,43 @@ mod tests {
         // }
         // The first evaluation consumed/triggered the question, so subsequent evaluate_eot for same question
         // prevents duplicate, or if we evaluate with new timestamp, let's verify context was ingested.
+    }
+
+    #[test]
+    fn test_global_shortcuts_parse_all_variations() {
+        use tauri_plugin_global_shortcut::{Code, Shortcut};
+        let f12 = Shortcut::new(None, Code::F12);
+        assert_eq!(f12.key, Code::F12);
+
+        let valid_shortcuts = [
+            "Ctrl+Shift+H",
+            "Super+Shift+H",
+            "CommandOrControl+Shift+H",
+            "Ctrl+Shift+X",
+            "Super+Shift+X",
+            "CommandOrControl+Shift+X",
+            "Ctrl+Shift+S",
+            "Super+Shift+S",
+            "Alt+Shift+S",
+            "CommandOrControl+Shift+S",
+        ];
+
+        for s in valid_shortcuts {
+            let res = s.parse::<Shortcut>();
+            assert!(res.is_ok(), "Expected valid shortcut parse for '{}': {:?}", s, res.err());
+        }
+    }
+
+    #[test]
+    fn test_eyeline_alignment_top_12px_padding() {
+        use crate::window::alignment::{calculate_webcam_alignment, TOP_PADDING_LOGICAL};
+        assert_eq!(TOP_PADDING_LOGICAL, 12.0);
+
+        let geom_1x = calculate_webcam_alignment(0, 0, 1920, 1080, 1.0, 720.0, TOP_PADDING_LOGICAL, Some(150));
+        assert_eq!(geom_1x.y, 12, "HUD top position must be exactly 12px under the webcam");
+        assert_eq!(geom_1x.x, (1920 - 720) / 2, "HUD must be horizontally centered");
+
+        let geom_2x = calculate_webcam_alignment(0, 0, 3840, 2160, 2.0, 720.0, TOP_PADDING_LOGICAL, Some(300));
+        assert_eq!(geom_2x.y, 24, "HUD top position must be 24 physical pixels on 2x HiDPI scale (12 logical px)");
     }
 }

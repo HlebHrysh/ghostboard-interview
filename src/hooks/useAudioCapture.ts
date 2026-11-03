@@ -64,13 +64,20 @@ export function useAudioCapture({
         setAudioSourceState(savedSrc);
         audioSourceRef.current = savedSrc;
       }
-      const cachedKey = localStorage.getItem('ghostboard_deepgram_api_key');
-      if (cachedKey) {
-        deepgramApiKeyRef.current = cachedKey.trim();
+      const sessionKey = sessionStorage.getItem('ghostboard_deepgram_token');
+      if (sessionKey) {
+        deepgramApiKeyRef.current = sessionKey.trim();
+      } else {
+        const cachedKey = localStorage.getItem('ghostboard_deepgram_api_key');
+        if (cachedKey) {
+          deepgramApiKeyRef.current = cachedKey.trim();
+        }
       }
     } catch {}
 
     const prefetchKey = async () => {
+      // If already present in memory or sessionStorage, avoid duplicate network calls
+      if (deepgramApiKeyRef.current) return;
       try {
         const res = await fetch('/api/ai/deepgram', {
           headers: { 'x-ghostboard-client': 'studio-session' },
@@ -80,6 +87,7 @@ export function useAudioCapture({
           const clean = data.apiKey.trim().replace(/^["']|["']$/g, '');
           deepgramApiKeyRef.current = clean;
           try {
+            sessionStorage.setItem('ghostboard_deepgram_token', clean);
             localStorage.setItem('ghostboard_deepgram_api_key', clean);
           } catch {}
         }
@@ -190,8 +198,13 @@ export function useAudioCapture({
     // Check cached Deepgram key
     if (!deepgramApiKeyRef.current) {
       try {
-        const fallback = localStorage.getItem('ghostboard_deepgram_api_key');
-        if (fallback) deepgramApiKeyRef.current = fallback.trim();
+        const sessionKey = sessionStorage.getItem('ghostboard_deepgram_token');
+        if (sessionKey) {
+          deepgramApiKeyRef.current = sessionKey.trim();
+        } else {
+          const fallback = localStorage.getItem('ghostboard_deepgram_api_key');
+          if (fallback) deepgramApiKeyRef.current = fallback.trim();
+        }
       } catch {}
     }
 

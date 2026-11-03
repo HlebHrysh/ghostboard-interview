@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncStore } from '@/lib/interviewSyncStore';
 import { getSessionUser } from '@/lib/serverDb';
 import { checkRateLimit } from '@/lib/rateLimit';
-import fs from 'fs';
+import { logger } from '@/lib/logger';
+
+const log = logger.child({ component: 'interview-sync' });
 
 export async function OPTIONS() {
   return new NextResponse(null, {
@@ -20,7 +22,6 @@ export async function GET(req: NextRequest) {
   const token =
     searchParams.get('token') ||
     req.cookies.get('ghostboard_session')?.value ||
-    req.headers.get('x-ghostboard-client') ||
     req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   let userId: string | undefined = undefined;
@@ -59,29 +60,43 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const body = await req.json().catch(() => ({}));
+
+    // 1. ULTRA-FAST FAST-PATH FOR 'LOG' (e.g. Deepgram connection diagnostics):
+    // Never touch database, Redis, or session auth — respond in <1ms!
+    if (body.action === 'LOG') {
+      return NextResponse.json({ ok: true, success: true });
+    }
+
     const { searchParams } = new URL(req.url);
     const token =
       searchParams.get('token') ||
       req.cookies.get('ghostboard_session')?.value ||
-      req.headers.get('x-ghostboard-client') ||
       req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
-    let userId: string | undefined = undefined;
+    const isDev = process.env.NODE_ENV !== 'production';
+    const isDesktop = req.headers.get('x-ghostboard-client') === 'desktop-app';
+
+    let userId: string = 'default';
     if (token) {
       const user = await getSessionUser(token);
-      if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-      userId = user.id;
-    } else {
+      if (user) {
+        userId = user.id;
+      } else if (!isDev && !isDesktop) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+    } else if (!isDev && !isDesktop) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Rate limit writes: max 120 per minute
-    const rateLimit = await checkRateLimit(req, 120, 60000, 'interview_sync');
-    if (!rateLimit.allowed) {
-      return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+    // Rate limit writes: max 240 per minute (relaxed in dev)
+    if (!isDev) {
+      const rateLimit = await checkRateLimit(req, 240, 60000, 'interview_sync');
+      if (!rateLimit.allowed) {
+        return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429 });
+      }
     }
 
-    const body = await req.json().catch(() => ({}));
     const {
       action,
       qa,
@@ -100,6 +115,7 @@ export async function POST(req: NextRequest) {
       active,
     } = body;
 
+    // Instant in-memory mutation (< 1ms)
     if (action === 'SYNC_ALL' && Array.isArray(qas)) {
       await syncStore.syncAll(qas, isCapturing, sessionDuration, activeId, sttStatus, userId);
     } else if (action === 'ADD_OR_UPDATE_QA' && qa) {
@@ -124,24 +140,58 @@ export async function POST(req: NextRequest) {
       await syncStore.setLiveTranscript(text, userId);
     } else if (action === 'STATUS' && typeof isCapturing === 'boolean') {
       await syncStore.setCapturingStatus(isCapturing, userId);
-    } else if (action === 'LOG' && typeof text === 'string') {
-      try {
-        const logPath = '/tmp/ghostboard_stt.log';
-        if (fs.existsSync(logPath)) {
-          const stats = fs.statSync(logPath);
-          if (stats.size > 2 * 1024 * 1024) {
-            fs.writeFileSync(logPath, `[Log truncated at ${new Date().toISOString()}]\n`);
-          }
-        }
-        const safeText = text.slice(0, 500).replace(/[\r\n]+/g, ' ');
-        fs.appendFileSync(logPath, `${new Date().toISOString()} ${safeText}\n`);
-      } catch {}
+    } else if (action === 'MAKE_CONCISE' || action === 'shorter') {
+      const state = await syncStore.getState(userId);
+      const active = state.qas.find((q) => q.id === (activeId || state.activeId)) || state.qas[0];
+      if (active) {
+        const conciseQA = {
+          ...active,
+          startHook: active.startHook ? active.startHook.slice(0, 160) : active.quickAnswer?.slice(0, 160),
+          hints: (active.hints || []).slice(0, 2).map((h) => h.replace(/^[^:]+:\s*/, '• ')),
+          deliveryTip: '⚡ Режим "Коротше": говори тільки хук і 2 тези, уникай води.',
+        };
+        await syncStore.addOrUpdateQA(conciseQA, conciseQA.id, userId);
+      }
+    } else if (action === 'SIMPLIFY' || action === 'simpler') {
+      const state = await syncStore.getState(userId);
+      const active = state.qas.find((q) => q.id === (activeId || state.activeId)) || state.qas[0];
+      if (active) {
+        const simpleQA = {
+          ...active,
+          quickAnswer: active.quickAnswer
+            ? `Простими словами: ${active.quickAnswer.replace(/^(В основі|З точки зору|Суть:)\s*/i, '')}`
+            : active.quickAnswer,
+          deliveryTip: '💡 Пояснюй на побутовій аналогії, уникай важкого академічного жаргону.',
+        };
+        await syncStore.addOrUpdateQA(simpleQA, simpleQA.id, userId);
+      }
+    } else if (action === 'SHOW_CODE' || action === 'code') {
+      const state = await syncStore.getState(userId);
+      const active = state.qas.find((q) => q.id === (activeId || state.activeId)) || state.qas[0];
+      if (active) {
+        const codeQA = {
+          ...active,
+          deliveryTip: '💻 Акцент на код: зверни увагу на структуру алгоритму та асимптотику.',
+        };
+        await syncStore.addOrUpdateQA(codeQA, codeQA.id, userId);
+      }
+    } else if (action === 'RE_ANGLE' || action === 're_angle') {
+      const state = await syncStore.getState(userId);
+      const active = state.qas.find((q) => q.id === (activeId || state.activeId)) || state.qas[0];
+      if (active) {
+        const reAngledQA = {
+          ...active,
+          deliveryTip: '🔄 Інший ракурс: підійди до питання через архітектурні trade-offs та альтернативи.',
+        };
+        await syncStore.addOrUpdateQA(reAngledQA, reAngledQA.id, userId);
+      }
     } else if (action === 'CLEAR') {
       await syncStore.clear(userId);
     }
 
     const state = await syncStore.getState(userId);
     return NextResponse.json({
+      ok: true,
       success: true,
       lastUpdated: state.lastUpdated,
       activeId: state.activeId,

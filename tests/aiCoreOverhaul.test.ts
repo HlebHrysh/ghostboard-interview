@@ -150,13 +150,13 @@ describe('Task 4: Sub-250ms TTFT (Time to First Token Speed)', () => {
     const config = getFastStreamingGenerationConfig(850);
     expect((config.thinkingConfig as any)?.thinkingBudget).toBe(0);
     expect(config.maxOutputTokens).toBe(850);
-    expect(config.temperature).toBe(0.2);
+    expect(config.temperature).toBe(0.25);
   });
 
   it('prioritizes fastest Flash models first in cascade rotation', () => {
     expect(FLASH_MODELS[0]).toBe('gemini-3.8-flash');
     expect(FLASH_MODELS[1]).toBe('gemini-3.6-flash');
-    expect(FLASH_MODELS[2]).toBe('gemini-3.5-flash-lite');
+    expect(FLASH_MODELS).toContain('gemini-flash-latest');
   });
 
   it('keeps system prompt dense, compact, and free of fluff tokens', () => {

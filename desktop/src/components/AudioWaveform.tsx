@@ -126,7 +126,7 @@ export const AudioWaveform: React.FC<AudioWaveformProps> = ({
 
   return (
     <div
-      className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white/[0.03] border border-white/[0.08] backdrop-blur-xl shrink-0 select-none ${className}`}
+      className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl bg-[#0c0e12]/95 border border-white/[0.08] shrink-0 select-none ${className}`}
       style={{
         width: compact ? `${width + 48}px` : `${width + 92}px`,
         height: `${height + 8}px`,

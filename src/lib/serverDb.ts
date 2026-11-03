@@ -5,9 +5,121 @@ import { logger } from './logger';
 
 const log = logger.child({ component: 'serverDb' });
 
+export const DB_QUERY_TIMEOUT_MS = 250;
+export const DB_CIRCUIT_BREAKER_DEV_TTL_MS = 1800_000; // 30 minutes in dev
+export const DB_CIRCUIT_BREAKER_PROD_TTL_MS = 60_000; // 60 seconds in prod
+export const DB_CIRCUIT_BREAKER_TTL_MS =
+  process.env.NODE_ENV === 'production' ? DB_CIRCUIT_BREAKER_PROD_TTL_MS : DB_CIRCUIT_BREAKER_DEV_TTL_MS;
+
+let dbOfflineUntil = 0;
+let dbHealthPingTimer: NodeJS.Timeout | null = null;
+
+export function isDbCircuitBroken(): boolean {
+  return Date.now() < dbOfflineUntil;
+}
+
+export function getDbCircuitBreakerTtl(): number {
+  return process.env.NODE_ENV === 'production'
+    ? DB_CIRCUIT_BREAKER_PROD_TTL_MS
+    : DB_CIRCUIT_BREAKER_DEV_TTL_MS;
+}
+
+export function tripDbCircuitBreaker(customTtlMs?: number): void {
+  const ttl = customTtlMs ?? getDbCircuitBreakerTtl();
+  dbOfflineUntil = Date.now() + ttl;
+
+  // Schedule a quiet background health check outside user requests
+  if (!dbHealthPingTimer && process.env.DATABASE_URL) {
+    const pingDelay = Math.min(ttl, 120_000);
+    dbHealthPingTimer = setTimeout(async () => {
+      dbHealthPingTimer = null;
+      try {
+        await rawPrisma.$queryRaw`SELECT 1`;
+        log.info('Database recovered. Resetting circuit breaker.');
+        resetDbCircuitBreaker();
+      } catch {
+        if (isDbCircuitBroken()) {
+          tripDbCircuitBreaker();
+        }
+      }
+    }, pingDelay);
+    if (dbHealthPingTimer && typeof dbHealthPingTimer.unref === 'function') {
+      dbHealthPingTimer.unref();
+    }
+  }
+}
+
+export function resetDbCircuitBreaker(): void {
+  dbOfflineUntil = 0;
+  if (dbHealthPingTimer) {
+    clearTimeout(dbHealthPingTimer);
+    dbHealthPingTimer = null;
+  }
+}
+
+function createPrismaCircuitBreakerProxy(rawClient: PrismaClient): PrismaClient {
+  return new Proxy(rawClient, {
+    get(target, prop, receiver) {
+      if (typeof prop === 'symbol' || prop.startsWith('_') || prop.startsWith('$')) {
+        return Reflect.get(target, prop, receiver);
+      }
+      const modelObj = Reflect.get(target, prop, receiver);
+      if (typeof modelObj !== 'object' || modelObj === null) {
+        return modelObj;
+      }
+      return new Proxy(modelObj, {
+        get(mTarget, action, mReceiver) {
+          const fn = Reflect.get(mTarget, action, mReceiver);
+          if (typeof fn !== 'function') {
+            return fn;
+          }
+          return (...args: unknown[]) => {
+            if (isDbCircuitBroken()) {
+              const err = new Error('Database circuit breaker is active (PostgreSQL unreachable)');
+              (err as { code?: string }).code = 'CIRCUIT_BREAKER_ACTIVE';
+              return Promise.reject(err);
+            }
+            let timer: NodeJS.Timeout | null = null;
+            return Promise.race([
+              fn.apply(mTarget, args),
+              new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                  tripDbCircuitBreaker();
+                  log.warn(
+                    `Prisma query timed out after ${DB_QUERY_TIMEOUT_MS}ms. Tripping circuit breaker for ${getDbCircuitBreakerTtl()}ms.`,
+                    { model: String(prop), action: String(action) }
+                  );
+                  const timeoutErr = new Error(
+                    `DB_TIMEOUT: Prisma query exceeded ${DB_QUERY_TIMEOUT_MS}ms limit`
+                  );
+                  (timeoutErr as { code?: string }).code = 'DB_TIMEOUT';
+                  reject(timeoutErr);
+                }, DB_QUERY_TIMEOUT_MS);
+              }),
+            ])
+              .catch((err: unknown) => {
+                tripDbCircuitBreaker();
+                log.warn(
+                  `Prisma query failed. Tripping circuit breaker for ${getDbCircuitBreakerTtl()}ms.`,
+                  { model: String(prop), action: String(action) },
+                  err
+                );
+                throw err;
+              })
+              .finally(() => {
+                if (timer) clearTimeout(timer);
+              });
+          };
+        },
+      });
+    },
+  });
+}
+
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
-export const prisma = globalForPrisma.prisma || new PrismaClient();
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+const rawPrisma = globalForPrisma.prisma || new PrismaClient();
+export const prisma = createPrismaCircuitBreakerProxy(rawPrisma);
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = rawPrisma;
 
 export interface UserRecord {
   id: string;
@@ -125,7 +237,7 @@ export const MIN_PASSWORD_LENGTH = 8;
 
 export async function setUserPassword(userId: string, password: string): Promise<void> {
   const passwordHash = hashPassword(password);
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
       return;
@@ -140,7 +252,7 @@ export async function setUserPassword(userId: string, password: string): Promise
 
 export async function getUserByEmail(email: string): Promise<DbUser | null> {
   const normalized = email.trim().toLowerCase();
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.user.findUnique({ where: { email: normalized } });
     } catch (dbErr) {
@@ -152,7 +264,7 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
 }
 
 export async function getUserById(id: string): Promise<DbUser | null> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.user.findUnique({ where: { id } });
     } catch (dbErr) {
@@ -171,7 +283,7 @@ export async function createUser(
 ): Promise<DbUser> {
   const normalized = email.trim().toLowerCase();
 
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const existing = await prisma.user.findUnique({ where: { email: normalized } });
       if (existing) {
@@ -220,7 +332,7 @@ export async function findOrCreateUser(
 }
 
 export async function updateUserPlan(userId: string, plan: string): Promise<void> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({
         where: { id: userId },
@@ -250,7 +362,7 @@ export async function updateUser(
     trialQuestionsUsed?: number;
   }
 ): Promise<DbUser | null> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.user.update({
         where: { id: userId },
@@ -290,7 +402,7 @@ export async function recordUserActivity(userId: string): Promise<void> {
   userActivityThrottle.set(userId, now);
   const nowDate = new Date();
 
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({
         where: { id: userId },
@@ -320,7 +432,7 @@ export async function banUser(userId: string, isBanned: boolean = true): Promise
 
 export async function resetUserSessions(userId: string): Promise<number> {
   let count = 0;
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const res = await prisma.session.deleteMany({ where: { userId } });
       count = res.count;
@@ -339,7 +451,7 @@ export async function resetUserSessions(userId: string): Promise<number> {
 
 
 export async function deleteUser(userId: string): Promise<boolean> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.history.deleteMany({ where: { userId } }).catch(() => {});
       await prisma.session.deleteMany({ where: { userId } }).catch(() => {});
@@ -371,7 +483,7 @@ export async function createSession(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + ttlMs);
 
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.session.create({
         data: {
@@ -416,7 +528,7 @@ export async function listUserSessions(userId: string, currentToken?: string): P
   const now = new Date();
   let sessions: DbSession[] = [];
   let fromDb = false;
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       sessions = await prisma.session.findMany({
         where: { userId, expiresAt: { gt: now } },
@@ -453,7 +565,7 @@ export async function listUserSessions(userId: string, currentToken?: string): P
 export async function revokeUserSession(userId: string, publicId: string): Promise<boolean> {
   const memTokens = Array.from(memSessions.values()).filter((s) => s.userId === userId).map((s) => s.token);
   let dbTokens: string[] = [];
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const rows = await prisma.session.findMany({ where: { userId }, select: { token: true } });
       dbTokens = rows.map((r) => r.token);
@@ -476,7 +588,7 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
     .map((s) => s.token);
 
   let dbTokens: string[] = [];
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const rows = await prisma.session.findMany({
         where: { userId, token: { not: currentToken } },
@@ -496,18 +608,39 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
   return allTokensToRevoke.length;
 }
 
+interface CachedSessionUser {
+  user: DbUser | null;
+  expiresAt: number;
+}
+const sessionUserCache = new Map<string, CachedSessionUser>();
+const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute fast in-memory cache
+
+export function invalidateSessionUserCache(token?: string): void {
+  if (token) {
+    sessionUserCache.delete(token);
+  } else {
+    sessionUserCache.clear();
+  }
+}
+
 export async function getSessionUser(token: string): Promise<DbUser | null> {
   if (!token) return null;
   const now = new Date();
+  const cached = sessionUserCache.get(token);
+  if (cached && cached.expiresAt > now.getTime()) {
+    return cached.user;
+  }
 
-  if (process.env.DATABASE_URL) {
+  let user: DbUser | null = null;
+
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const session = await prisma.session.findUnique({
         where: { token },
         include: { user: true },
       });
       if (session && session.expiresAt > now) {
-        return session.user;
+        user = session.user;
       }
     } catch (dbErr) {
       failDbInProduction(dbErr);
@@ -515,18 +648,25 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
     }
   }
 
-  const memSession = memSessions.get(token);
-  if (!memSession || memSession.expiresAt <= now) {
-    return null;
+  if (!user) {
+    const memSession = memSessions.get(token);
+    if (memSession && memSession.expiresAt > now) {
+      user = memUsersById.get(memSession.userId) || null;
+    }
   }
 
-  return memUsersById.get(memSession.userId) || null;
+  if (user) {
+    sessionUserCache.set(token, { user, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
+  }
+
+  return user;
 }
 
 export const getUserBySessionToken = getSessionUser;
 
 export async function deleteSession(token: string): Promise<void> {
-  if (process.env.DATABASE_URL) {
+  invalidateSessionUserCache(token);
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     await prisma.session.delete({ where: { token } }).catch(() => {});
   }
   memSessions.delete(token);
@@ -542,7 +682,7 @@ export async function saveInterviewSession(
   const items = sessionData.items || [];
   const questionsCount = items.length;
 
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const newEntry = await prisma.history.create({
         data: {
@@ -581,7 +721,7 @@ export async function saveInterviewSession(
 }
 
 export async function makeSessionPublic(historyId: string, slug: string): Promise<boolean> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.history.update({
         where: { id: historyId },
@@ -605,7 +745,7 @@ export async function makeSessionPublic(historyId: string, slug: string): Promis
 }
 
 export async function getPublicScorecard(slug: string): Promise<DbSavedSession | null> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const history = await prisma.history.findUnique({
         where: { publicSlug: slug },
@@ -626,7 +766,7 @@ export async function getPublicScorecard(slug: string): Promise<DbSavedSession |
 }
 
 export async function getUserInterviewSessions(userId: string): Promise<DbSavedSession[]> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const items = await prisma.history.findMany({
         where: { userId },
@@ -648,7 +788,7 @@ export async function getUserInterviewSessions(userId: string): Promise<DbSavedS
 export const getUserSessions = getUserInterviewSessions;
 
 export async function deleteSavedSession(sessionId: string): Promise<boolean> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.history.delete({ where: { id: sessionId } });
       return true;
@@ -677,7 +817,7 @@ export async function deleteSavedSession(sessionId: string): Promise<boolean> {
 const memPayments: Map<string, DbPayment> = guardMemoryMap('memPayments', g.memPayments || (g.memPayments = new Map<string, DbPayment>()));
 
 export async function getAllUsers(): Promise<DbUser[]> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
     } catch (dbErr) {
@@ -688,7 +828,7 @@ export async function getAllUsers(): Promise<DbUser[]> {
 }
 
 export async function getAllSessions(): Promise<DbSavedSession[]> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const items = await prisma.history.findMany({ orderBy: { timestamp: 'desc' } });
       return items.map((item) => ({ ...item, timestamp: Number(item.timestamp) }));
@@ -701,7 +841,7 @@ export async function getAllSessions(): Promise<DbSavedSession[]> {
 
 export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): Promise<DbPayment> {
   const now = Date.now();
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const created = await prisma.payment.create({
         data: {
@@ -741,7 +881,7 @@ export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): 
 }
 
 export async function getAllPayments(): Promise<DbPayment[]> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const payments = await prisma.payment.findMany({
         orderBy: { createdAt: 'desc' },
@@ -769,7 +909,7 @@ export async function updateUserCandidateProfile(
   userId: string,
   candidateProfile: Prisma.InputJsonValue | Record<string, unknown>
 ): Promise<void> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({
         where: { id: userId },
@@ -791,7 +931,7 @@ export async function updateUserCandidateProfile(
 }
 
 export async function getUserCandidateProfile(userId: string): Promise<Prisma.JsonValue | null> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: userId },
@@ -811,7 +951,7 @@ export async function getUserCandidateProfile(userId: string): Promise<Prisma.Js
 }
 
 export async function incrementUserTrialQuestions(userId: string): Promise<number> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const user = await prisma.user.update({
         where: { id: userId },
@@ -831,7 +971,7 @@ export async function incrementUserTrialQuestions(userId: string): Promise<numbe
 }
 
 export async function updateUserResumeContext(userId: string, context: string): Promise<void> {
-  if (process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({
         where: { id: userId },

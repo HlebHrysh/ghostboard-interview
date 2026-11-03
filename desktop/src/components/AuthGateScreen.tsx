@@ -205,7 +205,7 @@ export function AuthGateScreen({ onSuccess, backendUrl }: AuthGateScreenProps) {
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={SPRING_PHYSICS}
-        className="relative w-full max-w-md p-6 sm:p-8 rounded-3xl bg-zinc-950/80 border border-white/[0.08] backdrop-blur-2xl shadow-2xl space-y-6"
+        className="relative w-full max-w-md p-6 sm:p-8 rounded-3xl bg-zinc-950/98 border border-white/[0.08] shadow-2xl space-y-6"
       >
         {/* Brand header & status badge */}
         <div className="flex items-center justify-between">

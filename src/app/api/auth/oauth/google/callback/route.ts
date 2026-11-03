@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppBaseUrl, validateOAuthState, clearOAuthCookie } from '@/lib/oauth';
 import { findOrCreateUser, createSession } from '@/lib/serverDb';
+import { bindDesktopHandshake } from '@/lib/desktopHandshakeStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,8 +95,26 @@ export async function GET(req: NextRequest) {
     const user = await findOrCreateUser(email, name, assignedRole);
 
     // 4. Create persistent session
-    const isDesktop = payload.client === 'desktop' && !!payload.redirectUri;
+    const isDesktop = payload.client === 'desktop';
     const session = await createSession(user.id, isDesktop ? 'desktop' : 'web');
+
+    // 4.1 Bind desktop handshake if initiated from desktop app
+    if (payload.handshake) {
+      try {
+        await bindDesktopHandshake(payload.handshake, {
+          token: session.token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name ?? null,
+            plan: user.plan,
+            role: user.role ?? null,
+          },
+        });
+      } catch (bindErr) {
+        console.warn('[Google OAuth Callback] Failed to bind handshake:', bindErr);
+      }
+    }
 
     // 5. Successful redirect (Desktop loopback or Web destination)
     if (isDesktop && payload.redirectUri) {

@@ -8,10 +8,11 @@
  */
 
 import { detectBackendUrl } from './apiClient';
-import { getAccessToken } from './tauriBridge';
+import { getAccessToken, streamAiAnswer, isTauriEnvironment, listenTauriEvent } from './tauriBridge';
 import { normalizeTechnicalSpeech } from './techSpeechNormalizer';
 import type { AnswerLength, AnswerSpeed, HintLanguage } from './desktopSettings';
 import type { CandidateProfile } from './profileStore';
+import type { HudEvent } from '../types/hud';
 
 export type DirectorModifier =
   | 'normal'
@@ -162,6 +163,82 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
   const controller = new AbortController();
   const startedAt = performance.now();
 
+  // 1. IN TAURI DESKTOP: Direct Rust SSE stream to Gemini/Groq/OpenAI (no Next.js server dependency!)
+  if (isTauriEnvironment()) {
+    let accumulated = '';
+    let ttftMs: number | null = null;
+    let completed = false;
+
+    // Listen to real-time streamed chunks from Rust
+    const unlisten = listenTauriEvent<HudEvent>('hud-event', (event) => {
+      if (completed || controller.signal.aborted) return;
+
+      if (event.type === 'llmChunk') {
+        const token = event.payload.token || (event.payload as { delta?: string }).delta || '';
+        if (token) {
+          if (ttftMs === null) {
+            ttftMs = Math.round(performance.now() - startedAt);
+            handlers.onFirstToken?.(ttftMs);
+          }
+          accumulated += token;
+          handlers.onToken(token, cleanStreamText(accumulated));
+        }
+      } else if (event.type === 'error') {
+        const err = event.payload.message || 'Помилка потоку ШІ';
+        completed = true;
+        handlers.onError(err);
+      }
+    });
+
+    const payload = buildAnswerPayload(req);
+    void streamAiAnswer(payload.question, {
+      outputLanguage: payload.outputLanguage,
+      helperLanguage: payload.helperLanguage,
+      modifier: payload.directorModifier,
+    })
+      .then((fullText) => {
+        if (completed || controller.signal.aborted) {
+          unlisten();
+          return;
+        }
+        completed = true;
+        unlisten();
+
+        const finalText = cleanStreamText(fullText || accumulated);
+        if (!finalText.trim()) {
+          handlers.onError('ШІ повернув порожню відповідь. Перевірте дійсність GEMINI_API_KEY у файлі .env');
+          return;
+        }
+
+        handlers.onDone({
+          text: finalText,
+          ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+          totalMs: Math.round(performance.now() - startedAt),
+          model: 'Gemini 3.8 Flash / Groq',
+        });
+      })
+      .catch((err: unknown) => {
+        if (completed || controller.signal.aborted) {
+          unlisten();
+          return;
+        }
+        completed = true;
+        unlisten();
+
+        const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+        handlers.onError(msg || 'Невідома помилка нативного ШІ');
+      });
+
+    return {
+      abort: () => {
+        completed = true;
+        unlisten();
+        controller.abort();
+      },
+    };
+  }
+
+  // 2. NON-TAURI DEV / BROWSER FALLBACK (fetch to Next.js API route)
   void (async () => {
     let accumulated = '';
     let ttftMs: number | null = null;
@@ -306,7 +383,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
       const msg = err instanceof Error ? err.message : String(err);
       handlers.onError(
         /failed to fetch|networkerror|load failed/i.test(msg)
-          ? 'Немає зв’язку з сервером Ghostboard. Перевірте інтернет і спробуйте ще раз.'
+          ? 'Немає зв’язку з сервером Ghostboard. Перевірте інтернет і налаштування API у .env.'
           : msg
       );
     }

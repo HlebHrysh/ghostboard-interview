@@ -12,12 +12,13 @@ pub fn apply_windows_stealth(hwnd: isize, enable: bool) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         GetWindowLongPtrW, SetWindowLongPtrW, SetWindowDisplayAffinity,
         GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+        WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
     };
 
     let hwnd = hwnd as HWND;
     // WDA_EXCLUDEFROMCAPTURE = 0x00000011 (Windows 10 2004+ and Windows 11)
     // WDA_NONE = 0x00000000
-    let affinity = if enable { 0x00000011 } else { 0x00000000 };
+    let affinity = if enable { WDA_EXCLUDEFROMCAPTURE } else { WDA_NONE };
 
     unsafe {
         let success = SetWindowDisplayAffinity(hwnd, affinity);
@@ -45,7 +46,7 @@ pub fn apply_windows_stealth(_hwnd: isize, _enable: bool) -> Result<(), String> 
 /// macOS OS-Native Stealth: Quartz WindowServer sharing exclusion.
 /// Setting sharingType to NSWindowSharingNone (0) excludes the window from ScreenCaptureKit,
 /// QuickTime, Zoom, Teams, Google Meet, and OBS screen capture.
-/// NSWindowCollectionBehaviorCanJoinAllSpaces ensures HUD appears across all spaces and full-screen apps.
+/// Sets NSFloatingWindowLevel (5) and NSApplicationActivationPolicyAccessory (1) to eliminate Dock icon.
 #[cfg(target_os = "macos")]
 pub fn apply_macos_stealth(ns_window_ptr: *mut c_void, enable: bool) -> Result<(), String> {
     if ns_window_ptr.is_null() {
@@ -53,7 +54,7 @@ pub fn apply_macos_stealth(ns_window_ptr: *mut c_void, enable: bool) -> Result<(
     }
     use cocoa::appkit::NSWindowCollectionBehavior;
     use cocoa::base::id;
-    use objc::{msg_send, sel, sel_impl};
+    use objc::{class, msg_send, sel, sel_impl};
 
     let ns_win = ns_window_ptr as id;
     unsafe {
@@ -61,12 +62,22 @@ pub fn apply_macos_stealth(ns_window_ptr: *mut c_void, enable: bool) -> Result<(
         let sharing_type: usize = if enable { 0 } else { 1 };
         let _: () = msg_send![ns_win, setSharingType: sharing_type];
 
+        // NSFloatingWindowLevel = 5, NSNormalWindowLevel = 0
+        let level: i64 = if enable { 5 } else { 0 };
+        let _: () = msg_send![ns_win, setLevel: level];
+
         // Configure auxiliary floating behavior across all desktop spaces
         let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary
             | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary;
         let _: () = msg_send![ns_win, setCollectionBehavior: behavior];
         let _: () = msg_send![ns_win, setHidesOnDeactivate: false];
+
+        // NSApplicationActivationPolicyAccessory = 1 (removes Dock icon during stealth)
+        // NSApplicationActivationPolicyRegular = 0
+        let app: id = msg_send![class!(NSApplication), sharedApplication];
+        let policy: i64 = if enable { 1 } else { 0 };
+        let _: () = msg_send![app, setActivationPolicy: policy];
     }
     Ok(())
 }
@@ -80,10 +91,19 @@ pub fn apply_macos_stealth(_ns_window_ptr: *mut c_void, _enable: bool) -> Result
 /// Linux Stealth & Defense-in-Depth:
 /// 1. Skips taskbar on desktop environments via `set_skip_taskbar(enable)`.
 /// 2. Sets always on top state.
-/// 3. Sets X11 / GTK window hints (_NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER, keep-above).
+/// 3. Hyprland: executes batch rules (float, pin, noblur, noshadow, noborder).
+/// 4. X11: sets atoms _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER, _NET_WM_STATE_ABOVE, and _NET_WM_BYPASS_COMPOSITOR.
 pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), String> {
     window.set_skip_taskbar(enable).map_err(|e| format!("Failed to set skip_taskbar: {}", e))?;
     let _ = window.set_always_on_top(enable);
+
+    // Hyprland integration
+    if crate::window::hyprland::is_hyprland() {
+        crate::window::hyprland::apply_hud_rules();
+        if let Ok(pos) = window.outer_position() {
+            crate::window::hyprland::dispatch_hud_window_properties(pos.x, pos.y);
+        }
+    }
 
     #[cfg(target_os = "linux")]
     {
@@ -92,6 +112,21 @@ pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), S
             gtk_win.set_skip_taskbar_hint(enable);
             gtk_win.set_skip_pager_hint(enable);
             gtk_win.set_keep_above(enable);
+
+            if let Some(gdk_win) = gtk_win.window() {
+                let atom = gtk::gdk::Atom::intern("_NET_WM_BYPASS_COMPOSITOR");
+                let cardinal = gtk::gdk::Atom::intern("CARDINAL");
+                let val: u32 = if enable { 1 } else { 0 };
+                let val_bytes = val.to_ne_bytes();
+                gtk::gdk::property_change(
+                    &gdk_win,
+                    &atom,
+                    &cardinal,
+                    32,
+                    gtk::gdk::PropMode::Replace,
+                    gtk::gdk::ChangeData::UChars(&val_bytes),
+                );
+            }
         }
     }
 

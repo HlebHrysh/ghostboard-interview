@@ -43,7 +43,6 @@ import CandidateProfileModal, {
   getStoredCandidateProfile,
   DEFAULT_CANDIDATE_PROFILE,
 } from '@/components/CandidateProfileModal';
-import { StealthHeaderHUD } from '@/components/interview/StealthHeaderHUD';
 import { EyelineNotch } from '@/components/interview/EyelineNotch';
 import { StealthDisguise } from '@/components/interview/StealthDisguise';
 import { StealthCommandDock } from '@/components/interview/StealthCommandDock';
@@ -299,6 +298,46 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     sessionDuration,
   });
 
+  const [dialogueMessages, setDialogueMessages] = useState<Array<{
+    id: string;
+    speaker: 'interviewer' | 'candidate';
+    text: string;
+    timestamp: number;
+    qaId?: string;
+  }>>([]);
+
+  const handleLiveTranscript = useCallback((
+    text: string,
+    isFinal: boolean,
+    speechFinal: boolean,
+    speaker: 'interviewer' | 'candidate' = 'interviewer'
+  ) => {
+    // 1. Pass to AI copilot logic (which strictly discards candidate speech from generating answers)
+    handleIncomingTranscript(text, isFinal, speechFinal, speaker);
+
+    // 2. Append final utterance to verbatim dialogue history
+    if (isFinal || speechFinal) {
+      const clean = text.trim();
+      if (clean) {
+        setDialogueMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.speaker === speaker && last.text.toLowerCase() === clean.toLowerCase()) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+              speaker,
+              text: clean,
+              timestamp: Date.now(),
+            },
+          ];
+        });
+      }
+    }
+  }, [handleIncomingTranscript]);
+
   const {
     isCapturing,
     isCapturingRef,
@@ -321,7 +360,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     speechLanguageRef,
     triggerModeRef,
     userPlanRef,
-    onLiveTranscript: handleIncomingTranscript,
+    onLiveTranscript: handleLiveTranscript,
     setShowTrialLimitModal,
     sessionDuration,
     setSessionDuration,
@@ -574,21 +613,73 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQA?.id]);
 
-  // Chronological dialogue feed (QA list is newest-first)
-  const feed: FeedItem[] = useMemo(() => {
-    const items: FeedItem[] = [];
-    [...interviewQAs].reverse().forEach((qa, i) => {
-      items.push({ kind: 'interviewer', id: `q-${qa.id}`, qaId: qa.id, text: qa.question, ts: qa.timestamp ?? i });
+  // Synchronize incoming AI QA questions with dialogue messages so all questions appear in the stream
+  useEffect(() => {
+    if (interviewQAs.length === 0) return;
+    setDialogueMessages((prev) => {
+      const updated = [...prev];
+      let changed = false;
+      [...interviewQAs].reverse().forEach((qa) => {
+        const exists = updated.some(
+          (m) => m.speaker === 'interviewer' && (m.qaId === qa.id || m.text.trim() === qa.question.trim())
+        );
+        if (!exists) {
+          updated.push({
+            id: `qa_${qa.id}`,
+            speaker: 'interviewer',
+            text: qa.question,
+            timestamp: qa.timestamp || Date.now(),
+            qaId: qa.id,
+          });
+          changed = true;
+        }
+      });
+      if (changed) {
+        return updated.sort((a, b) => a.timestamp - b.timestamp);
+      }
+      return prev;
     });
-    candidateSpeechHistory.forEach((c) => {
-      items.push({ kind: 'candidate', id: `c-${c.id}`, text: c.text, ts: c.timestamp });
+  }, [interviewQAs]);
+
+  // Smart auto-scroll with pause when scrolled up
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
+
+  const handleFeedScroll = useCallback(() => {
+    if (!feedRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = feedRef.current;
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 60;
+    setIsUserScrolledUp(!isAtBottom);
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (!feedRef.current) return;
+    feedRef.current.scrollTo({
+      top: feedRef.current.scrollHeight,
+      behavior: smooth ? 'smooth' : 'auto',
     });
-    return items.sort((a, b) => a.ts - b.ts);
-  }, [interviewQAs, candidateSpeechHistory]);
+    setIsUserScrolledUp(false);
+  }, []);
 
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
-  }, [feed.length, liveTranscript, candidateLiveTranscript]);
+    if (!isUserScrolledUp) {
+      scrollToBottom();
+    }
+  }, [dialogueMessages.length, liveTranscript, candidateLiveTranscript, isUserScrolledUp, scrollToBottom]);
+
+  const sampleQuestion = 'Explain optimistic vs pessimistic locking in databases and when to use each.';
+
+  const handleSampleQuestionClick = useCallback(() => {
+    setDialogueMessages((prev) => [
+      ...prev,
+      {
+        id: `msg_sample_${Date.now()}`,
+        speaker: 'interviewer',
+        text: sampleQuestion,
+        timestamp: Date.now(),
+      },
+    ]);
+    processAggregatedQuestion(sampleQuestion, true);
+  }, [processAggregatedQuestion, sampleQuestion]);
 
   const handleCopy = useCallback(
     (text: string, id: string) => {
@@ -639,7 +730,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     }
   };
 
-  const sampleQuestion = 'Explain optimistic vs pessimistic locking in databases and when to use each.';
   const mainAnswer = activeQA ? activeQA.startHook || activeQA.quickAnswer || '' : '';
   const volBar = (v: number) => Math.max(4, Math.min(100, Math.round(v)));
 
@@ -688,16 +778,20 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         </div>
       )}
 
-      <div ref={feedRef} className="flex-1 overflow-y-auto px-4 sm:px-5 py-5 space-y-4 scroll-smooth">
-        {!hasAnything && feed.length === 0 && (
+      <div
+        ref={feedRef}
+        onScroll={handleFeedScroll}
+        className="flex-1 overflow-y-auto px-4 sm:px-5 py-5 space-y-4 scroll-smooth relative"
+      >
+        {!hasAnything && dialogueMessages.length === 0 && (
           <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center gap-4 px-4">
             <div className="w-14 h-14 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center">
               <Radio className="w-6 h-6 text-zinc-300" />
             </div>
             <div>
-              <p className="text-base font-semibold text-white">Dual-stream is ready</p>
+              <p className="text-base font-semibold text-white">Live Dialogue is ready</p>
               <p className="text-sm text-zinc-500 mt-1 max-w-sm">
-                Start listening — interviewer speech appears here, the answer lands in the teleprompter.
+                Почніть слухати — кожна репліка інтерв&apos;юера та ваша відповідь з&apos;являться тут у реальному часі.
               </p>
             </div>
             <div className="flex flex-wrap justify-center gap-2">
@@ -706,11 +800,11 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 onClick={() => handleStartCaptureRequest()}
                 className="px-4 py-2 rounded-xl bg-white text-black text-xs font-mono font-bold hover:bg-zinc-200 transition cursor-pointer"
               >
-                Start listening
+                Почати запис
               </button>
               <button
                 type="button"
-                onClick={() => processAggregatedQuestion(sampleQuestion, true)}
+                onClick={handleSampleQuestionClick}
                 className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-zinc-300 text-xs font-mono hover:bg-white/10 transition cursor-pointer flex items-center gap-1.5"
               >
                 <Sparkles className="w-3 h-3" /> {hudT.sampleQuestionBtn}
@@ -720,59 +814,90 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         )}
 
         <AnimatePresence initial={false}>
-          {feed.map((item) => {
-            const isInterviewer = item.kind === 'interviewer';
-            const isActive = item.kind === 'interviewer' && item.qaId === activeQA?.id;
+          {dialogueMessages.map((item) => {
+            const isInterviewer = item.speaker === 'interviewer';
+            const matchingQA = isInterviewer
+              ? interviewQAs.find(
+                  (qa) => qa.id === item.qaId || qa.question.includes(item.text) || item.text.includes(qa.question)
+                )
+              : null;
+            const isActive = isInterviewer && matchingQA?.id === activeQA?.id;
+
             return (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2 }}
-                className={`flex ${isInterviewer ? 'justify-start' : 'justify-end'}`}
+                className={`flex flex-col ${isInterviewer ? 'items-start' : 'items-end'}`}
               >
-                <button
-                  type="button"
-                  disabled={!isInterviewer}
-                  onClick={() => item.kind === 'interviewer' && setActiveQAId(item.qaId)}
+                <div className="flex items-center gap-1.5 mb-1 px-1">
+                  {isInterviewer ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+                      <span>Інтерв&apos;юер</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
+                      <span>Ви</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+                    </span>
+                  )}
+                  <span className="text-[10px] text-zinc-500 font-mono">
+                    {new Date(item.timestamp).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      second: '2-digit',
+                    })}
+                  </span>
+                </div>
+
+                <div
+                  onClick={() => isInterviewer && matchingQA && setActiveQAId(matchingQA.id)}
                   className={`max-w-[88%] text-left px-4 py-3 rounded-2xl border text-sm leading-relaxed transition-colors ${
                     isInterviewer
-                      ? `bg-[#101014] ${isActive ? 'border-white/40' : 'border-white/[0.08] hover:border-white/20'} text-zinc-100 rounded-bl-md cursor-pointer`
-                      : 'bg-white/[0.06] border-white/[0.06] text-zinc-300 rounded-br-md cursor-default'
+                      ? `bg-[#101014] ${isActive ? 'border-cyan-500/50 ring-1 ring-cyan-500/30' : 'border-white/[0.08] hover:border-white/20'} text-zinc-100 rounded-tl-sm ${matchingQA ? 'cursor-pointer' : 'cursor-default'}`
+                      : 'bg-white/[0.06] border-white/[0.06] text-zinc-300 rounded-tr-sm cursor-default ml-auto'
                   }`}
                 >
-                  <span className="block text-[9px] font-mono uppercase tracking-widest text-zinc-500 mb-1">
-                    {isInterviewer ? 'Interviewer' : 'You'}
-                  </span>
-                  {highlightTech(item.text)}
-                </button>
+                  <p className="whitespace-pre-wrap">{highlightTech(item.text)}</p>
+                </div>
               </motion.div>
             );
           })}
         </AnimatePresence>
 
         {liveTranscript && (
-          <div className="flex justify-start">
-            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-bl-md border border-dashed border-white/25 bg-white/[0.03] text-sm text-zinc-200">
-              <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-zinc-400 mb-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> Interviewer · live
+          <div className="flex flex-col items-start animate-in fade-in duration-150">
+            <div className="flex items-center gap-1.5 mb-1 px-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                Інтерв&apos;юер (наживо...)
               </span>
+            </div>
+            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tl-sm border border-dashed border-cyan-500/30 bg-cyan-950/15 text-sm italic text-zinc-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
               {highlightTech(liveTranscript)}
-              <span className="inline-block w-1.5 h-4 bg-white ml-1 align-middle animate-pulse" />
+              <span className="inline-block w-1.5 h-4 bg-cyan-400 ml-1.5 align-middle animate-pulse" />
             </div>
           </div>
         )}
+
         {candidateLiveTranscript && (
-          <div className="flex justify-end">
-            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-br-md border border-dashed border-white/15 bg-white/[0.03] text-sm text-zinc-400">
-              <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-zinc-500 mb-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-pulse" /> You · live
+          <div className="flex flex-col items-end animate-in fade-in duration-150">
+            <div className="flex items-center gap-1.5 mb-1 px-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                Ви (наживо...)
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
               </span>
+            </div>
+            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tr-sm border border-dashed border-emerald-500/30 bg-white/[0.03] text-sm italic text-zinc-400 ml-auto">
               {candidateLiveTranscript}
+              <span className="inline-block w-1.5 h-4 bg-emerald-400 ml-1.5 align-middle animate-pulse" />
             </div>
           </div>
         )}
-        {isCapturing && !liveTranscript && !candidateLiveTranscript && feed.length === 0 && (
+
+        {isCapturing && !liveTranscript && !candidateLiveTranscript && dialogueMessages.length === 0 && (
           <div className="text-center text-xs font-mono text-zinc-500 py-10 flex flex-col items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
             {hudT.listeningPlaceholder}
@@ -786,6 +911,18 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               </button>
             )}
           </div>
+        )}
+
+        {/* Floating Return to Bottom CTA */}
+        {isUserScrolledUp && (
+          <button
+            type="button"
+            onClick={() => scrollToBottom(true)}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0d0f12]/95 border border-cyan-500/40 text-cyan-200 text-xs font-mono font-semibold shadow-lg backdrop-blur-md flex items-center gap-1.5 hover:bg-cyan-950/60 transition cursor-pointer z-20 animate-in fade-in"
+          >
+            <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
+            <span>Нові репліки</span>
+          </button>
         )}
       </div>
 
@@ -946,9 +1083,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 Q · {activeQA.question}
               </p>
 
-              {/* Context Badge from <<<META>>> */}
-              {activeQA.meta && (
-                <div className="flex items-center gap-2">
+              {/* Context Badge from <<<META>>> and TTFT */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {activeQA.meta && (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/10 text-[11px] font-mono text-zinc-300">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
                     <span className="font-semibold text-white">{activeQA.meta.domain}</span>
@@ -957,8 +1094,19 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     <span className="text-zinc-600">•</span>
                     <span className="text-cyan-300 uppercase tracking-wider font-semibold">{activeQA.meta.language}</span>
                   </div>
-                </div>
-              )}
+                )}
+                {activeQA.ttftMs ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-700/60 text-[11px] font-mono font-semibold text-emerald-300">
+                    <Zap className="w-3 h-3 text-emerald-400" />
+                    TTFT {activeQA.ttftMs}ms
+                  </span>
+                ) : activeQA.isStreaming ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/70 border border-cyan-700/60 text-[11px] font-mono font-semibold text-cyan-300 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                    STREAMING...
+                  </span>
+                ) : null}
+              </div>
 
               {activeQA.nativeTranslation && (
                 <div className="space-y-1.5">
@@ -985,6 +1133,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                   </div>
                   <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans">
                     {renderBilingualPhrase(mainAnswer)}
+                    {activeQA.isStreaming && (!activeQA.hints || activeQA.hints.length === 0) && (
+                      <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                    )}
                   </div>
                 </div>
               )}
@@ -1006,6 +1157,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                         </span>
                         <div className="leading-[1.55] text-sm sm:text-base flex-1">
                           {formatPillarAnchor(hint)}
+                          {activeQA.isStreaming && i === activeQA.hints.length - 1 && !activeQA.codeSnippet && (
+                            <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                          )}
                         </div>
                       </li>
                     ))}
@@ -1043,6 +1197,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                   {isCodeExpanded && (
                     <pre className="p-4 text-zinc-200 font-mono overflow-x-auto leading-relaxed max-h-[320px] scrollbar-thin text-xs sm:text-sm">
                       <code>{activeQA.codeSnippet.trim()}</code>
+                      {activeQA.isStreaming && (
+                        <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                      )}
                     </pre>
                   )}
                 </div>
@@ -1109,39 +1266,26 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         isGenerating={isCopilotGenerating}
         level={liveVolume}
         activeQA={activeQA ?? null}
+        aiLanguageMode={aiLanguageMode}
+        onAiLanguageChange={handleAiLanguageChange}
         onToggleFreeze={handleToggleFreeze}
         onManualReconnect={handleManualReconnect}
         onPanic={() => setIsPanicShieldActive((p) => !p)}
         onScreenshot={handleTriggerScreenshot}
+        targetStack={candidateProfile?.role || 'React / Next.js'}
+        onExitSession={() => {
+          if (isCapturing) {
+            handleStop();
+          }
+          router.push('/');
+        }}
       />
       {isEyeLineActive && (
         <EyeLineTeleprompter activeQA={activeQA} onClose={() => setIsEyeLineActive(false)} isCapturing={isCapturing} />
       )}
 
-      <StealthHeaderHUD
-        isCapturing={isCapturing}
-        sttStatus={sttStatus}
-        sessionDuration={sessionDuration}
-        liveVolume={liveVolume}
-        userPlan={userPlan}
-        candidateRole={candidateProfile?.role}
-        aiLanguageMode={aiLanguageMode}
-        onAiLanguageChange={handleAiLanguageChange}
-        onUpgradeClick={() => router.push('/pricing')}
-        onManualReconnect={handleManualReconnect}
-        onOpenProfile={() => setIsProfileOpen(true)}
-        onOpenHistory={() => setIsHistoryOpen(true)}
-        onOpenSoundCheck={() => setIsSoundCheckOpen(true)}
-        onOpenCompanionQR={() => setIsCompanionQROpen(true)}
-        onToggleEyeLine={() => setIsEyeLineActive((p) => !p)}
-        isEyeLineActive={isEyeLineActive}
-        hasQuestions={interviewQAs.length > 0}
-        questionCount={interviewQAs.length}
-        formatTime={(s) => `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`}
-      />
-
       {/* Mobile tab switcher */}
-      <div className="lg:hidden relative z-10 px-4 pt-3">
+      <div className="lg:hidden relative z-10 px-4 pt-16">
         <div className="grid grid-cols-2 p-1 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs font-mono">
           {(['hearing', 'prompter'] as const).map((tab) => (
             <button
@@ -1156,7 +1300,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         </div>
       </div>
 
-      <main className="relative z-10 mx-auto w-full max-w-[1500px] px-3 sm:px-6 pt-3 pb-28 h-[calc(100vh-7rem)] min-h-[520px]">
+      <main className="relative z-10 mx-auto w-full max-w-[1500px] px-3 sm:px-6 pt-14 sm:pt-16 pb-28 h-[calc(100vh-2rem)] min-h-[520px]">
         <div className={`hidden lg:grid h-full gap-4 transition-all duration-300 ease-out ${
           isFocusMode
             ? 'grid-cols-[minmax(0,2.6fr)_minmax(0,9.4fr)]'

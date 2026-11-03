@@ -34,15 +34,34 @@ pub fn find_loopback_device(host: &Host) -> Result<Device, String> {
     #[cfg(windows)]
     {
         // On Windows, WASAPI loopback capture is initiated by building an input stream
-        // on the default OUTPUT (render) device.
+        // on the default OUTPUT (render) device, or any enumerated active output device.
         if let Some(device) = host.default_output_device() {
             return Ok(device);
+        }
+        if let Ok(mut devices) = host.output_devices() {
+            if let Some(device) = devices.next() {
+                return Ok(device);
+            }
         }
     }
 
     #[cfg(target_os = "macos")]
     {
-        // On macOS, prefer default output device if loopback is supported or fallback to input
+        // On macOS, look for aggregate or virtual loopback devices (BlackHole, Loopback, Soundflower, Multi-Output)
+        if let Ok(devices) = host.input_devices() {
+            for dev in devices {
+                if let Ok(name) = dev.name() {
+                    let lower = name.to_lowercase();
+                    if lower.contains("blackhole")
+                        || lower.contains("loopback")
+                        || lower.contains("soundflower")
+                        || lower.contains("multi-output")
+                    {
+                        return Ok(dev);
+                    }
+                }
+            }
+        }
         if let Some(device) = host.default_output_device() {
             return Ok(device);
         }
@@ -54,10 +73,14 @@ pub fn find_loopback_device(host: &Host) -> Result<Device, String> {
     #[cfg(target_os = "linux")]
     {
         // On Linux, PipeWire and PulseAudio provide `.monitor` sinks under input devices.
+        // We filter out obsolete OSS /dev/dsp devices to eliminate 2-second ALSA hangs.
         if let Ok(devices) = host.input_devices() {
             for device in devices {
                 if let Ok(name) = device.name() {
                     let lower = name.to_lowercase();
+                    if lower.contains("oss") || lower.contains("/dev/dsp") {
+                        continue;
+                    }
                     if lower.contains(".monitor") || lower.contains("monitor") {
                         return Ok(device);
                     }
@@ -70,6 +93,9 @@ pub fn find_loopback_device(host: &Host) -> Result<Device, String> {
             for device in devices {
                 if let Ok(name) = device.name() {
                     let lower = name.to_lowercase();
+                    if lower.contains("oss") || lower.contains("/dev/dsp") {
+                        continue;
+                    }
                     if lower == "pulse" || lower == "pipewire" || lower == "default" {
                         return Ok(device);
                     }
@@ -108,13 +134,22 @@ pub fn find_microphone_device(host: &Host) -> Result<Device, String> {
 /// Looks up a concrete audio device by its exact cpal name (inputs first, then outputs for
 /// WASAPI-style loopback on Windows/macOS).
 pub fn find_device_by_name(host: &Host, name: &str) -> Option<Device> {
+    let clean_name = name.strip_prefix("[Loopback] ").unwrap_or(name).trim();
     if let Ok(mut devices) = host.input_devices() {
-        if let Some(d) = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)) {
+        if let Some(d) = devices.find(|d| {
+            d.name()
+                .map(|n| n == clean_name || n == name)
+                .unwrap_or(false)
+        }) {
             return Some(d);
         }
     }
     if let Ok(mut devices) = host.output_devices() {
-        if let Some(d) = devices.find(|d| d.name().map(|n| n == name).unwrap_or(false)) {
+        if let Some(d) = devices.find(|d| {
+            d.name()
+                .map(|n| n == clean_name || n == name)
+                .unwrap_or(false)
+        }) {
             return Some(d);
         }
     }
@@ -145,12 +180,21 @@ pub fn resolve_device(
 pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
     let mut result = Vec::new();
     let default_in_name = host.default_input_device().and_then(|d| d.name().ok());
+    let default_out_name = host.default_output_device().and_then(|d| d.name().ok());
 
+    // 1. Input devices (Microphones, Line-in, Pulse/PipeWire monitors)
     if let Ok(devices) = host.input_devices() {
         for dev in devices {
             if let Ok(name) = dev.name() {
+                let lower = name.to_lowercase();
+                if lower.contains("oss") || lower.contains("/dev/dsp") {
+                    continue;
+                }
                 let is_default = default_in_name.as_deref() == Some(&name);
-                let is_monitor = name.to_lowercase().contains("monitor");
+                let is_monitor = lower.contains("monitor")
+                    || lower.contains("blackhole")
+                    || lower.contains("loopback")
+                    || lower.contains("soundflower");
 
                 let (sr, ch) = if let Ok(cfg) = dev.default_input_config() {
                     (cfg.sample_rate().0, cfg.channels())
@@ -162,6 +206,35 @@ pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
                     name,
                     is_default,
                     is_loopback_capable: is_monitor,
+                    default_sample_rate: sr,
+                    default_channels: ch,
+                });
+            }
+        }
+    }
+
+    // 2. Output devices (Speakers, Headphones - critical for WASAPI Loopback on Windows)
+    if let Ok(devices) = host.output_devices() {
+        for dev in devices {
+            if let Ok(name) = dev.name() {
+                let lower = name.to_lowercase();
+                if lower.contains("oss") || lower.contains("/dev/dsp") {
+                    continue;
+                }
+                if result.iter().any(|d| d.name == name) {
+                    continue;
+                }
+                let is_default = default_out_name.as_deref() == Some(&name);
+                let (sr, ch) = if let Ok(cfg) = dev.default_output_config() {
+                    (cfg.sample_rate().0, cfg.channels())
+                } else {
+                    (48000, 2)
+                };
+
+                result.push(AudioDeviceInfo {
+                    name: format!("[Loopback] {}", name),
+                    is_default,
+                    is_loopback_capable: true,
                     default_sample_rate: sr,
                     default_channels: ch,
                 });

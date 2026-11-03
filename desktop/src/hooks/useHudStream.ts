@@ -195,7 +195,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           rawText: fullSoFar,
           ttftMs: currentTtft,
           totalDurationMs: currentDuration,
-          model: 'Gemini 3.8 Flash',
+          model: 'Gemini 3.8 Flash / Groq',
         });
         setIsStreaming(true);
         break;
@@ -225,7 +225,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           rawText: fullText,
           ttftMs: ttftMs ?? 0,
           totalDurationMs: finalLatency,
-          model: 'Gemini 3.8 Flash',
+          model: 'Gemini 3.8 Flash / Groq',
         });
         break;
       }

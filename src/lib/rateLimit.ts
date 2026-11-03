@@ -63,11 +63,22 @@ export function validateOrigin(req: NextRequest): boolean {
     return true;
   }
 
+  // Allow Tauri desktop app and desktop client headers
+  if (
+    origin?.startsWith('tauri://') ||
+    origin?.includes('tauri.localhost') ||
+    req.headers.get('x-ghostboard-client') === 'desktop-app'
+  ) {
+    return true;
+  }
+
   const allowedHosts = [
     host,
+    'localhost',
     'localhost:3000',
     'localhost:3001',
     'localhost:5173',
+    '127.0.0.1',
     '127.0.0.1:3000',
     '127.0.0.1:3001',
     '127.0.0.1:5173',

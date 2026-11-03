@@ -176,10 +176,12 @@ export const SpringTypewriter: React.FC<{
 };
 
 /**
- * Helper to render inline formatting like **bold** highlights.
+ * Helper to render inline formatting like **bold** highlights as HTML <strong>.
  */
-function renderFormattedInlineText(text: string): React.ReactNode {
+export function renderFormattedInlineText(text: string): React.ReactNode {
+  if (!text) return null;
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  if (parts.length === 1) return text;
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
       return (
@@ -193,14 +195,15 @@ function renderFormattedInlineText(text: string): React.ReactNode {
 }
 
 /**
- * Renders bilingual phrases: primary spoken phrase in bright text,
+ * Renders bilingual phrases: primary spoken phrase in bright text with bold markdown parsing,
  * translation in parentheses in muted italic capsule pill.
  */
 export function renderBilingualPhrase(text: string): React.ReactNode {
+  if (!text) return null;
   const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
   const parts = text.split(regex);
   if (parts.length === 1) {
-    return <span>{text}</span>;
+    return <span>{renderFormattedInlineText(text)}</span>;
   }
   return parts.map((part, idx) => {
     if (regex.test(part)) {
@@ -214,7 +217,7 @@ export function renderBilingualPhrase(text: string): React.ReactNode {
         </span>
       );
     }
-    return <span key={idx}>{part}</span>;
+    return <span key={idx}>{renderFormattedInlineText(part)}</span>;
   });
 }
 
@@ -222,17 +225,15 @@ export function renderBilingualPhrase(text: string): React.ReactNode {
  * Renders pillars with bold anchor keywords at the beginning (Rule of 2 Seconds).
  */
 function renderPillarWithAnchor(text: string): React.ReactNode {
-  if (text.includes('**')) {
-    return renderFormattedInlineText(text);
-  }
   const colonIdx = text.indexOf(':');
   if (colonIdx > 0 && colonIdx <= 45) {
-    const anchor = text.slice(0, colonIdx);
+    const rawAnchor = text.slice(0, colonIdx).trim();
+    const cleanAnchor = rawAnchor.replace(/^\*\*|\*\*$/g, '').trim();
     const rest = text.slice(colonIdx + 1);
     return (
       <>
         <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
-          {anchor}
+          {cleanAnchor}
         </span>
         {renderBilingualPhrase(rest)}
       </>
@@ -240,26 +241,14 @@ function renderPillarWithAnchor(text: string): React.ReactNode {
   }
   const dashMatch = text.match(/^([^-—]{3,35})\s*[-—]\s*(.*)$/);
   if (dashMatch) {
+    const cleanAnchor = dashMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
     return (
       <>
         <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
-          {dashMatch[1]}
+          {cleanAnchor}
         </span>
         <span className="text-zinc-400 mx-1">—</span>
         {renderBilingualPhrase(dashMatch[2])}
-      </>
-    );
-  }
-  const words = text.split(' ');
-  if (words.length > 3) {
-    const anchor = words.slice(0, 3).join(' ');
-    const rest = ' ' + words.slice(3).join(' ');
-    return (
-      <>
-        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 text-xs border border-white/10">
-          {anchor}
-        </span>
-        {renderBilingualPhrase(rest)}
       </>
     );
   }
@@ -379,7 +368,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   return (
     <div className="grid grid-cols-12 gap-3 h-full overflow-hidden select-text relative min-h-0">
       {/* ── LEFT COLUMN: Live Dialogue Stream (condensed in Focus Mode) ── */}
-      <div className={`${isFocusMode ? 'col-span-3' : 'col-span-5'} transition-all duration-300 ease-out flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
+      <div className={`${isFocusMode ? 'col-span-3' : 'col-span-5'} transition-all duration-300 ease-out flex flex-col h-full bg-[#09090b] border border-white/10 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
         {/* Subtle Ambient Radial Mesh Glow */}
         <div className="pointer-events-none absolute -top-24 -left-24 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
 
@@ -435,7 +424,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
               <HeadphonesIcon className="w-8 h-8 mb-2 opacity-40 text-cyan-400" />
               <p className="text-xs font-medium text-zinc-400">Очікування мовлення...</p>
-              <p className="text-[10px] text-zinc-600 mt-1">
+              <p className="text-xs text-zinc-400 mt-1">
                 Голос співрозмовника або ваш мікрофон з'являться тут автоматично.
               </p>
             </div>
@@ -443,7 +432,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
               <Search className="w-8 h-8 mb-2 opacity-30 text-zinc-400" />
               <p className="text-xs font-medium text-zinc-400">Нічого не знайдено</p>
-              <p className="text-[10px] text-zinc-600 mt-1">
+              <p className="text-xs text-zinc-400 mt-1">
                 За запитом "{searchQuery}" немає збігів.
               </p>
             </div>
@@ -467,21 +456,17 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
               >
                 <div className="flex items-center gap-1.5 mb-1 px-1">
                   {isInterlocutor ? (
-                    <>
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
                       <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
-                      <span className="text-[10px] font-semibold tracking-wider text-cyan-300">
-                        {msg.label || 'Співрозмовник'}
-                      </span>
-                    </>
+                      <span>{msg.label || "Інтерв'юер"}</span>
+                    </span>
                   ) : (
-                    <>
-                      <span className="text-[10px] font-semibold tracking-wider text-violet-300">
-                        {msg.label || 'Ви'}
-                      </span>
-                      <div className="w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_6px_rgba(168,85,247,0.8)]" />
-                    </>
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
+                      <span>{msg.label || 'Ви'}</span>
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+                    </span>
                   )}
-                  <span className="text-[9px] text-zinc-600 font-mono">
+                  <span className="text-[10px] text-zinc-500 font-mono">
                     {new Date(msg.timestamp).toLocaleTimeString([], {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -511,12 +496,12 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
               className="flex flex-col items-start"
             >
               <div className="flex items-center gap-1.5 mb-1 px-1">
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                <span className="text-[10px] font-semibold text-cyan-300">
-                  Співрозмовник (мовлення...)
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                  Інтерв&apos;юер (наживо...)
                 </span>
               </div>
-              <div className="p-2.5 rounded-xl bg-[#101014]/90 border border-cyan-500/30 text-xs text-cyan-100/90 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+              <div className="p-2.5 rounded-xl bg-[#101014]/90 border border-dashed border-cyan-500/30 text-xs text-zinc-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
                 <p className="italic">{liveInterlocutorText}...</p>
               </div>
             </motion.div>
@@ -531,10 +516,12 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
               className="flex flex-col items-end"
             >
               <div className="flex items-center gap-1.5 mb-1 px-1">
-                <span className="text-[10px] font-semibold text-violet-300">Ви (мовлення...)</span>
-                <span className="w-2 h-2 rounded-full bg-violet-400 animate-ping" />
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+                  Ви (наживо...)
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                </span>
               </div>
-              <div className="p-2.5 rounded-xl bg-violet-950/20 border border-violet-500/30 text-xs text-violet-100/90 ml-auto">
+              <div className="p-2.5 rounded-xl bg-white/[0.03] border border-dashed border-emerald-500/30 text-xs text-zinc-400 ml-auto">
                 <p className="italic">{liveCandidateText}...</p>
               </div>
             </motion.div>
@@ -556,7 +543,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   behavior: 'smooth',
                 });
               }}
-              className="absolute bottom-14 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-1.5 transition-all"
+              className="absolute bottom-14 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg flex items-center gap-1.5 transition-all"
             >
               <ChevronDown className="w-3.5 h-3.5" /> Нові повідомлення
             </motion.button>
@@ -601,7 +588,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
       </div>
 
       {/* ── RIGHT COLUMN: Streaming AI Answers (75% width in Focus Mode) ── */}
-      <div className={`${isFocusMode ? 'col-span-9' : 'col-span-7'} transition-all duration-300 ease-out flex flex-col h-full bg-[#0d0f14] border border-white/15 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
+      <div className={`${isFocusMode ? 'col-span-9' : 'col-span-7'} transition-all duration-300 ease-out flex flex-col h-full bg-[#09090b] border border-white/10 shadow-xl rounded-2xl overflow-hidden relative min-h-0`}>
         {/* Subtle Ambient Radial Mesh Glow */}
         <div className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 bg-gradient-to-tr from-cyan-500/10 via-transparent to-violet-500/10 rounded-full blur-3xl" />
 
@@ -670,18 +657,30 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             </div>
 
             {activeAnswer && (
-              <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5 hidden sm:inline">
-                TTFT: <span className="text-emerald-400 font-semibold">{activeAnswer.ttftMs}ms</span>
+              <span className="bg-emerald-950/70 border border-emerald-700/60 px-2 py-0.5 rounded text-emerald-300 font-semibold flex items-center gap-1 text-[10px] font-mono">
+                <Zap className="w-2.5 h-2.5 text-emerald-400" />
+                TTFT {activeAnswer.ttftMs}ms
               </span>
             )}
             <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5 text-zinc-300">
-              {activeAnswer?.model || 'Gemini 3.8 Flash'}
+              {activeAnswer?.model || 'Gemini 3.8 Flash / Groq'}
             </span>
           </div>
         </div>
 
         {/* 1-Click AI Modifiers Bar with Framer Motion Spring Dynamics */}
         <div className="px-3 py-2 border-b border-white/[0.06] bg-black/30 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => onQuestionSubmit?.('Як влаштовані B-Tree індекси в PostgreSQL і коли вони неефективні?')}
+            title="⚡ Тест генерації відповіді ШІ"
+            className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-700/60 text-emerald-300 hover:text-white text-[11px] font-medium flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
+          >
+            <Zap className="w-3 h-3 text-emerald-400" />
+            ⚡ Тест ШІ
+          </motion.button>
+
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
@@ -764,7 +763,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   className="pl-4 pr-3.5 py-3 border-l-4 border-l-amber-400/90 rounded-r-xl bg-white/[0.02] border-y border-r border-white/[0.05] shadow-[0_4px_20px_rgba(245,158,11,0.06)] relative group"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-semibold flex items-center gap-1.5">
+                    <span className="text-xs font-mono uppercase tracking-wider text-amber-400 font-bold flex items-center gap-1.5">
                       <Zap className="w-3.5 h-3.5" /> Фаза 1: Голосовий старт (Hook)
                     </span>
                     <button
@@ -779,8 +778,11 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                       )}
                     </button>
                   </div>
-                  <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans">
+                  <div className="text-[16px] sm:text-[18px] font-semibold text-white leading-relaxed tracking-tight font-sans">
                     {renderBilingualPhrase(activeAnswer.hook)}
+                    {isStreaming && (!activeAnswer.pillars || activeAnswer.pillars.length === 0) && (
+                      <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -793,8 +795,8 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   transition={SPRING_PHYSICS}
                   className="space-y-2.5"
                 >
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-semibold flex items-center gap-1.5 px-1">
-                    <Layers className="w-3 h-3" /> Фаза 2: Ключові тези (Pillars)
+                  <span className="text-xs font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1.5 px-1">
+                    <Layers className="w-3.5 h-3.5" /> Фаза 2: Ключові тези (Pillars)
                   </span>
 
                   <div className="grid grid-cols-1 gap-2.5">
@@ -806,11 +808,14 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                         transition={{ delay: idx * 0.04, ...SPRING_PHYSICS }}
                         className="p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] text-xs sm:text-sm leading-relaxed text-zinc-200 flex items-start gap-2.5 transition-all"
                       >
-                        <span className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-400 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 border border-cyan-500/20 mt-0.5">
+                        <span className="w-5 h-5 rounded-md bg-cyan-500/10 text-cyan-300 font-mono text-xs font-bold flex items-center justify-center shrink-0 border border-cyan-500/30 mt-0.5">
                           {idx + 1}
                         </span>
-                        <div className="flex-1 text-zinc-200">
+                        <div className="flex-1 text-zinc-100 font-medium">
                           {renderPillarWithAnchor(pillar)}
+                          {isStreaming && idx === activeAnswer.pillars.length - 1 && (!activeAnswer.deepDive || activeAnswer.deepDive.length === 0) && (
+                            <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                          )}
                         </div>
                       </motion.div>
                     ))}
@@ -821,8 +826,8 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
               {/* PHASE 3: Deep Dive & Code Blocks (Collapsible, Zero CLS) */}
               {deepDiveSections.length > 0 && (
                 <div className="space-y-3">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-semibold flex items-center gap-1.5 px-1">
-                    <Code2 className="w-3 h-3" /> Фаза 3: Deep Dive & Код
+                  <span className="text-xs font-mono uppercase tracking-wider text-emerald-400 font-bold flex items-center gap-1.5 px-1">
+                    <Code2 className="w-3.5 h-3.5" /> Фаза 3: Deep Dive & Код
                   </span>
 
                   {deepDiveSections.map((section, idx) => {
@@ -914,7 +919,7 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                   behavior: 'smooth',
                 });
               }}
-              className="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg backdrop-blur-md flex items-center gap-1.5 transition-all"
+              className="absolute bottom-4 right-4 z-20 px-3 py-1.5 rounded-full bg-cyan-950/90 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-200 text-xs font-medium shadow-lg flex items-center gap-1.5 transition-all"
             >
               <ChevronDown className="w-3.5 h-3.5" /> До нових відповідей
             </motion.button>

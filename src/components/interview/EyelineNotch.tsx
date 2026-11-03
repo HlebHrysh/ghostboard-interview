@@ -1,12 +1,15 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronUp, EyeOff, Languages, Pause, Zap } from 'lucide-react';
+import { ChevronDown, ChevronUp, EyeOff, Languages, Pause, Zap, LogOut, User, Code2, Ghost } from 'lucide-react';
 import type { InterviewQAItem } from '@/types/interview';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getLuxTranslations } from '@/lib/luxI18n';
-import { GlowBadge, KbdObsidian, LUX_SPRING, VoiceWaveform } from '@/components/ui/lux/primitives';
+import { GlowBadge, KbdObsidian, LUX_SPRING } from '@/components/ui/lux/primitives';
+import { AudioWaveEqualizer } from '@/components/interview/AudioWaveEqualizer';
+import { AiLanguageSelector, AiLanguageMode } from '@/components/interview/AiLanguageSelector';
 
 /** Highlights numbers, metrics and Tech/ACRONYM tokens in white; the rest stays muted. */
 export function emphasize(text: string): React.ReactNode[] {
@@ -37,18 +40,22 @@ interface EyelineNotchProps {
   isGenerating: boolean;
   level: number;
   activeQA: InterviewQAItem | null;
+  aiLanguageMode?: string;
+  onAiLanguageChange?: (mode: AiLanguageMode) => void;
   onToggleFreeze: () => void;
   onManualReconnect: () => void;
   onPanic: () => void;
-  onScreenshot: () => void;
+  onScreenshot?: () => void;
+  targetStack?: string;
+  onExitSession?: () => void;
+  onOpenProfile?: () => void;
 }
 
 const AUTO_COLLAPSE_MS = 9000;
 
 /**
  * Dynamic notch pinned under the webcam (top-centre).
- * Compact: [● status] [TTFT] [collapse]. On a new answer it springs down with the
- * hook and up to 3 talking points, then settles back so it never covers the screen.
+ * Ultra-minimalist luxury HUD bar matching modern dark design standards.
  */
 export const EyelineNotch: React.FC<EyelineNotchProps> = ({
   isCapturing,
@@ -57,10 +64,15 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
   isGenerating,
   level,
   activeQA,
+  aiLanguageMode = 'auto',
+  onAiLanguageChange,
   onToggleFreeze,
   onManualReconnect,
   onPanic,
   onScreenshot,
+  targetStack = 'React / Next.js',
+  onExitSession,
+  onOpenProfile,
 }) => {
   const { locale } = useLocale();
   const t = getLuxTranslations(locale);
@@ -107,21 +119,26 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
 
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        onScreenshot();
+        onScreenshot?.();
         return;
       }
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      if (e.key === 'Escape' && !e.defaultPrevented) {
+      if (e.code === 'Space' && !e.defaultPrevented) {
+        e.preventDefault();
+        onToggleFreeze();
+        return;
+      }
+      if ((e.key === 'Escape' || e.key === 'F12') && !e.defaultPrevented) {
         e.preventDefault();
         onPanic();
         return;
       }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (/^[1-9]$/.test(e.key)) {
         setOpacityPct(Math.round(10 + ((Number(e.key) - 1) * 85) / 8));
       }
     },
-    [onPanic, onScreenshot]
+    [onPanic, onScreenshot, onToggleFreeze]
   );
 
   useEffect(() => {
@@ -138,9 +155,9 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
     : sttStatus === 'disconnected'
     ? t.status.offline
     : isGenerating
-    ? t.status.thinking
+    ? (locale === 'ua' ? 'Генерую...' : t.status.thinking)
     : isCapturing
-    ? t.status.listening
+    ? (locale === 'ua' ? 'Слухаю...' : t.status.listening)
     : t.status.idle;
 
   const hook = activeQA ? activeQA.startHook || activeQA.quickAnswer || '' : '';
@@ -148,72 +165,137 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
   const showBody = expanded && !!activeQA;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-2 z-[45] flex justify-center px-3">
+    <div className="pointer-events-none fixed inset-x-0 top-2.5 z-[45] flex justify-center px-3">
       <motion.section
         layout
         transition={LUX_SPRING}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
-        style={{ opacity: opacityPct / 100, borderRadius: 24 }}
-        className={`gb-glass pointer-events-auto w-full select-none overflow-hidden ${isCapturing ? 'gb-beam' : ''} ${
-          showBody ? 'max-w-[640px]' : 'max-w-[340px]'
-        }`}
+        style={{ opacity: opacityPct / 100 }}
+        className={`gb-glass pointer-events-auto w-full select-none overflow-hidden transition-shadow ${
+          showBody ? 'max-w-[700px] rounded-2xl' : 'max-w-[620px] rounded-full'
+        } ${isCapturing ? 'gb-beam shadow-[0_8px_32px_rgba(16,185,129,0.12)]' : 'shadow-[0_8px_32px_rgba(0,0,0,0.6)]'}`}
         aria-label="Eyeline notch"
       >
-        {/* Compact bar — always visible */}
-        <motion.div layout="position" className="flex items-center justify-between gap-2 px-3 py-1.5">
-          <button
-            type="button"
-            onClick={onManualReconnect}
-            className="cursor-pointer"
-            aria-label={statusLabel}
-          >
-            <GlowBadge tone={statusTone} ping={isCapturing && !isFrozen && sttStatus === 'connected'}>
-              {statusLabel}
-            </GlowBadge>
-          </button>
+        {/* Compact bar — 40-44px high */}
+        <motion.div
+          layout="position"
+          className="flex h-10 sm:h-11 items-center justify-between gap-2.5 px-3.5 py-1"
+        >
+          {/* Left: Ghost logo + GHOSTBOARD + Exit + Divider + Avatar + Stack selector button-link */}
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Brand cluster — link to home */}
+            <Link
+              href="/"
+              onClick={(e) => {
+                if (onExitSession) {
+                  e.preventDefault();
+                  onExitSession();
+                }
+              }}
+              className="flex items-center gap-1.5 shrink-0 pl-0.5 group cursor-pointer"
+              title="Головний екран Ghostboard"
+            >
+              <div className="relative flex items-center justify-center w-4.5 h-4.5 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)] group-hover:scale-105 transition-transform">
+                <Ghost className="w-3.5 h-3.5 text-white stroke-[2]" />
+              </div>
+              <span className="font-mono text-[10px] font-bold tracking-[0.16em] text-zinc-100 group-hover:text-white uppercase select-none transition-colors">
+                GHOSTBOARD
+              </span>
+            </Link>
 
-          <VoiceWaveform level={level} active={isCapturing && !isFrozen} bars={12} height={16} />
+            {/* Exit Session button — navigate to home screen */}
+            <Link
+              href="/"
+              onClick={(e) => {
+                if (onExitSession) {
+                  e.preventDefault();
+                  onExitSession();
+                }
+              }}
+              className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+              title="На головний екран"
+              aria-label="Exit to home screen"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </Link>
 
-          <GlowBadge tone="zinc" icon={<Zap className="h-3 w-3 text-amber-300" />}>
-            {ttftMs === null ? '—' : `${(ttftMs / 1000).toFixed(1)}s`} TTFT
-          </GlowBadge>
+            {/* Delicate divider */}
+            <div className="w-px h-3.5 bg-white/10 shrink-0" />
 
-          <div className="flex items-center gap-1">
+            {/* User profile avatar with online dot — link to http://localhost:3001/profile */}
+            <a
+              href="http://localhost:3001/profile"
+              className="relative w-5.5 h-5.5 rounded-full bg-[#13151b] border border-white/12 flex items-center justify-center text-zinc-300 hover:border-white/30 hover:scale-105 transition-all cursor-pointer shrink-0"
+              title="Профіль кандидата (http://localhost:3001/profile)"
+              aria-label="User profile"
+            >
+              <User className="w-2.5 h-2.5 text-zinc-300" />
+              <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-[#0d0f14] shadow-[0_0_4px_rgba(16,185,129,0.7)]" />
+            </a>
+
+            {/* Stack / Profession button-link to http://localhost:3001/profile */}
+            <a
+              href="http://localhost:3001/profile"
+              className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white/[0.045] border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.08] text-zinc-200 hover:text-white text-[10.5px] font-medium transition-all shrink-0 cursor-pointer"
+              title="Змінити спеціалізацію на http://localhost:3001/profile"
+            >
+              <Code2 className="w-3 h-3 text-zinc-400" />
+              <span className="truncate max-w-[120px]">{targetStack}</span>
+            </a>
+          </div>
+
+          {/* Center/Right: Language switcher & Action icons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onAiLanguageChange && (
+              <AiLanguageSelector
+                currentMode={aiLanguageMode}
+                onChange={onAiLanguageChange}
+                compact={true}
+              />
+            )}
+
             <motion.button
               type="button"
               whileTap={{ scale: 0.92 }}
               transition={LUX_SPRING}
               onClick={onToggleFreeze}
-              className={`cursor-pointer rounded-full p-1.5 transition-colors ${isFrozen ? 'bg-indigo-400/20 text-indigo-300' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}
+              className={`cursor-pointer rounded-full p-1.5 transition-colors ${
+                isFrozen
+                  ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                  : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+              }`}
               title={`${t.kbd.pause} (Space)`}
             >
               <Pause className="h-3.5 w-3.5" />
             </motion.button>
+
             <motion.button
               type="button"
               whileTap={{ scale: 0.92 }}
               transition={LUX_SPRING}
               onClick={onPanic}
               className="cursor-pointer rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-rose-400/15 hover:text-rose-300"
-              title={`${t.panic} (Esc)`}
+              title={`${t.panic} (Esc / F12)`}
             >
               <EyeOff className="h-3.5 w-3.5" />
             </motion.button>
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.92 }}
-              transition={LUX_SPRING}
-              disabled={!activeQA}
-              onClick={() => {
-                setExpanded((v) => !v);
-                setPinned((v) => (expanded ? false : v));
-              }}
-              className="cursor-pointer rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-30"
-              title={expanded ? t.collapse : t.expand}
-            >
-              {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </motion.button>
+
+            {activeQA && (
+              <motion.button
+                type="button"
+                whileTap={{ scale: 0.92 }}
+                transition={LUX_SPRING}
+                onClick={() => {
+                  setExpanded((v) => !v);
+                  setPinned((v) => (expanded ? false : v));
+                }}
+                className="cursor-pointer rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+                title={expanded ? t.collapse : t.expand}
+              >
+                {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              </motion.button>
+            )}
           </div>
         </motion.div>
 

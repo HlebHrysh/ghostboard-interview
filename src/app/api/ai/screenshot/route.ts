@@ -4,9 +4,13 @@ import { syncStore } from '@/lib/interviewSyncStore';
 import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
 import { getSessionUser } from '@/lib/serverDb';
 
-// Global cache for latest screenshot analysis (shared across client sessions)
-let latestScreenshotQA: Record<string, unknown> | null = null;
-let latestScreenshotTimestamp = 0;
+// User-partitioned cache for latest screenshot analysis (strictly isolated per user)
+interface CachedScreenshot {
+  qa: Record<string, unknown>;
+  timestamp: number;
+}
+const userScreenshotCache = new Map<string, CachedScreenshot>();
+const MAX_CACHED_USERS = 500;
 
 export async function GET(req: NextRequest) {
   // Auth guard: only authenticated sessions can poll screenshot cache
@@ -26,11 +30,12 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const since = Number(searchParams.get('since') || 0);
 
-  if (latestScreenshotQA && latestScreenshotTimestamp > since) {
+  const userEntry = userScreenshotCache.get(user.id);
+  if (userEntry && userEntry.timestamp > since) {
     return NextResponse.json({
       hasUpdate: true,
-      timestamp: latestScreenshotTimestamp,
-      qa: latestScreenshotQA,
+      timestamp: userEntry.timestamp,
+      qa: userEntry.qa,
     });
   }
 
@@ -255,34 +260,45 @@ Do not wrap JSON in backticks or markdown fences. Output pure JSON only.`;
       const cleanJson = result.text.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
       const parsed = JSON.parse(cleanJson);
 
-      // Save to global cache so laptop/teleprompter can fetch it
-      latestScreenshotQA = {
-        ...parsed,
-        capturedAt: Date.now(),
-      };
-      latestScreenshotTimestamp = Date.now();
-
-      // Push to unified interview sync store for multi-device live sync
-      await syncStore.addOrUpdateQA({
-        id: `ss_${Date.now()}`,
-        question: parsed.topic
-          ? `📸 ${parsed.topic} ${parsed.language && parsed.language !== 'none' ? `(${parsed.language})` : ''}`
-          : `📸 Аналіз коду з екрана ПК`,
-        startHook: parsed.quickAnswer || parsed.summary,
-        quickAnswer: parsed.quickAnswer || parsed.summary,
-        hints: parsed.hints && parsed.hints.length > 0 ? parsed.hints : ['Знімок екрана ПК проаналізовано.'],
-        codeSnippet: parsed.codeSnippet,
-        deliveryTip: parsed.deliveryTip,
-        tag: parsed.language && parsed.language !== 'none' ? `#${parsed.language.replace(/\s+/g, '')}` : '#CodeReview',
-        summary: parsed.summary,
-        lineByLine: parsed.lineByLine,
-        bugsAndFlaws: parsed.bugsAndFlaws,
-        howToImprove: parsed.howToImprove,
-        complexity: parsed.complexity,
-        codeFound: parsed.codeFound,
-        language: parsed.language,
+      // Save to user-partitioned cache so laptop/teleprompter can fetch it
+      if (userScreenshotCache.size >= MAX_CACHED_USERS) {
+        const firstKey = userScreenshotCache.keys().next().value;
+        if (firstKey) userScreenshotCache.delete(firstKey);
+      }
+      userScreenshotCache.set(user.id, {
+        qa: {
+          ...parsed,
+          capturedAt: Date.now(),
+        },
         timestamp: Date.now(),
       });
+
+      // Push to unified interview sync store for multi-device live sync
+      const qaId = `ss_${Date.now()}`;
+      await syncStore.addOrUpdateQA(
+        {
+          id: qaId,
+          question: parsed.topic
+            ? `📸 ${parsed.topic} ${parsed.language && parsed.language !== 'none' ? `(${parsed.language})` : ''}`
+            : `📸 Аналіз коду з екрана ПК`,
+          startHook: parsed.quickAnswer || parsed.summary,
+          quickAnswer: parsed.quickAnswer || parsed.summary,
+          hints: parsed.hints && parsed.hints.length > 0 ? parsed.hints : ['Знімок екрана ПК проаналізовано.'],
+          codeSnippet: parsed.codeSnippet,
+          deliveryTip: parsed.deliveryTip,
+          tag: parsed.language && parsed.language !== 'none' ? `#${parsed.language.replace(/\s+/g, '')}` : '#CodeReview',
+          summary: parsed.summary,
+          lineByLine: parsed.lineByLine,
+          bugsAndFlaws: parsed.bugsAndFlaws,
+          howToImprove: parsed.howToImprove,
+          complexity: parsed.complexity,
+          codeFound: parsed.codeFound,
+          language: parsed.language,
+          timestamp: Date.now(),
+        },
+        qaId,
+        user.id
+      );
 
       return NextResponse.json({
         success: true,

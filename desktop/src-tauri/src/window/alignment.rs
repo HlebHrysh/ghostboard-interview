@@ -40,10 +40,10 @@ pub fn calculate_webcam_alignment(
 }
 
 pub const HUD_LOGICAL_WIDTH: f64 = 720.0;
-pub const TOP_PADDING_LOGICAL: f64 = 8.0;
+pub const TOP_PADDING_LOGICAL: f64 = 12.0;
 
 /// Align the HUD window to the active display where the user's cursor currently resides.
-/// Centered horizontally directly under the webcam with top 8px padding and exact logical dimensions.
+/// Centered horizontally directly under the webcam with top 12px padding and exact logical dimensions.
 pub fn align_to_active_display_with_size(
     window: &WebviewWindow,
     logical_width: f64,

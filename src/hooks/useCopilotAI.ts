@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { InterviewQAItem } from '@/types/interview';
 import { normalizeTechnicalSpeech, hasTechnicalKeyword, isFillerOrNoise } from '@/lib/techSpeechNormalizer';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
+import { parseStructuredGhostboardOutput } from '@/lib/aiPromptCore';
 
 interface CopilotMessages {
   analyzing: (q: string) => string;
@@ -222,83 +223,179 @@ export function useCopilotAI({
       answer: qa.quickAnswer || qa.startHook || '',
     }));
 
+    const qaId = `qa_${now}`;
+    const initialQA: InterviewQAItem = {
+      id: qaId,
+      timestamp: now,
+      timecode: formatTime(sessionDurationRef.current),
+      question: cleanText,
+      startHook: '',
+      quickAnswer: '',
+      nativeTranslation: null,
+      hints: [],
+      tag: '#InterviewQA',
+      isStreaming: true,
+      ttftMs: undefined,
+    };
+
+    setInterviewQAs((prev) => [initialQA, ...prev]);
+
+    if (isFrozenRef.current) {
+      setPendingNewCount((prev) => {
+        const next = prev + 1;
+        pendingNewCountRef.current = next;
+        return next;
+      });
+      toast.info(msg.queued(pendingNewCountRef.current + 1), {
+        id: 'freeze-queue-toast',
+        duration: 4000,
+      });
+    } else {
+      setActiveQAId(qaId);
+      activeQAIdRef.current = qaId;
+    }
+
+    hudBroadcastRef.current?.postMessage({
+      type: 'NEW_QA',
+      qa: initialQA,
+    });
+
+    const requestStartMs = performance.now();
+    let firstTokenTime: number | null = null;
+    let accumulatedText = '';
+    let measuredTtft: number | undefined = undefined;
+
     try {
-      const res = await fetch('/api/ai/interview-copilot', {
+      const res = await fetch('/api/ai/dual-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(20000),
+        signal: AbortSignal.timeout(25000),
         body: JSON.stringify({
           question: cleanText,
           history: recentHistory,
-          locale: speechLanguageRef.current,
           outputLanguage: outputLanguageRef.current.startsWith('bilingual')
             ? 'bilingual'
             : outputLanguageRef.current,
           helperLanguage: outputLanguageRef.current === 'bilingual_ru' ? 'ru' : 'uk',
           candidateProfile: candidateProfileRef.current,
           isConcise: isConciseRef.current,
-          triggerMode: triggerModeRef.current,
-          sessionMode: sessionModeRef.current,
+          directorModifier: 'normal',
         }),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.quickAnswer) {
-          const finalQA: InterviewQAItem = {
-            id: `qa_${now}`,
-            timestamp: now,
-            timecode: formatTime(sessionDurationRef.current),
-            question: data.question || cleanText,
-            startHook: data.startHook || data.quickAnswer,
-            quickAnswer: data.quickAnswer,
-            nativeTranslation: data.nativeTranslation || null,
-            hints: data.hints?.length ? data.hints : msg.defaultHints,
-            tag: data.tag || '#InterviewQA',
-            codeSnippet: data.codeSnippet,
-            deliveryTip: data.deliveryTip,
-            confidenceScore: data.confidenceScore,
-            docReference: data.docReference,
-          };
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
 
-          setInterviewQAs((prev) => [finalQA, ...prev]);
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-          if (isFrozenRef.current) {
-            setPendingNewCount((prev) => {
-              const next = prev + 1;
-              pendingNewCountRef.current = next;
-              return next;
-            });
-            toast.info(msg.queued(pendingNewCountRef.current + 1), {
-              id: 'freeze-queue-toast',
-              duration: 4000,
-            });
-          } else {
-            setActiveQAId(finalQA.id);
-            activeQAIdRef.current = finalQA.id;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = 'chunk';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('event:')) {
+              currentEvent = trimmed.replace(/^event:\s*/, '').trim();
+              continue;
+            }
+
+            if (trimmed.startsWith('data:')) {
+              const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
+              if (jsonStr === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+
+                if (currentEvent === 'telemetry') {
+                  if (!measuredTtft) {
+                    measuredTtft = parsed.ttftMs || Math.round(performance.now() - requestStartMs);
+                  }
+                } else if (currentEvent === 'chunk' && parsed.text) {
+                  accumulatedText += parsed.text;
+
+                  const structured = parseStructuredGhostboardOutput(accumulatedText);
+
+                  if (!firstTokenTime && (structured.hook.length > 0 || (!accumulatedText.startsWith('<<<') && accumulatedText.trim().length > 0))) {
+                    firstTokenTime = performance.now();
+                    measuredTtft = Math.round(firstTokenTime - requestStartMs);
+                  }
+
+                  const updatedQA: InterviewQAItem = {
+                    id: qaId,
+                    timestamp: now,
+                    timecode: formatTime(sessionDurationRef.current),
+                    question: cleanText,
+                    startHook: structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
+                    quickAnswer: structured.hook || accumulatedText,
+                    hints: structured.pillars.length > 0 ? structured.pillars : (structured.hook ? [] : msg.defaultHints),
+                    codeSnippet: structured.deepDive || undefined,
+                    meta: structured.meta,
+                    tag: '#InterviewQA',
+                    ttftMs: measuredTtft,
+                    isStreaming: true,
+                  };
+
+                  setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
+                  hudBroadcastRef.current?.postMessage({
+                    type: 'NEW_QA',
+                    qa: updatedQA,
+                  });
+                } else if (currentEvent === 'error') {
+                  throw new Error(parsed.message || 'Stream error');
+                }
+              } catch (e: unknown) {
+                if ((e as Error)?.message?.includes('Stream error')) throw e;
+              }
+            }
           }
-
-          if (toastId) {
-            toast.success(msg.ready, { id: 'copilot-gen' });
-          }
-
-          fetch('/api/ai/interview-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'ADD_OR_UPDATE_QA',
-              qa: finalQA,
-              activeId: isFrozenRef.current ? activeQAIdRef.current : finalQA.id,
-            }),
-          }).catch(() => {});
-
-          hudBroadcastRef.current?.postMessage({
-            type: 'NEW_QA',
-            qa: finalQA,
-          });
-          
-          return finalQA;
         }
+
+        const finalStructured = parseStructuredGhostboardOutput(accumulatedText);
+        const finalQA: InterviewQAItem = {
+          id: qaId,
+          timestamp: now,
+          timecode: formatTime(sessionDurationRef.current),
+          question: cleanText,
+          startHook: finalStructured.hook || accumulatedText.slice(0, 160),
+          quickAnswer: finalStructured.hook || accumulatedText,
+          nativeTranslation: null,
+          hints: finalStructured.pillars.length > 0 ? finalStructured.pillars : msg.defaultHints,
+          tag: '#InterviewQA',
+          codeSnippet: finalStructured.deepDive || undefined,
+          meta: finalStructured.meta,
+          ttftMs: measuredTtft || Math.round(performance.now() - requestStartMs),
+          isStreaming: false,
+        };
+
+        setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? finalQA : q)));
+
+        if (toastId) {
+          toast.success(msg.ready, { id: 'copilot-gen' });
+        }
+
+        fetch('/api/ai/interview-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ADD_OR_UPDATE_QA',
+            qa: finalQA,
+            activeId: isFrozenRef.current ? activeQAIdRef.current : finalQA.id,
+          }),
+        }).catch(() => {});
+
+        hudBroadcastRef.current?.postMessage({
+          type: 'NEW_QA',
+          qa: finalQA,
+        });
+
+        return finalQA;
       } else {
         const errData = await res.json().catch(() => ({}));
         if (res.status === 403 && (errData.code === 'TRIAL_LIMIT_REACHED' || errData.error?.includes('Trial limit'))) {
@@ -309,6 +406,8 @@ export function useCopilotAI({
         } else if (toastId || res.status >= 500 || res.status === 429) {
           toast.error(errData.error || msg.answerFailed, { id: 'copilot-gen' });
         }
+        // Remove empty placeholder QA on error
+        setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
       }
     } catch (err) {
       console.error('Interview copilot error:', err);
@@ -430,8 +529,107 @@ export function useCopilotAI({
       answer: qa.quickAnswer || qa.startHook || '',
     }));
 
+    const modifierMap: Record<string, string> = {
+      under_the_hood: 'more_technical',
+      code: 'code',
+      shorter: 'shorter',
+      re_angle: 're_angle',
+      simpler: 'simpler',
+    };
+    const directorModifier = modifierMap[refinement] || 'normal';
+
     try {
-      const res = await fetch('/api/ai/interview-copilot', {
+      const res = await fetch('/api/ai/dual-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(20000),
+        body: JSON.stringify({
+          question: existing.question,
+          history: recentHistory,
+          directorModifier,
+          outputLanguage: outputLanguageRef.current.startsWith('bilingual')
+            ? 'bilingual'
+            : outputLanguageRef.current,
+          helperLanguage: outputLanguageRef.current === 'bilingual_ru' ? 'ru' : 'uk',
+          candidateProfile: candidateProfileRef.current,
+          isConcise: isConciseRef.current,
+        }),
+      });
+
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let accumulatedText = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          let currentEvent = 'chunk';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('event:')) {
+              currentEvent = trimmed.replace(/^event:\s*/, '').trim();
+              continue;
+            }
+
+            if (trimmed.startsWith('data:')) {
+              const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
+              if (jsonStr === '[DONE]') continue;
+
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (currentEvent === 'chunk' && parsed.text) {
+                  accumulatedText += parsed.text;
+                  const structured = parseStructuredGhostboardOutput(accumulatedText);
+                  const updatedQA: InterviewQAItem = {
+                    ...existing,
+                    startHook: structured.hook || accumulatedText,
+                    quickAnswer: structured.hook || accumulatedText,
+                    hints: structured.pillars.length > 0 ? structured.pillars : existing.hints,
+                    codeSnippet: structured.deepDive !== undefined ? structured.deepDive : existing.codeSnippet,
+                    meta: structured.meta || existing.meta,
+                    isStreaming: true,
+                  };
+                  setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
+                  hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: updatedQA });
+                }
+              } catch {}
+            }
+          }
+        }
+
+        const finalStructured = parseStructuredGhostboardOutput(accumulatedText);
+        const finalQA: InterviewQAItem = {
+          ...existing,
+          timestamp: Date.now(),
+          startHook: finalStructured.hook || accumulatedText.slice(0, 160),
+          quickAnswer: finalStructured.hook || accumulatedText,
+          hints: finalStructured.pillars.length > 0 ? finalStructured.pillars : existing.hints,
+          codeSnippet: finalStructured.deepDive !== undefined ? finalStructured.deepDive : existing.codeSnippet,
+          meta: finalStructured.meta || existing.meta,
+          isStreaming: false,
+        };
+        setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? finalQA : q)));
+        hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: finalQA });
+        fetch('/api/ai/interview-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'ADD_OR_UPDATE_QA', qa: finalQA, activeId: finalQA.id }),
+        }).catch(() => {});
+        toast.success(msg.refined);
+        return;
+      }
+
+      // Fallback to legacy endpoint if dual-stream not ok
+      const legacyRes = await fetch('/api/ai/interview-copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(20000),
@@ -451,7 +649,7 @@ export function useCopilotAI({
         }),
       });
 
-      const data = res.ok ? await res.json().catch(() => null) : null;
+      const data = legacyRes.ok ? await legacyRes.json().catch(() => null) : null;
       if (data && data.quickAnswer) {
         const finalQA: InterviewQAItem = {
           ...existing,
@@ -465,6 +663,7 @@ export function useCopilotAI({
           tag: data.tag || existing.tag,
           confidenceScore: data.confidenceScore ?? existing.confidenceScore,
           docReference: data.docReference || existing.docReference,
+          isStreaming: false,
         };
         setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? finalQA : q)));
         hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: finalQA });

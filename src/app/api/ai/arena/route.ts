@@ -141,6 +141,7 @@ Return ONLY a valid JSON object matching this schema:
         models: FLASH_MODELS,
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0.5 },
+        timeoutMs: 3500,
       });
 
       if (res.ok && res.text) {
@@ -198,6 +199,7 @@ Return ONLY a valid JSON object matching this schema:
         models: FLASH_MODELS,
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0.6 },
+        timeoutMs: 3500,
       });
 
       if (res.ok && res.text) {
@@ -273,6 +275,7 @@ Return ONLY valid JSON:
         models: FLASH_MODELS,
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+        timeoutMs: 3500,
       });
 
       if (res.ok && res.text) {
@@ -361,6 +364,7 @@ ${targetDirective}`;
           models: FLASH_MODELS,
           contents: [{ parts: [{ text: promptSummary }] }],
           generationConfig: { temperature: 0.4 },
+          timeoutMs: 3500,
         });
         if (sumRes.ok && sumRes.text) {
           summaryFeedback = sumRes.text.trim();

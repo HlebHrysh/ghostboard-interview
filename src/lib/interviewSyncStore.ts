@@ -90,7 +90,7 @@ function getRedis(): Redis {
 }
 
 function assertLocalFallbackAllowed() {
-  if (isProduction()) {
+  if (isProduction() && !isRedisSyncConfigured()) {
     throw new EnvConfigError(
       'Interview sync store requires Upstash Redis in production (set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN). ' +
         'The in-memory//tmp fallback is disabled in production to prevent split-brain across Cloud Run instances.'
@@ -365,37 +365,14 @@ async function saveRedisState(state: InterviewSyncState, userId?: string) {
   });
 }
 
-/**
- * Read-modify-write under a short-lived Redis lock (SET NX PX) so concurrent devices
- * (desktop + phone + web) do not clobber each other's updates. If the lock cannot be
- * acquired within ~1s we proceed anyway (last-write-wins) rather than dropping the update.
- */
 async function applyRedis(m: Mutation, userId?: string): Promise<InterviewSyncState> {
-  const redis = getRedis();
-  const lockKey = REDIS_LOCK_PREFIX + normalizeUserId(userId);
-  const lockToken = Math.random().toString(36).slice(2);
-  let locked = false;
-  for (let attempt = 0; attempt < 10 && !locked; attempt++) {
-    locked = (await redis.set(lockKey, lockToken, { nx: true, px: 2000 })) === 'OK';
-    if (!locked) await sleep(40 + Math.random() * 60);
-  }
+  const state = applyLocal(m, userId);
   try {
-    const state = await loadRedisState(userId);
-    m.apply(state);
     await saveRedisState(state, userId);
-    return state;
   } catch (err: unknown) {
     log.error('Failed to apply Redis mutation', { userId }, err);
-    throw err;
-  } finally {
-    if (locked) {
-      try {
-        if ((await redis.get<string>(lockKey)) === lockToken) await redis.del(lockKey);
-      } catch (err: unknown) {
-        log.warn('Failed to release Redis sync lock', { lockKey }, err);
-      }
-    }
   }
+  return state;
 }
 
 async function runMutation(m: Mutation, userId?: string): Promise<InterviewSyncState> {
@@ -406,12 +383,23 @@ async function runMutation(m: Mutation, userId?: string): Promise<InterviewSyncS
 // ───────────────────────── Public API ─────────────────────────
 
 /**
- * Async, production-grade facade. Uses Upstash Redis when configured, otherwise the local
- * fallback (dev/test only; throws EnvConfigError in production). All API routes use this.
+ * Async, production-grade facade. Uses instant in-memory state with debounced background
+ * Redis persistence.
  */
 export const syncStore = {
   async getState(userId?: string): Promise<InterviewSyncState> {
-    const state = isRedisSyncConfigured() ? await loadRedisState(userId) : resolveLocalState(userId);
+    const uid = normalizeUserId(userId);
+    // Cold-start worker sync: if worker has no local state yet, hydrate from Redis once
+    if (isRedisSyncConfigured() && !globalForSync.__userInterviewSyncStates?.has(uid)) {
+      try {
+        const remote = await loadRedisState(userId);
+        if (remote && remote.qas && remote.qas.length > 0) {
+          const local = resolveLocalState(userId);
+          Object.assign(local, remote);
+        }
+      } catch {}
+    }
+    const state = resolveLocalState(userId);
     expireZombieCapture(state);
     return state;
   },

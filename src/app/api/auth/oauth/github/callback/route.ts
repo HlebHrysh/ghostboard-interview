@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAppBaseUrl, validateOAuthState, clearOAuthCookie } from '@/lib/oauth';
 import { findOrCreateUser, createSession } from '@/lib/serverDb';
+import { bindDesktopHandshake } from '@/lib/desktopHandshakeStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,9 +127,52 @@ export async function GET(req: NextRequest) {
     const user = await findOrCreateUser(email, name, assignedRole);
 
     // 4. Create persistent session
-    const session = await createSession(user.id);
+    const isDesktop = payload.client === 'desktop';
+    const session = await createSession(user.id, isDesktop ? 'desktop' : 'web');
 
-    // 5. Successful redirect to destination
+    // 4.1 Bind desktop handshake if initiated from desktop app
+    if (payload.handshake) {
+      try {
+        await bindDesktopHandshake(payload.handshake, {
+          token: session.token,
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name ?? null,
+            plan: user.plan,
+            role: user.role ?? null,
+          },
+        });
+      } catch (bindErr) {
+        console.warn('[GitHub OAuth Callback] Failed to bind handshake:', bindErr);
+      }
+    }
+
+    // 5. Successful redirect (Desktop loopback or Web destination)
+    if (isDesktop && payload.redirectUri) {
+      try {
+        const u = new URL(payload.redirectUri);
+        if (['127.0.0.1', 'localhost'].includes(u.hostname)) {
+          u.searchParams.set('token', session.token);
+          if (payload.desktopState) {
+            u.searchParams.set('state', payload.desktopState);
+          }
+          const response = NextResponse.redirect(u.toString());
+          response.cookies.set('ghostboard_session', session.token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 30 * 24 * 60 * 60, // 30 days
+            path: '/',
+          });
+          clearOAuthCookie(response);
+          return response;
+        }
+      } catch (e) {
+        console.warn('[GitHub OAuth Callback] Invalid desktop redirectUri:', payload.redirectUri);
+      }
+    }
+
     const destination = payload.destination || '/interview';
     const destinationUrl = new URL(destination, baseUrl);
 

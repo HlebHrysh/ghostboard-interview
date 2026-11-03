@@ -139,14 +139,16 @@ export default function SignupPage() {
       const client = search.get("client");
       const redirectUri = search.get("redirect_uri");
       const stateParam = search.get("state");
+      const handshake = search.get("handshake");
 
       const oauthUrl = new URL(`/api/auth/oauth/${provLower}`, window.location.origin);
       oauthUrl.searchParams.set("from", getDestination());
       oauthUrl.searchParams.set("role", selectedRole);
-      if (client === "desktop") {
+      if (client === "desktop" || handshake) {
         oauthUrl.searchParams.set("client", "desktop");
         if (redirectUri) oauthUrl.searchParams.set("redirect_uri", redirectUri);
         if (stateParam) oauthUrl.searchParams.set("state", stateParam);
+        if (handshake) oauthUrl.searchParams.set("handshake", handshake);
       }
       window.location.href = oauthUrl.toString();
       return;

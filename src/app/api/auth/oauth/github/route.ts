@@ -7,6 +7,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const from = searchParams.get('from') || '/interview';
   const role = searchParams.get('role') || undefined;
+  const client = (searchParams.get('client') === 'desktop' ? 'desktop' : 'web') as 'web' | 'desktop';
+  const desktopRedirectUri = searchParams.get('redirect_uri') || undefined;
+  const desktopState = searchParams.get('state') || undefined;
+  const handshake = searchParams.get('handshake') || undefined;
 
   const clientId = process.env.GITHUB_CLIENT_ID?.trim();
   const clientSecret = process.env.GITHUB_CLIENT_SECRET?.trim();
@@ -23,7 +27,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const { state, setCookie } = createOAuthState('github', from, role);
+  const { state, setCookie } = createOAuthState('github', from, role, client, desktopRedirectUri, desktopState, handshake);
 
   const githubAuthUrl = new URL('https://github.com/login/oauth/authorize');
   githubAuthUrl.searchParams.set('client_id', clientId);

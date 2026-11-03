@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
 
     const token =
       req.cookies.get('ghostboard_session')?.value ||
-      req.headers.get('x-ghostboard-client') ||
       req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
     const sessionUser = token ? await getSessionUser(token) : null;

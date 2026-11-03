@@ -60,9 +60,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark min-h-full w-full" suppressHydrationWarning>
+    <html lang="en" className="dark min-h-full w-full" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("gb-theme");if(!t){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}var d=document.documentElement;d.dataset.theme=t;d.classList.toggle("dark",t!=="light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f4f2":"#000000")}catch(e){}`,
+          }}
+        />
+      </head>
       <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen w-full overflow-x-hidden subpixel-antialiased bg-black text-zinc-100 font-sans`}>
-        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("gb-theme");if(!t){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}var d=document.documentElement;d.dataset.theme=t;d.classList.toggle("dark",t!=="light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f4f2":"#000000")}catch(e){}` }} />
         <LocaleProvider>
           <BlackHoleCanvas />
           <CommandPalette />

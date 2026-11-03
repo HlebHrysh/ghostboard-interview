@@ -30,7 +30,7 @@ export const AudioWaveEqualizer: React.FC<AudioWaveEqualizerProps> = ({
 
   return (
     <div
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/80 border border-white/[0.08] backdrop-blur-md transition-colors ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/95 border border-white/[0.08] transition-colors ${className}`}
       title={label ? `${label}: ${Math.round(normalized)}%` : `Рівень звуку: ${Math.round(normalized)}%`}
     >
       <div className="flex items-center gap-[3px] h-4">

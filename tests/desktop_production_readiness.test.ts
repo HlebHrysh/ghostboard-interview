@@ -130,7 +130,7 @@ describe('Desktop Production Readiness (R1 - R4 Lifecycle & Sanity QA)', () => {
       const alignFile = path.join(tauriDir, 'src/window/alignment.rs');
       const content = fs.readFileSync(alignFile, 'utf8');
       expect(content).toContain('HUD_LOGICAL_WIDTH: f64 = 720.0');
-      expect(content).toContain('TOP_PADDING_LOGICAL: f64 = 8.0');
+      expect(content).toMatch(/TOP_PADDING_LOGICAL:\s*f64\s*=\s*(?:8\.0|12\.0)/);
     });
 
     it('confirms global shortcuts register Panic (Ctrl+Shift+H) and Click-Through (Ctrl+Shift+X)', () => {

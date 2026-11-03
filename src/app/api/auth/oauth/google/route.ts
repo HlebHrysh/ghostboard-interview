@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   const client = (searchParams.get('client') === 'desktop' ? 'desktop' : 'web') as 'web' | 'desktop';
   const desktopRedirectUri = searchParams.get('redirect_uri') || undefined;
   const desktopState = searchParams.get('state') || undefined;
+  const handshake = searchParams.get('handshake') || undefined;
 
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const { state, setCookie } = createOAuthState('google', from, role, client, desktopRedirectUri, desktopState);
+  const { state, setCookie } = createOAuthState('google', from, role, client, desktopRedirectUri, desktopState, handshake);
 
   const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   googleAuthUrl.searchParams.set('client_id', clientId);

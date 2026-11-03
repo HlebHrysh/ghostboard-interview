@@ -9,7 +9,10 @@ import { syncStore } from '@/lib/interviewSyncStore';
 export const CopilotPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000, 'Question exceeds maximum length'),
   locale: z.string().optional().default('auto'),
-  outputLanguage: z.enum(['uk', 'en', 'ru', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'auto']).optional().default('uk'),
+  outputLanguage: z
+    .enum(['uk', 'en', 'ru', 'pl', 'de', 'fr', 'es', 'pt', 'it', 'cs', 'nl', 'bilingual', 'bilingual_uk', 'bilingual_ru', 'auto'])
+    .optional()
+    .default('uk'),
   nativeLanguage: z.string().optional().default('auto'),
   candidateProfile: z.any().optional(),
   history: z
@@ -141,6 +144,15 @@ export async function POST(req: NextRequest) {
       - Formulate ALL answer fields in natural, clear Czech (B2 level). Keep English technical terms intact.`,
       nl: `OUTPUT LANGUAGE: STRICTLY DUTCH (Nederlands).
       - Formulate ALL answer fields in natural, clear Dutch (B2 level). Keep English technical terms intact.`,
+      bilingual: `OUTPUT LANGUAGE: BILINGUAL DUAL-STREAM PROMPTER MODE.
+      - Primary spoken fields ("startHook", "quickAnswer", "hints", "deliveryTip") must be formulated in NATURAL, CONVERSATIONAL TECHNICAL ENGLISH (B2 level - effortless to speak aloud).
+      - In addition, provide concise native hints/gist in Ukrainian in parentheses or in "nativeTranslation" so the candidate can instantly grasp the essence without cognitive fatigue.`,
+      bilingual_uk: `OUTPUT LANGUAGE: BILINGUAL (ENGLISH + UKRAINIAN).
+      - Primary spoken fields must be in CLEAR TECHNICAL ENGLISH (B2 level).
+      - Accompany with Ukrainian context in parentheses or nativeTranslation.`,
+      bilingual_ru: `OUTPUT LANGUAGE: BILINGUAL (ENGLISH + RUSSIAN).
+      - Primary spoken fields must be in CLEAR TECHNICAL ENGLISH (B2 level).
+      - Accompany with Russian context in parentheses or nativeTranslation.`,
     };
 
     // Determine effective output language
@@ -391,7 +403,7 @@ Return ONLY valid JSON matching this schema:
         const result = await callGeminiWithFallback({
           models: FLASH_MODELS,
           contents: [{ parts: [{ text: systemPrompt }] }],
-          timeoutMs: 8000,
+          timeoutMs: 3000,
           generationConfig: {
             responseMimeType: 'application/json',
             responseSchema,
@@ -430,12 +442,10 @@ Return ONLY valid JSON matching this schema:
             docReference: parsed.docReference || undefined,
           };
 
-          // Synchronize to the user's multi-device room; a sync failure must never break the answer
-          try {
-            await syncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id);
-          } catch (syncErr) {
-            console.warn('Interview sync failed:', syncErr);
-          }
+          // Non-blocking background sync to multi-device room (0ms latency impact)
+          void syncStore.addOrUpdateQA(resolvedQA, resolvedQA.id, user.id).catch((syncErr) => {
+            console.warn('Interview background sync failed:', syncErr);
+          });
 
           return NextResponse.json({
             success: true,

@@ -5,7 +5,14 @@ export async function register() {
     process.env.NODE_ENV === 'production' &&
     process.env.NEXT_PHASE !== 'phase-production-build'
   ) {
-    const { assertProductionEnv } = await import('./lib/envGuard');
-    assertProductionEnv();
+    try {
+      const { assertProductionEnv } = await import('./lib/envGuard');
+      assertProductionEnv();
+      const { assertSessionSecretValid } = await import('./lib/server/session');
+      assertSessionSecretValid();
+    } catch (err) {
+      console.error('[FATAL] Production server startup validation failed:', err);
+      process.exit(1);
+    }
   }
 }

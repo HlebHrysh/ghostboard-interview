@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { validateOrigin, checkRateLimit, checkKeyRateLimit } from '@/lib/rateLimit';
 import { requireAdmin } from '@/lib/adminGuard';
 import { getSessionUser } from '@/lib/serverDb';
 
@@ -37,6 +37,7 @@ function updateEnvFile(keyName: string, value: string) {
   process.env[keyName] = value;
 }
 
+const TOKEN_TTL_SECONDS = 60;
 let cachedEphemeralKey: { key: string; expiresAt: number } | null = null;
 
 export async function GET(req: NextRequest) {
@@ -90,6 +91,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Необхідна активна сесія Ghostboard', code: 'AUTH_REQUIRED' }, { status: 401 });
   }
 
+  // P0-4: Rate-limit token issuance per session/user (max 10 tokens per 1 hour per session)
+  if (!isExplicitDevOrDemo) {
+    const sessionKey = user.id || token || 'guest_session';
+    const sessionRateLimit = await checkKeyRateLimit(sessionKey, 10, 3600 * 1000, 'deepgram_session_token');
+    if (!sessionRateLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: `Досягнуто ліміт генерації токенів Deepgram для вашої сесії (максимум 10 на годину). Спробуйте через ${sessionRateLimit.retryAfterSec} сек.`,
+          code: 'RATE_LIMITED',
+          retryAfterSec: sessionRateLimit.retryAfterSec,
+        },
+        { status: 429, headers: { 'Retry-After': String(sessionRateLimit.retryAfterSec) } }
+      );
+    }
+  }
+
   const currentKey = getDeepgramKey();
   if (!currentKey) {
     return NextResponse.json({
@@ -116,9 +133,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Check in-memory cached ephemeral key (reuse for up to 9 minutes)
+  // Check in-memory cached ephemeral key (reuse if at least 10s of life remaining)
   const now = Date.now();
-  if (cachedEphemeralKey && cachedEphemeralKey.expiresAt > now + 60_000) {
+  if (cachedEphemeralKey && cachedEphemeralKey.expiresAt > now + 10_000) {
     return NextResponse.json({
       configured: true,
       maskedKey: masked,
@@ -130,11 +147,12 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 4. Try to generate an ephemeral short-lived key (TTL: 10 mins) via Deepgram Projects API
+  // 4. Try to generate an ephemeral short-lived key (TTL: TOKEN_TTL_SECONDS) via Deepgram Projects API
   try {
     const projectsRes = await fetch('https://api.deepgram.com/v1/projects', {
       method: 'GET',
       headers: { Authorization: `Token ${currentKey}` },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (projectsRes.ok) {
@@ -152,8 +170,9 @@ export async function GET(req: NextRequest) {
             body: JSON.stringify({
               comment: 'Ghostboard Live Session Ephemeral Key',
               scopes: ['usage:write'],
-              time_to_live_in_seconds: 600,
+              time_to_live_in_seconds: TOKEN_TTL_SECONDS,
             }),
+            signal: AbortSignal.timeout(8000),
           });
 
           if (ephemeralRes.ok) {
@@ -162,16 +181,16 @@ export async function GET(req: NextRequest) {
             if (ephemeralKey) {
               cachedEphemeralKey = {
                 key: ephemeralKey,
-                expiresAt: Date.now() + 540_000, // 9 minutes cache
+                expiresAt: Date.now() + TOKEN_TTL_SECONDS * 1000,
               };
               return NextResponse.json({
                 configured: true,
                 maskedKey: masked,
                 apiKey: ephemeralKey,
                 isEphemeral: true,
-                ttlSeconds: 600,
+                ttlSeconds: TOKEN_TTL_SECONDS,
                 status: 'valid',
-                message: 'Згенеровано одноразовий безпечний ключ сесії Deepgram (TTL: 10 хв)',
+                message: `Згенеровано одноразовий безпечний ключ сесії Deepgram (TTL: ${TOKEN_TTL_SECONDS} сек)`,
               });
             }
           }
@@ -211,6 +230,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // P1-7: Disable saving runtime keys in production
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'Оновлення ключів через API заборонено у production середовищі' },
+        { status: 403 }
+      );
+    }
+
     const authError = await requireAdmin(req);
     if (authError) return authError;
 
@@ -252,6 +279,7 @@ export async function POST(req: NextRequest) {
         headers: {
           Authorization: `Token ${cleanKey}`,
         },
+        signal: AbortSignal.timeout(8000),
       });
 
       if (testRes.ok) {

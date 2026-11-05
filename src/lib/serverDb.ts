@@ -2,6 +2,18 @@ import crypto from 'crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { assertMemoryDbAllowed, failDbInProduction } from './envGuard';
 import { logger } from './logger';
+import {
+  hashPassword,
+  verifyPassword,
+  MIN_PASSWORD_LENGTH,
+  getCachedUserById,
+  getCachedUserByEmail,
+  setCachedUser,
+  removeCachedUser,
+  type CachedUser,
+} from './server/users';
+
+export { hashPassword, verifyPassword, MIN_PASSWORD_LENGTH };
 
 const log = logger.child({ component: 'serverDb' });
 
@@ -215,31 +227,13 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-// ── Password hashing (scrypt, built into Node) ──────────────────────────────
-const SCRYPT_KEYLEN = 64;
-
-export function hashPassword(password: string): string {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
-  return `scrypt$${salt}$${hash}`;
-}
-
-export function verifyPassword(password: string, stored: string | null | undefined): boolean {
-  if (!stored || typeof password !== 'string') return false;
-  const [scheme, salt, hash] = stored.split('$');
-  if (scheme !== 'scrypt' || !salt || !hash) return false;
-  const expected = Buffer.from(hash, 'hex');
-  const actual = crypto.scryptSync(password, salt, expected.length);
-  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-}
-
-export const MIN_PASSWORD_LENGTH = 8;
-
 export async function setUserPassword(userId: string, password: string): Promise<void> {
-  const passwordHash = hashPassword(password);
+  const passwordHash = await hashPassword(password);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+      const cached = getCachedUserById(userId);
+      if (cached) cached.passwordHash = passwordHash;
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
@@ -248,31 +242,47 @@ export async function setUserPassword(userId: string, password: string): Promise
   }
   const memUser = memUsersById.get(userId);
   if (memUser) memUser.passwordHash = passwordHash;
+  const cached = getCachedUserById(userId);
+  if (cached) cached.passwordHash = passwordHash;
 }
 
 export async function getUserByEmail(email: string): Promise<DbUser | null> {
   const normalized = email.trim().toLowerCase();
+  const cached = getCachedUserByEmail(normalized);
+  if (cached) return cached as DbUser;
+
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
-      return await prisma.user.findUnique({ where: { email: normalized } });
+      const user = await prisma.user.findUnique({ where: { email: normalized } });
+      if (user) setCachedUser(user as CachedUser);
+      return user;
     } catch (dbErr) {
       failDbInProduction(dbErr);
       // Fallback to in-memory store if DB is unreachable
     }
   }
-  return memUsersByEmail.get(normalized) || null;
+  const mem = memUsersByEmail.get(normalized) || null;
+  if (mem) setCachedUser(mem as CachedUser);
+  return mem;
 }
 
 export async function getUserById(id: string): Promise<DbUser | null> {
+  const cached = getCachedUserById(id);
+  if (cached) return cached as DbUser;
+
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
-      return await prisma.user.findUnique({ where: { id } });
+      const user = await prisma.user.findUnique({ where: { id } });
+      if (user) setCachedUser(user as CachedUser);
+      return user;
     } catch (dbErr) {
       failDbInProduction(dbErr);
       // Fallback to in-memory store
     }
   }
-  return memUsersById.get(id) || null;
+  const mem = memUsersById.get(id) || null;
+  if (mem) setCachedUser(mem as CachedUser);
+  return mem;
 }
 
 export async function createUser(
@@ -287,9 +297,10 @@ export async function createUser(
     try {
       const existing = await prisma.user.findUnique({ where: { email: normalized } });
       if (existing) {
+        setCachedUser(existing as CachedUser);
         return existing;
       }
-      return await prisma.user.create({
+      const created = await prisma.user.create({
         data: {
           email: normalized,
           name: name || normalized.split('@')[0],
@@ -297,6 +308,8 @@ export async function createUser(
           role: role || 'Python Backend Developer',
         },
       });
+      setCachedUser(created as CachedUser);
+      return created;
     } catch (dbErr) {
       failDbInProduction(dbErr);
       // Fallback to in-memory
@@ -304,7 +317,10 @@ export async function createUser(
   }
 
   const existingMem = memUsersByEmail.get(normalized);
-  if (existingMem) return existingMem;
+  if (existingMem) {
+    setCachedUser(existingMem as CachedUser);
+    return existingMem;
+  }
 
   const newUser: DbUser = {
     id: `usr_${crypto.randomBytes(12).toString('hex')}`,
@@ -316,6 +332,7 @@ export async function createUser(
   };
   memUsersByEmail.set(normalized, newUser);
   memUsersById.set(newUser.id, newUser);
+  setCachedUser(newUser as CachedUser);
   return newUser;
 }
 
@@ -451,6 +468,7 @@ export async function resetUserSessions(userId: string): Promise<number> {
 
 
 export async function deleteUser(userId: string): Promise<boolean> {
+  removeCachedUser(userId);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.history.deleteMany({ where: { userId } }).catch(() => {});

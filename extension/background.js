@@ -38,22 +38,25 @@ async function fetchWithRetry(url, options, maxRetries = 1, timeoutMs = 4500) {
   throw lastErr;
 }
 
+const DEFAULT_PROD_API_URL = 'https://ghostboard.ai';
+const DEFAULT_LOCAL_API_URL = 'http://localhost:3000';
+
 async function deliverProblem(payload) {
-  const { apiUrl = '', outputLanguage = 'uk', authToken = '' } =
+  const { apiUrl = DEFAULT_PROD_API_URL, outputLanguage = 'uk', authToken = '' } =
     await chrome.storage.sync.get(['apiUrl', 'outputLanguage', 'authToken']);
 
+  const configuredUrl = (apiUrl || DEFAULT_PROD_API_URL).trim();
+
   // Candidate servers in priority order:
-  // 1. User-custom URL (if defined)
-  // 2. Local 3000 (standard Next.js port)
-  // 3. Local 3001 (alternative local dev port)
-  // 4. Ghostboard Production Cloud
+  // 1. User-custom / configured URL (if defined)
+  // 2. Ghostboard Production Cloud (https://ghostboard.ai)
+  // 3. Local 3000 (standard Next.js port)
+  // 4. Local 3001 (alternative local dev port)
   const candidates = [];
-  if (apiUrl && !candidates.includes(apiUrl.trim())) {
-    candidates.push(apiUrl.trim());
-  }
-  if (!candidates.includes('http://localhost:3000')) candidates.push('http://localhost:3000');
+  if (configuredUrl) candidates.push(configuredUrl);
+  if (!candidates.includes(DEFAULT_PROD_API_URL)) candidates.push(DEFAULT_PROD_API_URL);
+  if (!candidates.includes(DEFAULT_LOCAL_API_URL)) candidates.push(DEFAULT_LOCAL_API_URL);
   if (!candidates.includes('http://localhost:3001')) candidates.push('http://localhost:3001');
-  if (!candidates.includes('https://ghostboard.ai')) candidates.push('https://ghostboard.ai');
 
   let responseData = null;
   let successfulServer = null;
@@ -153,11 +156,18 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
 
     if (message.type === 'CHECK_CONNECTION') {
       (async () => {
-        const { apiUrl = 'http://localhost:3000' } = await chrome.storage.sync.get('apiUrl');
-        const clean = apiUrl.replace(/\/$/, '');
+        const { apiUrl = DEFAULT_PROD_API_URL } = await chrome.storage.sync.get('apiUrl');
+        const clean = (apiUrl || DEFAULT_PROD_API_URL).trim().replace(/\/$/, '');
         try {
-          const res = await fetch(`${clean}/api/sessions/me`, { method: 'GET', credentials: 'include' });
-          sendResponse({ connected: res.ok, status: res.status, url: clean });
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4000);
+          const res = await fetch(`${clean}/api/sessions/me`, {
+            method: 'GET',
+            credentials: 'include',
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          sendResponse({ connected: res.ok || res.status === 401, status: res.status, url: clean });
         } catch {
           sendResponse({ connected: false, url: clean });
         }

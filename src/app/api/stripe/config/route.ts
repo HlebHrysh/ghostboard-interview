@@ -60,6 +60,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // P1-7: Disable runtime config file modification in production
+    if (process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'Оновлення конфігурації через API заборонено у production середовищі' },
+        { status: 403 }
+      );
+    }
+
     const authError = await requireAdmin(req);
     if (authError) return authError;
 

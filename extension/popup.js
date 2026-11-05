@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load saved preferences
   const stored = await chrome.storage.sync.get({
-    apiUrl: 'http://localhost:3000',
+    apiUrl: 'https://ghostboard.ai',
     outputLanguage: 'bilingual',
   });
 

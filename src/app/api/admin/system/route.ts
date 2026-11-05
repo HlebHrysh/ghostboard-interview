@@ -116,6 +116,7 @@ export async function POST(req: NextRequest) {
 
       const res = await fetch('https://api.deepgram.com/v1/projects', {
         headers: { Authorization: `Token ${deepgramKey}` },
+        signal: AbortSignal.timeout(8000),
       });
       const latencyMs = Date.now() - startTime;
 

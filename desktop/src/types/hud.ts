@@ -126,7 +126,9 @@ export type HudEvent =
   | { type: 'sttTranscript'; payload: SttTranscriptPayload }
   | { type: 'questionDetected'; payload: QuestionDetectedPayload }
   | { type: 'llmChunk'; payload: LlmChunkPayload }
+  | { type: 'aiChunk'; payload: LlmChunkPayload }
   | { type: 'llmDone'; payload: LlmDonePayload }
+  | { type: 'aiDone'; payload: LlmDonePayload }
   | { type: 'hotkeyTriggered'; payload: HotkeyTriggeredPayload }
   | { type: 'audioLevel'; payload: AudioLevelPayload }
   | { type: 'stealthChanged'; payload: StealthChangedPayload }

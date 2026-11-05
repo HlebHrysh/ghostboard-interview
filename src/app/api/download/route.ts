@@ -27,6 +27,7 @@ async function getLatestRelease(): Promise<GitHubRelease | null> {
         'User-Agent': 'Ghostboard-Download-Bridge',
         ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
       },
+      signal: AbortSignal.timeout(8000),
       next: { revalidate: 300 }, // Cache 5 minutes
     });
 

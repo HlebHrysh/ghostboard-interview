@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
         code,
         redirect_uri: redirectUri,
       }),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!tokenRes.ok) {
@@ -82,6 +83,7 @@ export async function GET(req: NextRequest) {
         Authorization: `Bearer ${accessToken}`,
         'User-Agent': 'Ghostboard-Auth',
       },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!userRes.ok) {
@@ -103,6 +105,7 @@ export async function GET(req: NextRequest) {
             Authorization: `Bearer ${accessToken}`,
             'User-Agent': 'Ghostboard-Auth',
           },
+          signal: AbortSignal.timeout(8000),
         });
         if (emailsRes.ok) {
           const emailsList: Array<{ email: string; primary: boolean; verified: boolean }> = await emailsRes.json();

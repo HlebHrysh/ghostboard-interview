@@ -1,5 +1,5 @@
 use std::ffi::c_void;
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 /// Windows OS-Native Stealth: Uses DWM exclusion from screen capture APIs.
 /// WDA_EXCLUDEFROMCAPTURE (0x00000011) hides window from BitBlt, DirectX Desktop Duplication,
@@ -97,9 +97,8 @@ pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), S
     window.set_skip_taskbar(enable).map_err(|e| format!("Failed to set skip_taskbar: {}", e))?;
     let _ = window.set_always_on_top(enable);
 
-    // Hyprland integration
+    // Hyprland integration: dispatch window properties without re-registering rules
     if crate::window::hyprland::is_hyprland() {
-        crate::window::hyprland::apply_hud_rules();
         if let Ok(pos) = window.outer_position() {
             crate::window::hyprland::dispatch_hud_window_properties(pos.x, pos.y);
         }
@@ -107,27 +106,34 @@ pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), S
 
     #[cfg(target_os = "linux")]
     {
-        if let Ok(gtk_win) = window.gtk_window() {
-            use gtk::prelude::*;
-            gtk_win.set_skip_taskbar_hint(enable);
-            gtk_win.set_skip_pager_hint(enable);
-            gtk_win.set_keep_above(enable);
+        let win = window.clone();
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(gtk_win) = win.gtk_window() {
+                use gtk::prelude::*;
+                gtk_win.set_skip_taskbar_hint(enable);
+                gtk_win.set_skip_pager_hint(enable);
+                gtk_win.set_keep_above(enable);
 
-            if let Some(gdk_win) = gtk_win.window() {
-                let atom = gtk::gdk::Atom::intern("_NET_WM_BYPASS_COMPOSITOR");
-                let cardinal = gtk::gdk::Atom::intern("CARDINAL");
-                let val: u32 = if enable { 1 } else { 0 };
-                let val_bytes = val.to_ne_bytes();
-                gtk::gdk::property_change(
-                    &gdk_win,
-                    &atom,
-                    &cardinal,
-                    32,
-                    gtk::gdk::PropMode::Replace,
-                    gtk::gdk::ChangeData::UChars(&val_bytes),
-                );
+                // GDK X11 atoms are only valid in native X11 sessions (never in Wayland/Hyprland)
+                if !crate::window::hyprland::is_wayland() && !crate::window::hyprland::is_hyprland() {
+                    if let Some(gdk_win) = gtk_win.window() {
+                        let atom = gtk::gdk::Atom::intern("_NET_WM_BYPASS_COMPOSITOR");
+                        let cardinal = gtk::gdk::Atom::intern("CARDINAL");
+                        let val: u32 = if enable { 1 } else { 0 };
+                        let val_bytes = val.to_ne_bytes();
+                        gtk::gdk::property_change(
+                            &gdk_win,
+                            &atom,
+                            &cardinal,
+                            32,
+                            gtk::gdk::PropMode::Replace,
+                            gtk::gdk::ChangeData::UChars(&val_bytes),
+                        );
+                    }
+                }
             }
-        }
+        });
     }
 
     Ok(())

@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
         redirect_uri: redirectUri,
         grant_type: 'authorization_code',
       }),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!tokenRes.ok) {
@@ -69,6 +70,7 @@ export async function GET(req: NextRequest) {
     // 2. Fetch User Profile from Google userinfo API
     const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!userRes.ok) {

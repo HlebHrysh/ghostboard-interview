@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserByEmail, createSession, verifyPassword } from '@/lib/serverDb';
-import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { validateOrigin, checkRateLimit, checkKeyRateLimit } from '@/lib/rateLimit';
 
 /**
  * POST /api/auth/login
@@ -40,7 +40,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password required', code: 'PASSWORD_REQUIRED' }, { status: 400 });
     }
 
-    const user = await getUserByEmail(email.trim().toLowerCase());
+    const normalizedEmail = email.trim().toLowerCase();
+    // P0-4: Account-level brute-force protection (max 5 login attempts per 15 minutes per email)
+    const emailRateLimit = await checkKeyRateLimit(normalizedEmail, 5, 15 * 60 * 1000, 'auth_login_email');
+    if (!emailRateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Забагато спроб входу для цього облікового запису. Спробуйте через 15 хвилин.', code: 'RATE_LIMITED', retryAfterSec: emailRateLimit.retryAfterSec },
+        { status: 429, headers: { 'Retry-After': String(emailRateLimit.retryAfterSec) } }
+      );
+    }
+
+    const user = await getUserByEmail(normalizedEmail);
     if (!user) {
       // The UI asks the visitor whether they want to register instead.
       return NextResponse.json({ error: 'User not found', code: 'USER_NOT_FOUND' }, { status: 404 });
@@ -55,7 +65,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!verifyPassword(password, user.passwordHash)) {
+    const isPasswordValid = await verifyPassword(password, user.passwordHash);
+    if (!isPasswordValid) {
       return NextResponse.json({ error: 'Wrong password', code: 'WRONG_PASSWORD' }, { status: 401 });
     }
 

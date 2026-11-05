@@ -9,10 +9,12 @@ use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 use crate::ipc::events::HudEvent;
 
-pub const DEFAULT_DEEPGRAM_URL: &str =
-    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&smart_format=true&interim_results=true&endpointing=300&utterance_end_ms=1000&encoding=linear16&sample_rate=16000&channels=1";
+pub const BASE_DEEPGRAM_URL: &str =
+    "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&model=nova-2";
 
-/// 45+ technical vocabulary keywords boosted for Deepgram Nova-3 recognition.
+pub const DEFAULT_DEEPGRAM_URL: &str = BASE_DEEPGRAM_URL;
+
+/// 45+ technical vocabulary keywords boosted for Deepgram recognition.
 pub const TECH_KEYTERMS: &[&str] = &[
     // Core Languages & Runtimes
     "Python", "TypeScript", "JavaScript", "Golang", "Java", "Kotlin", "Swift", "C#", "Dart", "Rust", "SQL",
@@ -38,16 +40,16 @@ pub const TECH_KEYTERMS: &[&str] = &[
     "Microservices", "Clean Architecture", "CQRS", "DDD", "OWASP", "AppSec", "JWT", "OAuth",
 ];
 
-/// Builds a fully-formed Deepgram Nova-3 WebSocket streaming URL with 45+ technical keywords boosted.
-/// Defaults to language=multi for simultaneous zero-config recognition of EN, UA, and RU.
+/// Builds a fully-formed Deepgram WebSocket streaming URL with 45+ technical keywords boosted.
+/// Defaults to nova-2 for robust multilingual streaming recognition (EN, UK, RU).
 pub fn build_deepgram_url(base_model: Option<&str>, language: Option<&str>) -> String {
-    let model = base_model.unwrap_or("nova-3");
+    let model = base_model.unwrap_or("nova-2");
     let target_lang = match language {
         Some("auto") | None => "multi",
         Some(l) => l,
     };
     let mut url = format!(
-        "wss://api.deepgram.com/v1/listen?model={}&language={}&smart_format=true&interim_results=true&endpointing=300&utterance_end_ms=1000&encoding=linear16&sample_rate=16000&channels=1",
+        "wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&model={}&language={}&endpointing=300&utterance_end_ms=1000",
         model, target_lang
     );
     for term in TECH_KEYTERMS {
@@ -287,16 +289,51 @@ impl DeepgramClient {
         transcript_tx: mpsc::Sender<TranscriptToken>,
         status_tx: Option<mpsc::UnboundedSender<HudEvent>>,
     ) -> Result<Self, String> {
-        let url = match endpoint_url {
+        let mut url = match endpoint_url {
             Some(u) => u.to_string(),
-            None => build_deepgram_url(Some("nova-3"), None),
+            None => BASE_DEEPGRAM_URL.to_string(),
         };
         let api_key = api_key.to_string();
 
         let request = build_request(&api_key, &url)?;
-        let (initial_ws, _) = tokio_tungstenite::connect_async(request)
-            .await
-            .map_err(|e| format!("Deepgram WebSocket connection failed: {}", e))?;
+        let initial_ws = match tokio_tungstenite::connect_async(request).await {
+            Ok((ws, _)) => ws,
+            Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+                let status = resp.status();
+                let body_str = resp
+                    .body()
+                    .as_ref()
+                    .map(|b| String::from_utf8_lossy(b).to_string())
+                    .unwrap_or_default();
+                tracing::warn!(
+                    target: "ghostboard::stt",
+                    speaker = %speaker,
+                    status = %status,
+                    body = %body_str,
+                    "Deepgram HTTP handshake failed"
+                );
+                if status.as_u16() == 400 && url != BASE_DEEPGRAM_URL {
+                    tracing::info!(
+                        target: "ghostboard::stt",
+                        speaker = %speaker,
+                        "Retrying with baseline Deepgram parameters: {}",
+                        BASE_DEEPGRAM_URL
+                    );
+                    url = BASE_DEEPGRAM_URL.to_string();
+                    let fallback_req = build_request(&api_key, &url)?;
+                    let (ws, _) = tokio_tungstenite::connect_async(fallback_req)
+                        .await
+                        .map_err(|e| format!("Deepgram baseline fallback failed: {}", e))?;
+                    ws
+                } else {
+                    return Err(format!(
+                        "Deepgram WebSocket connection failed: HTTP error: {} - {}",
+                        status, body_str
+                    ));
+                }
+            }
+            Err(e) => return Err(format!("Deepgram WebSocket connection failed: {}", e)),
+        };
 
         let (audio_tx, mut audio_rx) = mpsc::channel::<Vec<u8>>(100);
         let is_connected = Arc::new(AtomicBool::new(true));
@@ -357,6 +394,39 @@ impl DeepgramClient {
                         };
                         match tokio_tungstenite::connect_async(request).await {
                             Ok((ws, _)) => break ws,
+                            Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+                                let status = resp.status();
+                                let body_str = resp
+                                    .body()
+                                    .as_ref()
+                                    .map(|b| String::from_utf8_lossy(b).to_string())
+                                    .unwrap_or_default();
+                                tracing::warn!(
+                                    target: "ghostboard::stt",
+                                    speaker = %speaker_tag,
+                                    status = %status,
+                                    body = %body_str,
+                                    "Deepgram HTTP error during reconnect"
+                                );
+                                if status.as_u16() == 400 && url != BASE_DEEPGRAM_URL {
+                                    url = BASE_DEEPGRAM_URL.to_string();
+                                    if let Ok(fallback_req) = build_request(&api_key, &url) {
+                                        if let Ok((ws, _)) = tokio_tungstenite::connect_async(fallback_req).await {
+                                            break ws;
+                                        }
+                                    }
+                                }
+                                if is_fatal_connect_error(&tokio_tungstenite::tungstenite::Error::Http(resp)) {
+                                    emit(status_event(
+                                        &speaker_tag,
+                                        "failed",
+                                        attempt,
+                                        0,
+                                        Some(format!("Deepgram rejected credentials: HTTP {} {}", status, body_str)),
+                                    ));
+                                    break 'supervisor;
+                                }
+                            }
                             Err(e) => {
                                 tracing::warn!(target: "ghostboard::stt", speaker = %speaker_tag, "Reconnect failed: {}", e);
                                 if is_fatal_connect_error(&e) {

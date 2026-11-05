@@ -288,10 +288,20 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
     }
   };
 
+  const isPhased = Boolean(
+    activeAnswer?.rawText?.includes('<<<PHASE_') ||
+    (activeAnswer?.pillars && activeAnswer.pillars.length > 0) ||
+    (activeAnswer?.deepDive && activeAnswer.deepDive.trim().length > 0)
+  );
+
+  const effectiveDeepDiveText =
+    activeAnswer?.deepDive ||
+    (!isPhased ? (activeAnswer?.rawText || activeAnswer?.hook || '') : '');
+
   const deepDiveSections = useMemo(() => {
-    if (!activeAnswer?.deepDive) return [];
-    return parseStreamingMarkdown(activeAnswer.deepDive, isStreaming);
-  }, [activeAnswer?.deepDive, isStreaming]);
+    if (!effectiveDeepDiveText.trim()) return [];
+    return parseStreamingMarkdown(effectiveDeepDiveText, isStreaming);
+  }, [effectiveDeepDiveText, isStreaming]);
 
   const rmsLevel = Math.max(interviewerVolume, candidateVolume);
 
@@ -762,7 +772,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             <div
               ref={drawerScrollRef}
               onScroll={handleDrawerScroll}
-              className="max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 flex flex-col gap-2.5 pr-1 max-w-[65ch] mx-auto w-full"
+              className="max-h-[300px] min-h-[100px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 flex flex-col gap-2.5 pr-1 max-w-[65ch] mx-auto w-full text-zinc-100"
             >
               {/* Phase 1: Spoken Hook */}
               <div className="rounded-xl bg-[#14120a] border-l-4 border-l-amber-400/90 border-y border-r border-amber-500/30 p-2.5 shadow-[0_0_15px_rgba(245,158,11,0.08)] relative group">
@@ -783,6 +793,8 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                 <div className="text-[16px] leading-relaxed font-semibold text-white tracking-tight font-sans">
                   {activeAnswer?.hook ? (
                     renderBilingualPhrase(activeAnswer.hook)
+                  ) : activeAnswer?.rawText ? (
+                    renderBilingualPhrase(activeAnswer.rawText)
                   ) : (
                     <span className="text-zinc-500 italic text-[13px]">
                       Аналізую запитання та готую влучну голосову відповідь...

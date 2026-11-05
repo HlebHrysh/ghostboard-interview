@@ -173,8 +173,9 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
     const unlisten = listenTauriEvent<HudEvent>('hud-event', (event) => {
       if (completed || controller.signal.aborted) return;
 
-      if (event.type === 'llmChunk') {
-        const token = event.payload.token || (event.payload as { delta?: string }).delta || '';
+      if (event.type === 'llmChunk' || event.type === 'aiChunk') {
+        const p = event.payload as { token?: string; delta?: string; text?: string; chunk?: string };
+        const token = p.token || p.delta || p.text || p.chunk || '';
         if (token) {
           if (ttftMs === null) {
             ttftMs = Math.round(performance.now() - startedAt);
@@ -182,6 +183,13 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           }
           accumulated += token;
           handlers.onToken(token, cleanStreamText(accumulated));
+        }
+      } else if (event.type === 'llmDone' || event.type === 'aiDone') {
+        const p = event.payload as { full_text?: string; text?: string };
+        const full = p.full_text || p.text;
+        if (full) {
+          accumulated = full;
+          handlers.onToken('', cleanStreamText(accumulated));
         }
       } else if (event.type === 'error') {
         const err = event.payload.message || 'Помилка потоку ШІ';
@@ -209,6 +217,8 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           handlers.onError('ШІ повернув порожню відповідь. Перевірте дійсність GEMINI_API_KEY у файлі .env');
           return;
         }
+
+        handlers.onToken('', finalText);
 
         handlers.onDone({
           text: finalText,

@@ -34,12 +34,31 @@ let preferredFastModel: string | null = null;
 
 export const MODEL_DEMOTION_TTL_MS = 3 * 60 * 1000; // 3-minute demotion on timeout/503
 
+// In-memory Circuit Breaker: marks a model dead for 60 seconds on 429, 503, 404
+export const CIRCUIT_BREAKER_TTL_MS = 60_000;
+const circuitBreakerMap = new Map<string, number>();
+
+export function isModelCircuitBroken(model: string): boolean {
+  const deadUntil = circuitBreakerMap.get(model);
+  return !!deadUntil && Date.now() < deadUntil;
+}
+
+export function tripModelCircuitBreaker(model: string, ttlMs: number = CIRCUIT_BREAKER_TTL_MS): void {
+  circuitBreakerMap.set(model, Date.now() + ttlMs);
+  recordModelFailure(model);
+}
+
+export function resetModelCircuitBreaker(): void {
+  circuitBreakerMap.clear();
+}
+
 export function getPreferredFastModel(): string | null {
   return preferredFastModel;
 }
 
 export function recordModelSuccess(model: string, latencyMs?: number): void {
   preferredFastModel = model;
+  circuitBreakerMap.delete(model);
   modelHealthMap.set(model, { demotedUntil: 0, lastLatencyMs: latencyMs });
 }
 
@@ -54,6 +73,7 @@ export function recordModelFailure(model: string): void {
 
 export function resetModelHealth(): void {
   modelHealthMap.clear();
+  circuitBreakerMap.clear();
   preferredFastModel = null;
 }
 
@@ -63,6 +83,10 @@ export function getPrioritizedModels(pool: string[] = FLASH_MODELS): string[] {
   const demoted: string[] = [];
 
   for (const m of pool) {
+    if (isModelCircuitBroken(m)) {
+      demoted.push(m);
+      continue;
+    }
     const health = modelHealthMap.get(m);
     if (health && health.demotedUntil > now) {
       demoted.push(m);
@@ -71,8 +95,8 @@ export function getPrioritizedModels(pool: string[] = FLASH_MODELS): string[] {
     }
   }
 
-  // If preferredFastModel is set and healthy, move it to the very front
-  if (preferredFastModel && healthy.includes(preferredFastModel)) {
+  // If preferredFastModel is set, healthy, and not circuit-broken, move it to the very front
+  if (preferredFastModel && healthy.includes(preferredFastModel) && !isModelCircuitBroken(preferredFastModel)) {
     const idx = healthy.indexOf(preferredFastModel);
     healthy.splice(idx, 1);
     healthy.unshift(preferredFastModel);
@@ -107,6 +131,7 @@ export function getCleanGroqKey(): string | null {
 }
 
 export interface GeminiCallOptions {
+  apiKey?: string;
   models?: string[];
   contents: unknown[];
   generationConfig?: Record<string, unknown>;
@@ -146,8 +171,10 @@ export interface GeminiCallResult {
   isDeniedError?: boolean;
 }
 
+export const GEMINI_OVERALL_DEADLINE_MS = 8000;
+
 export async function callGeminiWithFallback(options: GeminiCallOptions): Promise<GeminiCallResult> {
-  const apiKey = getCleanGeminiKey();
+  const apiKey = (options.apiKey || '').trim() || getCleanGeminiKey();
   if (!apiKey) {
     return {
       ok: false,
@@ -155,23 +182,39 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
     };
   }
 
-  const modelsToTry = getPrioritizedModels(options.models || FLASH_MODELS);
+  const prioritized = getPrioritizedModels(options.models || FLASH_MODELS);
+  // Filter models that are not circuit-broken; if all are broken, fallback to full pool
+  const unbroken = prioritized.filter((m) => !isModelCircuitBroken(m));
+  const modelsToTry = unbroken.length > 0 ? unbroken : prioritized;
+
   let lastError = 'No models available';
   let isQuota = false;
   let isDenied = false;
   let isInvalidKey = false;
   let isPrepayDepleted = false;
 
+  const deadline = Date.now() + GEMINI_OVERALL_DEADLINE_MS;
+
   for (const model of modelsToTry) {
+    const now = Date.now();
+    if (now >= deadline) {
+      log.warn('Overall Gemini fallback deadline (8000ms) reached');
+      break;
+    }
+
+    const remainingTime = deadline - now;
+    if (remainingTime <= 0) break;
+    const timeoutMs = Math.min(options.timeoutMs || 3000, remainingTime);
+    if (remainingTime < 50) break;
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const timeoutMs = options.timeoutMs || 3000;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const genConfig: Record<string, unknown> = {
         temperature: 0.25,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 1024,
         ...(options.generationConfig || {}),
       };
 
@@ -219,35 +262,64 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
         }
       }
 
-      clearTimeout(timeoutId);
-
       if (res.ok) {
+        // P1-4: Read full response body BEFORE clearing timeout to prevent hanging on stalled body
         const data = (await res.json()) as {
+          promptFeedback?: { blockReason?: string };
           candidates?: Array<{
+            finishReason?: string;
             content?: {
               parts?: Array<{ text?: string }>;
             };
           }>;
         };
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          recordModelSuccess(model);
-          return {
-            ok: true,
-            modelUsed: model,
-            data,
-            text,
-          };
+        clearTimeout(timeoutId);
+
+        const blockReason = data?.promptFeedback?.blockReason;
+        if (blockReason) {
+          log.warn(`Model ${model} prompt blocked: ${blockReason}. Trying fallback model...`);
+          lastError = `Prompt blocked: ${blockReason}`;
+          continue;
         }
+
+        const candidate = data?.candidates?.[0];
+        const finishReason = candidate?.finishReason;
+        const text = candidate?.content?.parts?.[0]?.text;
+
+        if (!text || text.trim() === '') {
+          log.warn(`Model ${model} returned empty text. Trying fallback model...`);
+          lastError = 'Model returned empty response';
+          continue;
+        }
+
+        // If response truncated at maxOutputTokens with broken JSON
+        if (finishReason === 'MAX_TOKENS' && options.generationConfig?.responseMimeType === 'application/json') {
+          try {
+            JSON.parse(text);
+          } catch {
+            log.warn(`Model ${model} hit MAX_TOKENS with truncated JSON. Trying fallback model...`);
+            lastError = 'Response truncated with invalid JSON';
+            continue;
+          }
+        }
+
+        recordModelSuccess(model);
+        return {
+          ok: true,
+          modelUsed: model,
+          data,
+          text: text.trim(),
+        };
       }
 
-      // If not ok, analyze the error
+      // If not ok, read error body BEFORE clearing timeout
       let errBody = '';
       try {
         errBody = await res.text();
       } catch {
         // ignore
       }
+      clearTimeout(timeoutId);
 
       const errMsg = `${res.statusText} ${errBody}`;
       lastError = errMsg;
@@ -270,23 +342,46 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
         break;
       }
 
-      // Check if rate limited / quota exhausted on THIS specific model: try the next model!
-      if (res.status === 429 || errMsg.includes('Quota exceeded') || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('free_tier_requests, limit: 0')) {
-        log.warn(`Model ${model} quota/rate limit reached (429). Trying fallback model...`, { model, status: res.status });
-        recordModelFailure(model);
+      // P1-4: On HTTP 400 (invalid client payload), abort cascade immediately instead of retrying all models
+      if (res.status === 400) {
+        log.warn(`Model ${model} returned HTTP 400 Bad Request. Aborting cascade for invalid request.`, { errMsg });
+        break;
+      }
+
+      // Check if rate limited / quota exhausted on THIS specific model (429): trip circuit breaker & try next model
+      if (
+        res.status === 429 ||
+        errMsg.includes('Quota exceeded') ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('free_tier_requests, limit: 0')
+      ) {
+        log.warn(`Model ${model} quota/rate limit reached (429). Tripping circuit breaker for 60s. Trying fallback model...`, {
+          model,
+          status: res.status,
+        });
+        tripModelCircuitBreaker(model);
         isQuota = true;
         continue;
       }
 
-      // If model not found, high demand (503) or deprecated, try next model
-      if (res.status === 404 || res.status === 503 || errMsg.includes('not found') || errMsg.includes('no longer available') || errMsg.includes('high demand')) {
-        log.warn(`Model ${model} unavailable (status ${res.status}). Trying fallback...`, { model, status: res.status });
-        recordModelFailure(model);
+      // If model not found, high demand (503) or 404: trip circuit breaker & try next model
+      if (
+        res.status === 404 ||
+        res.status === 503 ||
+        errMsg.includes('not found') ||
+        errMsg.includes('no longer available') ||
+        errMsg.includes('high demand')
+      ) {
+        log.warn(`Model ${model} unavailable (status ${res.status}). Tripping circuit breaker for 60s. Trying fallback...`, {
+          model,
+          status: res.status,
+        });
+        tripModelCircuitBreaker(model);
         continue;
       }
     } catch (e: unknown) {
       clearTimeout(timeoutId);
-      recordModelFailure(model);
+      tripModelCircuitBreaker(model);
       lastError = e instanceof Error ? e.message : 'Network error';
       log.warn(`Model ${model} request error: ${lastError}. Trying fallback...`, { model }, e);
     }

@@ -1,4 +1,4 @@
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 /// Set the window opacity for the HUD teleprompter.
 /// Value is clamped to [0.05, 1.0] to prevent creating an entirely invisible, unreachable window.
@@ -40,10 +40,14 @@ pub fn set_window_opacity(window: &WebviewWindow, opacity: f32) -> Result<(), St
 
     #[cfg(target_os = "linux")]
     {
-        if let Ok(gtk_win) = window.gtk_window() {
-            use gtk::prelude::*;
-            gtk_win.set_opacity(clamped as f64);
-        }
+        let win = window.clone();
+        let app = window.app_handle().clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(gtk_win) = win.gtk_window() {
+                use gtk::prelude::*;
+                gtk_win.set_opacity(clamped as f64);
+            }
+        });
     }
 
     // Defense-in-depth: inject CSS custom property and body opacity into the Webview

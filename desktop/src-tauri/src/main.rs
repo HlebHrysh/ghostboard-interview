@@ -923,50 +923,31 @@ pub fn spawn_copilot_pipeline(
     });
 }
 
-/// Explicitly loads .env and .env.local from current and parent directories.
+/// Explicitly loads .env and .env.local from current and parent directories (guaranteed once via OnceLock).
 fn load_env_files() {
-    let explicit_paths = [
-        "../../.env.local",
-        "../../.env",
-        "../.env.local",
-        "../.env",
-        ".env.local",
-        ".env",
-    ];
-    let mut loaded_any = false;
-    for path_str in &explicit_paths {
-        let p = std::path::Path::new(path_str);
-        if p.is_file() {
-            load_single_env_file(p);
-            loaded_any = true;
-        }
-    }
-
-    // Walk up the directory tree looking for .env and .env.local
-    let mut current_dir = std::env::current_dir().ok();
-    for _ in 0..6 {
-        if let Some(dir) = &current_dir {
-            let env_local = dir.join(".env.local");
-            if env_local.is_file() {
-                load_single_env_file(&env_local);
+    static ENV_INIT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ENV_INIT.get_or_init(|| {
+        let explicit_paths = [
+            "../../.env.local",
+            "../../.env",
+            "../.env.local",
+            "../.env",
+            ".env.local",
+            ".env",
+        ];
+        let mut loaded_any = false;
+        for path_str in &explicit_paths {
+            let p = std::path::Path::new(path_str);
+            if p.is_file() {
+                load_single_env_file(p);
                 loaded_any = true;
             }
-            let env_file = dir.join(".env");
-            if env_file.is_file() {
-                load_single_env_file(&env_file);
-                loaded_any = true;
-            }
-            current_dir = dir.parent().map(|p| p.to_path_buf());
-        } else {
-            break;
         }
-    }
 
-    // Also walk up from current_exe directory
-    if let Ok(exe_path) = std::env::current_exe() {
-        let mut exe_dir = exe_path.parent().map(|p| p.to_path_buf());
+        // Walk up the directory tree looking for .env and .env.local
+        let mut current_dir = std::env::current_dir().ok();
         for _ in 0..6 {
-            if let Some(dir) = &exe_dir {
+            if let Some(dir) = &current_dir {
                 let env_local = dir.join(".env.local");
                 if env_local.is_file() {
                     load_single_env_file(&env_local);
@@ -977,16 +958,38 @@ fn load_env_files() {
                     load_single_env_file(&env_file);
                     loaded_any = true;
                 }
-                exe_dir = dir.parent().map(|p| p.to_path_buf());
+                current_dir = dir.parent().map(|p| p.to_path_buf());
             } else {
                 break;
             }
         }
-    }
 
-    if loaded_any {
-        tracing::info!(target: "ghostboard::env", "Environment files (.env / .env.local) discovered and loaded");
-    }
+        // Also walk up from current_exe directory
+        if let Ok(exe_path) = std::env::current_exe() {
+            let mut exe_dir = exe_path.parent().map(|p| p.to_path_buf());
+            for _ in 0..6 {
+                if let Some(dir) = &exe_dir {
+                    let env_local = dir.join(".env.local");
+                    if env_local.is_file() {
+                        load_single_env_file(&env_local);
+                        loaded_any = true;
+                    }
+                    let env_file = dir.join(".env");
+                    if env_file.is_file() {
+                        load_single_env_file(&env_file);
+                        loaded_any = true;
+                    }
+                    exe_dir = dir.parent().map(|p| p.to_path_buf());
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if loaded_any {
+            tracing::info!(target: "ghostboard::env", "Environment files (.env / .env.local) discovered and loaded");
+        }
+    });
 }
 
 fn load_single_env_file(path: &std::path::Path) {

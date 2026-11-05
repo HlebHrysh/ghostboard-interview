@@ -9,6 +9,7 @@ export interface TabCaptureOptions {
   chunkIntervalMs?: number;
   includeMic?: boolean;
   deepgramApiKey?: string;
+  getDeepgramApiKey?: () => Promise<string>;
   speechLanguage?: string;
   onLiveTranscript?: (
     text: string,
@@ -85,6 +86,7 @@ export class TabAudioCapture {
   private isDeepgramConfigured = false;
   private currentOptions: TabCaptureOptions | null = null;
   private chunkTimeout: ReturnType<typeof setTimeout> | null = null;
+  private volumeInterval: ReturnType<typeof setInterval> | null = null;
   private isLoopActive = false;
 
   public getStream(): MediaStream | null {
@@ -303,11 +305,12 @@ export class TabAudioCapture {
         masterMixNode.connect(this.analyser);
 
         // Real-time volume loop measuring both Interviewer and Candidate separately
+        // Uses background-safe setInterval to prevent freezing when tab is in background or minimized
         const tabDataArray = new Float32Array(64);
         const micDataArray = new Float32Array(64);
         let lastDispatched = 0;
 
-        const checkVolume = (now: number) => {
+        const checkVolume = () => {
           if (!this.isCapturing) return;
 
           let interviewerVol = 0;
@@ -334,63 +337,79 @@ export class TabAudioCapture {
 
           // Combined volume for global visual indicator
           const combinedVol = Math.max(interviewerVol, candidateVol);
+          const now = Date.now();
 
-          if (now - lastDispatched > 50) {
+          if (now - lastDispatched >= 50) {
             lastDispatched = now;
-            window.dispatchEvent(
-              new CustomEvent('ghostboard:audio_volume', {
-                detail: {
-                  volume: combinedVol,
-                  interviewer: interviewerVol,
-                  candidate: candidateVol,
-                },
-              })
-            );
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('ghostboard:audio_volume', {
+                  detail: {
+                    volume: combinedVol,
+                    interviewer: interviewerVol,
+                    candidate: candidateVol,
+                  },
+                })
+              );
+            }
             if (options?.onVolumeChange) {
               options.onVolumeChange(interviewerVol, candidateVol);
             }
           }
-          requestAnimationFrame(checkVolume);
         };
-        requestAnimationFrame(checkVolume);
+
+        if (this.volumeInterval) clearInterval(this.volumeInterval);
+        this.volumeInterval = setInterval(checkVolume, 50);
 
         // ⚡ Deepgram Live Streaming: Ultra-low latency (~150-200ms) for INTERVIEWER SPEECH
         // STRICT RULE: Attaches ONLY to interviewerGainNode (Tab audio).
         // NEVER falls back to masterMixNode or microphone, guaranteeing the AI never hears candidate mic as interviewer!
-        if (options?.deepgramApiKey && options?.onLiveTranscript && this.interviewerGainNode) {
+        const hasKey = Boolean(options?.getDeepgramApiKey || options?.deepgramApiKey);
+        if (hasKey && options?.onLiveTranscript && this.interviewerGainNode) {
           this.isDeepgramConfigured = true;
           try {
             this.deepgramClient = new DeepgramLiveClient();
-            this.deepgramClient
-              .startWithNode(this.audioContext, this.interviewerGainNode, {
-                apiKey: options.deepgramApiKey,
-                language: options.speechLanguage || 'uk',
-                onTranscript: (res) => {
-                  options.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'interviewer');
-                },
-                onStateChange: (state) => {
-                  options.onConnectionStateChange?.(state);
-                  if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new CustomEvent('ghostboard:stt_state', { detail: state }));
-                  }
-                },
-                onError: (err) => {
-                  console.warn('[TabAudioCapture] Deepgram interviewer stream warning:', err);
-                  // NEVER fall back to Web Speech API for interviewer, because Web Speech always uses the microphone!
-                },
-              })
-              .catch((err) => {
-                console.warn('[TabAudioCapture] Deepgram start error for interviewer:', err);
-              });
-          } catch (dgErr) {
-            console.warn('[TabAudioCapture] Could not initialize Deepgram interviewer client:', dgErr);
+            const getApiKeyProvider = options.getDeepgramApiKey || (async () => options.deepgramApiKey || '');
+            await this.deepgramClient.startWithNode(this.audioContext, this.interviewerGainNode, {
+              getApiKey: getApiKeyProvider,
+              language: options.speechLanguage || 'uk',
+              onTranscript: (res) => {
+                options.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'interviewer');
+              },
+              onStateChange: (state) => {
+                options.onConnectionStateChange?.(state);
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('ghostboard:stt_state', { detail: state }));
+                }
+              },
+              onError: (err) => {
+                console.warn('[TabAudioCapture] Deepgram interviewer stream warning:', err);
+              },
+            });
+          } catch (dgErr: unknown) {
+            const errObj = dgErr as { message?: string };
+            const errMsg = errObj?.message || 'Помилка підключення до Deepgram';
+            console.error('[TabAudioCapture] Could not start Deepgram interviewer client:', dgErr);
+            options.onConnectionStateChange?.('disconnected');
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('ghostboard:stt_state', { detail: 'disconnected' }));
+              window.dispatchEvent(
+                new CustomEvent('ghostboard:audio_toast', {
+                  detail: {
+                    type: 'warning',
+                    message: `STT відключено: ${errMsg}`,
+                  },
+                })
+              );
+            }
+            throw new Error(`STT відключено: ${errMsg}`);
           }
         }
 
         // 🎙️ Candidate Microphone Speech Transcription (Dedicated Isolated Stream)
         // Transcribes candidate mic separately via Deepgram Nova-3 (or Web Speech API strictly labeled 'candidate')
         if (this.micStream && this.isMicActive && options?.onLiveTranscript && this.candidateGainNode) {
-          this.startCandidateSpeechRecognition(options);
+          await this.startCandidateSpeechRecognition(options);
         }
       }
 
@@ -553,6 +572,11 @@ export class TabAudioCapture {
     this.isCapturing = false;
     this.isLoopActive = false;
 
+    if (this.volumeInterval) {
+      clearInterval(this.volumeInterval);
+      this.volumeInterval = null;
+    }
+
     if (this.deepgramClient) {
       try {
         this.deepgramClient.stop();
@@ -707,33 +731,31 @@ export class TabAudioCapture {
     }
   }
 
-  private startCandidateSpeechRecognition(options?: TabCaptureOptions) {
+  private async startCandidateSpeechRecognition(options?: TabCaptureOptions) {
     if (typeof window === 'undefined' || this.candidateDeepgramClient || this.candidateSpeechRecognition) return;
 
     // 1. Primary: Dedicated Deepgram Nova-3 WebSocket for Candidate mic (works 100% reliably on Linux)
-    if (options?.deepgramApiKey && this.audioContext && this.candidateGainNode) {
+    const hasKey = Boolean(options?.getDeepgramApiKey || options?.deepgramApiKey);
+    if (hasKey && this.audioContext && this.candidateGainNode) {
       try {
         console.log('[TabAudioCapture] Launching dedicated Deepgram Live client for Candidate microphone...');
         this.candidateDeepgramClient = new DeepgramLiveClient();
-        this.candidateDeepgramClient
-          .startWithNode(this.audioContext, this.candidateGainNode, {
-            apiKey: options.deepgramApiKey,
-            language: options.speechLanguage || 'uk',
-            onTranscript: (res) => {
-              options.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'candidate');
-            },
-            onError: (err) => {
-              console.warn('[TabAudioCapture] Candidate Deepgram client warning, falling back to Web Speech:', err);
-              this.startCandidateWebSpeechFallback(options);
-            },
-          })
-          .catch((err) => {
-            console.warn('[TabAudioCapture] Candidate Deepgram client start error:', err);
+        const getApiKeyProvider = options?.getDeepgramApiKey || (async () => options?.deepgramApiKey || '');
+        await this.candidateDeepgramClient.startWithNode(this.audioContext, this.candidateGainNode, {
+          getApiKey: getApiKeyProvider,
+          language: options?.speechLanguage || 'uk',
+          onTranscript: (res) => {
+            options?.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'candidate');
+          },
+          onError: (err) => {
+            console.warn('[TabAudioCapture] Candidate Deepgram client warning, falling back to Web Speech:', err);
             this.startCandidateWebSpeechFallback(options);
-          });
+          },
+        });
         return;
       } catch (err) {
-        console.warn('[TabAudioCapture] Could not instantiate candidate Deepgram client:', err);
+        console.warn('[TabAudioCapture] Candidate Deepgram client start error:', err);
+        this.startCandidateWebSpeechFallback(options);
       }
     }
 

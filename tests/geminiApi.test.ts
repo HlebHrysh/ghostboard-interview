@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { FLASH_MODELS, PRO_MODELS, getCleanGeminiKey } from "../src/lib/geminiApi";
 
 describe("geminiApi helper", () => {
@@ -64,5 +64,167 @@ describe("geminiApi helper", () => {
     expect(cfg.temperature).toBe(0.3);
 
     resetModelHealth();
+  });
+
+  describe("callGeminiWithFallback", () => {
+    it("trips circuit breaker on 429 / 503 / 404 and excludes failing model from cascade", async () => {
+      const {
+        callGeminiWithFallback,
+        resetModelCircuitBreaker,
+        isModelCircuitBroken,
+        resetModelHealth,
+      } = await import("../src/lib/geminiApi");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+
+      // Mock fetch: first model returns 429, second model succeeds
+      let callCount = 0;
+      const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+        callCount++;
+        if (url.includes("gemini-3.8-flash")) {
+          return {
+            ok: false,
+            status: 429,
+            statusText: "Too Many Requests",
+            text: async () => JSON.stringify({ error: { message: "RESOURCE_EXHAUSTED" } }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: "Successful response from fallback model" }],
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callGeminiWithFallback({
+        apiKey: "test-fake-key",
+        contents: [{ role: "user", parts: [{ text: "Hello" }] }],
+        timeoutMs: 2000,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.modelUsed).toBe("gemini-3.6-flash");
+      expect(result.text).toBe("Successful response from fallback model");
+      expect(isModelCircuitBroken("gemini-3.8-flash")).toBe(true);
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+      vi.unstubAllGlobals();
+    });
+
+    it("falls back to next model when model returns empty text", async () => {
+      const {
+        callGeminiWithFallback,
+        resetModelCircuitBreaker,
+        resetModelHealth,
+      } = await import("../src/lib/geminiApi");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+
+      const fetchMock = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes("gemini-3.8-flash")) {
+          // Model returns ok status but empty text
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              candidates: [
+                {
+                  content: {
+                    parts: [{ text: "   " }],
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: "Valid answer from gemini-3.6-flash" }],
+                },
+              },
+            ],
+          }),
+        };
+      });
+
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callGeminiWithFallback({
+        apiKey: "test-fake-key",
+        contents: [{ role: "user", parts: [{ text: "What is React?" }] }],
+        timeoutMs: 2000,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.modelUsed).toBe("gemini-3.6-flash");
+      expect(result.text).toBe("Valid answer from gemini-3.6-flash");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+      vi.unstubAllGlobals();
+    });
+
+    it("times out when response body reading stalls", async () => {
+      const {
+        callGeminiWithFallback,
+        resetModelCircuitBreaker,
+        resetModelHealth,
+      } = await import("../src/lib/geminiApi");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+
+      // Mock fetch: headers arrive, but res.json() stalls and aborts via signal
+      const fetchMock = vi.fn().mockImplementation(async (url: string, init: RequestInit) => {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => {
+            return new Promise((resolve, reject) => {
+              if (init.signal) {
+                init.signal.addEventListener("abort", () => {
+                  reject(new DOMException("The operation was aborted.", "AbortError"));
+                });
+              }
+            });
+          },
+        };
+      });
+
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callGeminiWithFallback({
+        apiKey: "test-fake-key",
+        models: ["gemini-3.8-flash"],
+        contents: [{ role: "user", parts: [{ text: "Stall test" }] }],
+        timeoutMs: 200, // Short timeout
+      });
+
+      // Since only 1 model was in the cascade and it stalled, callGeminiWithFallback returns ok: false
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/abort/i);
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+      vi.unstubAllGlobals();
+    });
   });
 });

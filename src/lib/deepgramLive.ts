@@ -9,7 +9,8 @@ export interface DeepgramTranscriptResult {
 }
 
 export interface DeepgramLiveOptions {
-  apiKey: string;
+  getApiKey: () => Promise<string>;
+  apiKey?: string;
   language?: string;
   sampleRate?: number;
   onTranscript?: (result: DeepgramTranscriptResult) => void;
@@ -19,36 +20,36 @@ export interface DeepgramLiveOptions {
   onStateChange?: (state: 'connected' | 'reconnecting' | 'disconnected') => void;
 }
 
+/**
+ * High-impact technical keyterms for boosting Deepgram Nova-3 accuracy.
+ * Kept strictly under 40 items (< 1.5 KB query string) to prevent HTTP 400 errors.
+ */
 export const TECH_KEYTERMS = [
-  // Core Languages & Runtimes
-  'Python', 'TypeScript', 'JavaScript', 'Golang', 'Java', 'Kotlin', 'Swift', 'C#', 'Dart', 'Rust', 'SQL',
-  // Web & Frontend
-  'React', 'Next.js', 'Vue', 'Nuxt', 'Angular', 'RxJS', 'Redux', 'Zustand', 'Tailwind', 'Vite',
-  // Backend & Frameworks
-  'FastAPI', 'Django', 'Node.js', 'NestJS', 'Express', 'Spring Boot', 'ASP.NET', 'Gin',
-  // Concurrency & Low-level
-  'Asyncio', 'Goroutine', 'Coroutines', 'EventLoop', 'async/await', 'GIL', 'libuv', 'JVM',
-  // Databases & ORMs
-  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'SQLAlchemy', 'Prisma', 'Hibernate', 'Entity Framework', 'Alembic', 'B-Tree',
-  // Cloud, Infra & Containers
-  'Docker', 'Kubernetes', 'K8s', 'Helm', 'Terraform', 'AWS', 'GCP', 'Azure', 'Linux', 'Nginx', 'CI/CD',
-  // Messaging & Streaming
-  'Kafka', 'RabbitMQ', 'Celery', 'WebSocket', 'gRPC', 'REST', 'GraphQL',
-  // Testing & QA
-  'pytest', 'Jest', 'JUnit', 'Playwright', 'Cypress', 'Selenium',
-  // Mobile
-  'SwiftUI', 'Jetpack Compose', 'Flutter', 'React Native', 'Xcode',
-  // Data, AI & Big Data
-  'PyTorch', 'TensorFlow', 'Pandas', 'Spark', 'Airflow', 'Snowflake', 'BigQuery', 'dbt', 'LangChain', 'RAG', 'LLM',
-  // Architecture & Security
-  'Microservices', 'Clean Architecture', 'CQRS', 'DDD', 'OWASP', 'AppSec', 'JWT', 'OAuth'
+  'Python', 'TypeScript', 'JavaScript', 'Golang', 'Java', 'Rust', 'SQL',
+  'React', 'Next.js', 'FastAPI', 'Django', 'Node.js', 'NestJS',
+  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'SQLAlchemy', 'Prisma',
+  'Docker', 'Kubernetes', 'AWS', 'Linux', 'Kafka', 'RabbitMQ', 'Celery',
+  'WebSocket', 'gRPC', 'REST', 'GraphQL', 'pytest', 'CI/CD',
+  'Microservices', 'PyTorch', 'Asyncio', 'EventLoop', 'JWT'
 ];
 
 export class DeepgramLiveClient {
   private socket: WebSocket | null = null;
-  private processor: AudioWorkletNode | ScriptProcessorNode | null = null;
-  private silentGain: GainNode | null = null;
+  private processor: AudioWorkletNode | null = null;
   private keepAliveTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private isRunning = false;
+  private isReconnecting = false;
+  private reconnectAttempts = 0;
+  private generation = 0;
+  private lastAudioSentTime = 0;
+  private lastMessageReceivedTime = 0;
+  private options: DeepgramLiveOptions | null = null;
+  private internalAudioContext: AudioContext | null = null;
+  private activeAudioContext: AudioContext | null = null;
+  private sourceNode: AudioNode | null = null;
+  private boundOnlineHandler: (() => void) | null = null;
 
   private sendDiag(msg: string) {
     try {
@@ -61,42 +62,55 @@ export class DeepgramLiveClient {
       }
     } catch {}
   }
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private isRunning = false;
-  private isReconnecting = false;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 6;
-  private options: DeepgramLiveOptions | null = null;
-  private internalAudioContext: AudioContext | null = null;
-  private activeAudioContext: AudioContext | null = null;
-  private sourceNode: AudioNode | null = null;
 
   public isConnected(): boolean {
     return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+  }
+
+  public getGeneration(): number {
+    return this.generation;
+  }
+
+  public getReconnectAttempts(): number {
+    return this.reconnectAttempts;
   }
 
   public async setLanguage(newLang: string): Promise<void> {
     if (!this.options) return;
     console.log('[Deepgram] Switching live speech language to:', newLang);
     this.options.language = newLang;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const gen = ++this.generation;
+
     if (this.activeAudioContext && this.sourceNode) {
       this.cleanupSocketOnly();
       this.isRunning = true;
       this.isReconnecting = false;
       this.reconnectAttempts = 0;
-      await this.connectWebSocket(this.activeAudioContext, this.sourceNode, this.options);
+      await this.connectWebSocket(this.activeAudioContext, this.sourceNode, this.options, gen);
     }
   }
 
   public async reconnect(): Promise<void> {
     console.log('[Deepgram] Manual reconnect requested');
     this.sendDiag('[DG-MANUAL-RECONNECT]');
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const gen = ++this.generation;
+
     this.cleanupSocketOnly();
     this.isRunning = true;
     this.isReconnecting = false;
     this.reconnectAttempts = 0;
     if (this.activeAudioContext && this.sourceNode && this.options) {
-      await this.connectWebSocket(this.activeAudioContext, this.sourceNode, this.options);
+      await this.connectWebSocket(this.activeAudioContext, this.sourceNode, this.options, gen);
     }
   }
 
@@ -116,16 +130,53 @@ export class DeepgramLiveClient {
     this.activeAudioContext = audioContext;
     this.sourceNode = sourceNode;
 
+    this.setupOnlineListener();
+
     return this.connectWebSocket(audioContext, sourceNode, options);
+  }
+
+  private setupOnlineListener(): void {
+    if (typeof window === 'undefined') return;
+    if (!this.boundOnlineHandler) {
+      this.boundOnlineHandler = () => {
+        if (this.isRunning && (!this.socket || this.socket.readyState !== WebSocket.OPEN)) {
+          console.log('[Deepgram] Network restored (online event) - triggering immediate reconnect');
+          this.reconnectAttempts = 0;
+          this.reconnect().catch((err) => console.warn('[Deepgram] Online reconnect failed:', err));
+        }
+      };
+      window.addEventListener('online', this.boundOnlineHandler);
+    }
+  }
+
+  private removeOnlineListener(): void {
+    if (typeof window !== 'undefined' && this.boundOnlineHandler) {
+      window.removeEventListener('online', this.boundOnlineHandler);
+      this.boundOnlineHandler = null;
+    }
   }
 
   private async connectWebSocket(
     audioContext: AudioContext,
     sourceNode: AudioNode,
-    options: DeepgramLiveOptions
+    options: DeepgramLiveOptions,
+    existingGen?: number
   ): Promise<void> {
-    const rawKey = options.apiKey || '';
-    const cleanApiKey = rawKey.trim().replace(/^["']|["']$/g, '');
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const gen = existingGen ?? ++this.generation;
+
+    // Dynamically retrieve fresh token for every connection attempt
+    let rawKey = '';
+    if (typeof options.getApiKey === 'function') {
+      rawKey = await options.getApiKey();
+    } else if (options.apiKey) {
+      rawKey = options.apiKey;
+    }
+
+    const cleanApiKey = (rawKey || '').trim().replace(/^["']|["']$/g, '');
     const { language = 'auto' } = options;
     if (!cleanApiKey) {
       throw new Error('Deepgram API key is required');
@@ -138,7 +189,7 @@ export class DeepgramLiveClient {
     try {
       await audioContext.audioWorklet.addModule('/pcm-worklet.js');
     } catch (e) {
-      console.warn('Failed to load AudioWorklet, falling back to ScriptProcessor if needed:', e);
+      console.warn('[Deepgram] AudioWorklet module load notice:', e);
     }
 
     const sampleRate = audioContext.sampleRate || 48000;
@@ -157,24 +208,29 @@ export class DeepgramLiveClient {
       channels: '1',
     });
 
-    // Inject boosted technical keywords for accurate recognition in Nova-3 (UK / RU / EN)
+    // Inject boosted technical keywords (< 40 items)
     TECH_KEYTERMS.forEach((term) => params.append('keyterm', term));
 
     const wsUrl = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
-    this.sendDiag(`[DG-CONNECT] len=${wsUrl.length} keyLen=${cleanApiKey.length} lang=${targetLang} sampleRate=${sampleRate}`);
-    console.log('[Deepgram] Connecting Live WebSocket. SampleRate:', sampleRate, 'model: nova-3, lang:', targetLang);
+    this.sendDiag(`[DG-CONNECT] gen=${gen} len=${wsUrl.length} keyLen=${cleanApiKey.length} lang=${targetLang} sampleRate=${sampleRate}`);
+    console.log('[Deepgram] Connecting Live WebSocket (gen: %d). SampleRate: %d, lang: %s', gen, sampleRate, targetLang);
 
-    // Deepgram browser authentication via WebSocket subprotocol
+    let hasOpened = false;
     this.socket = new WebSocket(wsUrl, ['token', cleanApiKey]);
     this.socket.binaryType = 'arraybuffer';
 
     this.socket.onopen = () => {
+      if (gen !== this.generation) return;
       if (!this.isRunning) {
         this.socket?.close();
         return;
       }
+
+      hasOpened = true;
+      this.lastMessageReceivedTime = Date.now();
+      this.lastAudioSentTime = 0;
       this.sendDiag('[DG-OPEN] WebSocket connected successfully!');
-      console.log('[Deepgram] Live WebSocket Connected successfully!');
+      console.log('[Deepgram] Live WebSocket Connected successfully (gen: %d)!', gen);
       this.isReconnecting = false;
       this.reconnectAttempts = 0;
       options.onStateChange?.('connected');
@@ -184,67 +240,72 @@ export class DeepgramLiveClient {
       }
       options.onOpen?.();
 
-      // KeepAlive pulse every 3 seconds to prevent Deepgram NET-0001 timeout
+      // Smart KeepAlive: Send {"type":"KeepAlive"} ONLY if no audio has been sent for > 5 seconds
       if (this.keepAliveTimer) clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = setInterval(() => {
+        if (gen !== this.generation) return;
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-          this.socket.send(JSON.stringify({ type: 'KeepAlive' }));
+          if (Date.now() - this.lastAudioSentTime >= 5000) {
+            try {
+              this.socket.send(JSON.stringify({ type: 'KeepAlive' }));
+              this.lastAudioSentTime = Date.now();
+            } catch {}
+          }
         }
-      }, 3000);
+      }, 1000);
 
-        // Connect AudioWorklet inside caller's active AudioContext
-        try {
-          if (this.processor) {
-            try { this.processor.disconnect(); } catch {}
-            this.processor = null;
+      // Dead Socket Watchdog: If sending audio actively, but 0 incoming messages from Deepgram for > 10 seconds, force reconnect
+      if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+      this.watchdogTimer = setInterval(() => {
+        if (gen !== this.generation) return;
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+          const now = Date.now();
+          const isAudioActivelySending = this.lastAudioSentTime > 0 && (now - this.lastAudioSentTime < 4000);
+          if (isAudioActivelySending && (now - this.lastMessageReceivedTime > 10_000)) {
+            console.warn('[Deepgram] Watchdog: No incoming messages for >10s while sending audio. Half-open socket detected, forcing reconnect.');
+            this.reconnect().catch((err) => console.warn('[Deepgram] Watchdog reconnect failed:', err));
+          }
+        }
+      }, 2000);
+
+      // Connect AudioWorklet inside caller's active AudioContext
+      try {
+        if (this.processor) {
+          try { this.processor.disconnect(); } catch {}
+          this.processor = null;
+        }
+
+        this.processor = new AudioWorkletNode(audioContext, 'pcm-processor');
+        this.processor.port.onmessage = (e: MessageEvent) => {
+          if (gen !== this.generation || !this.isRunning || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
+
+          // Backpressure Guard: Drop chunk if buffer exceeds 256KB to avoid browser tab OOM under stuck TCP
+          if (this.socket.bufferedAmount > 256 * 1024) {
+            console.warn('[Deepgram] Backpressure: socket.bufferedAmount > 256KB, dropping chunk');
+            return;
           }
 
           try {
-            // Attempt to use modern AudioWorklet API
-            this.processor = new AudioWorkletNode(audioContext, 'pcm-processor');
-            this.processor.port.onmessage = (e: MessageEvent) => {
-              if (!this.isRunning || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-              try {
-                this.socket.send(e.data);
-              } catch (err) {}
-            };
-          } catch (e) {
-            // Fallback to ScriptProcessor if AudioWorklet fails
-            console.warn('[Deepgram] AudioWorklet failed, falling back to ScriptProcessor:', e);
-            this.processor = audioContext.createScriptProcessor(4096, 1, 1);
-            this.processor.onaudioprocess = (e: AudioProcessingEvent) => {
-              if (!this.isRunning || !this.socket || this.socket.readyState !== WebSocket.OPEN) return;
-              const inputBuffer = e.inputBuffer.getChannelData(0);
-              const pcm16 = new Int16Array(inputBuffer.length);
-              for (let i = 0; i < inputBuffer.length; i++) {
-                const sample = Math.max(-1, Math.min(1, inputBuffer[i]));
-                pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
-              }
-              try { this.socket.send(pcm16.buffer); } catch (err) {}
-            };
-          }
-
-          sourceNode.connect(this.processor);
-
-          // AudioWorklet runs standalone without destination connection.
-          // Only legacy ScriptProcessorNode requires a silent destination node to keep firing events.
-          if (typeof AudioWorkletNode === 'undefined' || !(this.processor instanceof AudioWorkletNode)) {
-            if (!this.silentGain) {
-              this.silentGain = audioContext.createGain();
-              this.silentGain.gain.value = 0;
-              this.silentGain.connect(audioContext.destination);
+            const data = e.data instanceof ArrayBuffer ? e.data : (e.data?.buffer || e.data);
+            if (data instanceof ArrayBuffer) {
+              this.socket.send(data);
+              this.lastAudioSentTime = Date.now();
             }
-            try {
-              this.processor?.connect(this.silentGain);
-            } catch {}
-          }
-        } catch (err) {
-          console.warn('[Deepgram] Failed to attach audio processor:', err);
-        }
+          } catch (err) {}
+        };
+
+        sourceNode.connect(this.processor);
+      } catch (err) {
+        console.warn('[Deepgram] Failed to attach audio processor:', err);
+      }
     };
 
     this.socket.onmessage = (event: MessageEvent) => {
+      if (gen !== this.generation) return;
       if (!this.isRunning) return;
+
+      this.lastMessageReceivedTime = Date.now();
+
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'Results' && data.channel?.alternatives?.[0]) {
@@ -268,6 +329,7 @@ export class DeepgramLiveClient {
     };
 
     this.socket.onerror = (err) => {
+      if (gen !== this.generation) return;
       this.sendDiag('[DG-ERROR] WebSocket onerror event');
       console.warn('[Deepgram] Live WebSocket error:', err);
       this.isReconnecting = false;
@@ -275,8 +337,9 @@ export class DeepgramLiveClient {
     };
 
     this.socket.onclose = (event) => {
-      this.sendDiag(`[DG-CLOSE] code=${event.code} reason="${event.reason}" wasClean=${event.wasClean} attempts=${this.reconnectAttempts}`);
-      console.log('[Deepgram] Live WebSocket closed. Code:', event.code, 'Reason:', event.reason);
+      if (gen !== this.generation) return;
+      this.sendDiag(`[DG-CLOSE] gen=${gen} code=${event.code} reason="${event.reason}" wasClean=${event.wasClean} attempts=${this.reconnectAttempts}`);
+      console.log('[Deepgram] Live WebSocket closed (gen: %d). Code:', gen, event.code, 'Reason:', event.reason);
       this.cleanupSocketOnly();
       options.onClose?.();
 
@@ -291,6 +354,11 @@ export class DeepgramLiveClient {
         return;
       }
 
+      // If closed with 1006 before onopen, suspected expired token / invalid parameters
+      if (event.code === 1006 && !hasOpened) {
+        console.warn('[Deepgram] Socket closed 1006 before onopen: suspected expired token/params. Fresh token will be retrieved on reconnect.');
+      }
+
       if (this.isRunning) {
         this.scheduleReconnect();
       } else {
@@ -302,20 +370,13 @@ export class DeepgramLiveClient {
   private scheduleReconnect(): void {
     if (!this.isRunning || this.isReconnecting) return;
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.warn(`[Deepgram] Reached maximum reconnect attempts (${this.maxReconnectAttempts}).`);
-      this.sendDiag(`[DG-MAX-ATTEMPTS-REACHED] stopped after ${this.maxReconnectAttempts}`);
-      this.isRunning = false;
-      this.isReconnecting = false;
-      this.options?.onStateChange?.('disconnected');
-      this.options?.onError?.(new Error('Max Deepgram reconnect attempts reached'));
-      return;
-    }
-
     this.isReconnecting = true;
     this.reconnectAttempts++;
-    const delay = Math.min(500 * Math.pow(1.3, this.reconnectAttempts - 1), 3000);
-    console.log(`[Deepgram] Auto-reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+
+    // Infinite exponential backoff with jitter (max base: 30s)
+    const base = Math.min(30_000, 500 * Math.pow(2, Math.min(this.reconnectAttempts, 6)));
+    const delay = base / 2 + Math.random() * (base / 2);
+    console.log(`[Deepgram] Auto-reconnecting in ${Math.round(delay)}ms (attempt ${this.reconnectAttempts})...`);
     this.options?.onStateChange?.('reconnecting');
 
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -378,6 +439,13 @@ export class DeepgramLiveClient {
       this.keepAliveTimer = null;
     }
 
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+
+    this.removeOnlineListener();
+
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       try {
         this.socket.send(JSON.stringify({ type: 'CloseStream' }));
@@ -393,6 +461,10 @@ export class DeepgramLiveClient {
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;
+    }
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
     if (this.processor) {
       try {
@@ -414,13 +486,6 @@ export class DeepgramLiveClient {
 
   private cleanup(): void {
     this.cleanupSocketOnly();
-
-    if (this.silentGain) {
-      try {
-        this.silentGain.disconnect();
-      } catch {}
-      this.silentGain = null;
-    }
 
     if (this.sourceNode) {
       try {

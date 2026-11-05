@@ -364,7 +364,7 @@ function block() { Promise.resolve().then(block); }`,
     processItem(items[i]);
     // Yield to let browser paint and handle user clicks
     if (i % 500 === 0 && 'scheduler' in window) {
-      await (window as any).scheduler.yield();
+      await (window as unknown as { scheduler: { yield: () => Promise<void> } }).scheduler.yield();
     }
   }
 }`,

@@ -28,6 +28,7 @@ let autoCaptureStartPromise: Promise<boolean> | null = null;
 function cleanStreamingAnswerText(raw: string): string {
   if (!raw) return '';
   return raw
+    .replace(/<<<\s*META:[^>]+>>>/gi, '')
     .replace(/<<<\s*PHASE_[123]:[A-Za-z0-9_]+\s*>>>/gi, '')
     .replace(/<<<\s*END\s*>>>/gi, '')
     .replace(/\[DONE\]/gi, '')
@@ -167,13 +168,16 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         break;
       }
 
-      case 'llmChunk': {
-        const token = event.payload.token || event.payload.delta || '';
+      case 'llmChunk':
+      case 'aiChunk': {
+        const payload = event.payload as { token?: string; delta?: string; text?: string; is_first?: boolean };
+        const token = payload.token || payload.delta || payload.text || '';
         accumulatedTokensRef.current += token;
         const fullSoFar = accumulatedTokensRef.current;
-        setStreamingAnswer(cleanStreamingAnswerText(fullSoFar));
+        const cleaned = cleanStreamingAnswerText(fullSoFar);
+        setStreamingAnswer(cleaned || fullSoFar);
 
-        if (!firstTokenTimeRef.current && (event.payload.is_first || token.length > 0)) {
+        if (!firstTokenTimeRef.current && (payload.is_first || token.length > 0)) {
           firstTokenTimeRef.current = Date.now();
           if (questionStartTimeRef.current) {
             setTtftMs(firstTokenTimeRef.current - questionStartTimeRef.current);
@@ -189,7 +193,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           : 0;
 
         setStructuredAnswer({
-          hook: parsed.hook,
+          hook: parsed.hook || cleaned || fullSoFar,
           pillars: parsed.pillars,
           deepDive: parsed.deepDive,
           rawText: fullSoFar,
@@ -201,25 +205,28 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         break;
       }
 
-      case 'llmDone': {
+      case 'llmDone':
+      case 'aiDone': {
         setIsStreaming(false);
-        const fullText = event.payload.full_text || accumulatedTokensRef.current;
+        const payload = event.payload as { full_text?: string; text?: string; latency_ms?: number };
+        const fullText = payload.full_text || payload.text || accumulatedTokensRef.current;
         accumulatedTokensRef.current = fullText;
-        setStreamingAnswer(cleanStreamingAnswerText(fullText));
+        const cleaned = cleanStreamingAnswerText(fullText);
+        setStreamingAnswer(cleaned || fullText);
 
         const finalParsed = parseDualStreamDelimiters(fullText);
-        const finalLatency = event.payload.latency_ms ?? (
+        const finalLatency = payload.latency_ms ?? (
           questionStartTimeRef.current ? Date.now() - questionStartTimeRef.current : 0
         );
 
-        if (event.payload.latency_ms) {
-          setLatencyMs(event.payload.latency_ms);
+        if (payload.latency_ms) {
+          setLatencyMs(payload.latency_ms);
         } else if (questionStartTimeRef.current) {
           setLatencyMs(Date.now() - questionStartTimeRef.current);
         }
 
         setStructuredAnswer({
-          hook: finalParsed.hook,
+          hook: finalParsed.hook || cleaned || fullText,
           pillars: finalParsed.pillars,
           deepDive: finalParsed.deepDive,
           rawText: fullText,

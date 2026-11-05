@@ -363,6 +363,13 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
     msg.text.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const isPhased = Boolean(
+    activeAnswer?.rawText?.includes('<<<PHASE_') ||
+    (activeAnswer?.pillars && activeAnswer.pillars.length > 0) ||
+    (activeAnswer?.deepDive && activeAnswer.deepDive.trim().length > 0)
+  );
+  const unsegmentedText = activeAnswer?.rawText || activeAnswer?.hook || '';
+  const unsegmentedSections = parseStreamingMarkdown(unsegmentedText, isStreaming);
   const deepDiveSections = parseStreamingMarkdown(activeAnswer?.deepDive || '', isStreaming);
 
   return (
@@ -752,6 +759,93 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
                 Коли співрозмовник задасть запитання, підказка миттєво з'явиться тут у трьох фазах.
               </p>
             </div>
+          ) : !isPhased ? (
+            /* UNSEGMENTED / MARKDOWN ANSWER (Fallback for raw LLM text / Test AI) */
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={SPRING_PHYSICS}
+              className="pl-4 pr-3.5 py-3 border-l-4 border-l-cyan-400/90 rounded-r-xl bg-white/[0.02] border-y border-r border-white/[0.05] shadow-[0_4px_20px_rgba(6,182,212,0.06)] relative group space-y-3"
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-mono uppercase tracking-wider text-cyan-400 font-bold flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Відповідь ШІ
+                </span>
+                <button
+                  onClick={() => handleCopy(unsegmentedText)}
+                  className="p-1 rounded hover:bg-white/10 text-zinc-400 hover:text-white transition-all cursor-pointer"
+                  title="Копіювати"
+                >
+                  {copiedHook ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {unsegmentedSections.length > 0 ? (
+                  unsegmentedSections.map((section, idx) => {
+                    if (section.type === 'code') {
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={SPRING_PHYSICS}
+                          className="rounded-xl overflow-hidden border border-white/[0.1] bg-[#050607] relative group"
+                        >
+                          <div className="px-3.5 py-1.5 bg-white/[0.03] border-b border-white/[0.08] flex items-center justify-between">
+                            <span className="text-[10px] font-mono text-zinc-300 uppercase font-semibold">
+                              {section.language || 'code'}
+                            </span>
+                            <button
+                              onClick={() => handleCopy(section.content, idx)}
+                              className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white text-[10px] font-mono flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              {copiedCodeIndex === idx ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-400" /> Скопійовано
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3" /> Копіювати код
+                                </>
+                              )}
+                            </button>
+                          </div>
+                          <pre className="p-3 text-[11px] font-mono leading-relaxed text-emerald-200/90 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10 max-h-[300px]">
+                            <code>{section.content}</code>
+                            {section.isStreaming && (
+                              <span className="inline-block w-1.5 h-3.5 ml-1 bg-cyan-400 animate-pulse align-middle" />
+                            )}
+                          </pre>
+                        </motion.div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={idx}
+                        className="text-[15px] sm:text-[16px] font-medium text-white leading-relaxed tracking-tight font-sans whitespace-pre-wrap"
+                      >
+                        {renderBilingualPhrase(section.content)}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-[15px] sm:text-[16px] font-medium text-white leading-relaxed tracking-tight font-sans whitespace-pre-wrap">
+                    {renderBilingualPhrase(unsegmentedText)}
+                  </div>
+                )}
+              </div>
+              {isStreaming && (
+                <div className="flex items-center gap-1.5 text-xs text-cyan-400 font-mono pt-1">
+                  <span className="inline-block w-2 h-4 bg-cyan-400 animate-pulse" />
+                  <span>Генерую відповідь...</span>
+                </div>
+              )}
+            </motion.div>
           ) : (
             <>
               {/* PHASE 1: Spoken Start Hook with Spring Typewriter (Rule of 2 Seconds) */}

@@ -37,12 +37,25 @@ export function getClientIp(req: NextRequest): string {
     return nextIp;
   }
 
-  // x-forwarded-for: take first IP only (leftmost = original client)
-  // Validate format to prevent header injection
+  // x-forwarded-for: never blindly trust the leftmost IP (first element) which is easily spoofed by the client.
+  // When behind a trusted proxy (TRUST_PROXY=1) or in dev/test fallback, extract the last trusted hop (rightmost IP).
   const forwarded = req.headers.get('x-forwarded-for');
   if (forwarded) {
-    const firstIp = forwarded.split(',')[0].trim();
-    if (isValidIp(firstIp)) return firstIp;
+    const hops = forwarded
+      .split(',')
+      .map((h) => h.trim())
+      .filter((h) => isValidIp(h));
+
+    if (hops.length > 0) {
+      const isTrusted =
+        process.env.TRUST_PROXY === '1' ||
+        process.env.TRUST_PROXY === 'true' ||
+        process.env.NODE_ENV !== 'production';
+
+      if (isTrusted) {
+        return hops[hops.length - 1];
+      }
+    }
   }
 
   return '127.0.0.1';
@@ -128,16 +141,15 @@ export function resetRateLimits(): void {
 }
 
 /**
- * Enforces rate limiting per client IP and action bucket using Upstash Redis.
+ * Enforces rate limiting per arbitrary key (IP, email, session token) and action bucket using Upstash Redis.
  */
-export async function checkRateLimit(
-  req: NextRequest,
+export async function checkKeyRateLimit(
+  key: string,
   limit: number = 30,
   windowMs: number = 60000,
   bucket: string = 'general'
 ): Promise<RateLimitResult> {
-  const ip = getClientIp(req);
-  const identifier = `${bucket}:${ip}`;
+  const identifier = `${bucket}:${key}`;
 
   // Fallback for local development and test environment without Redis keys
   if (!redis) {
@@ -170,4 +182,17 @@ export async function checkRateLimit(
     limit: rlLimit,
     retryAfterSec: success ? 0 : Math.max(1, Math.ceil((reset - Date.now()) / 1000)),
   };
+}
+
+/**
+ * Enforces rate limiting per client IP and action bucket using Upstash Redis.
+ */
+export async function checkRateLimit(
+  req: NextRequest,
+  limit: number = 30,
+  windowMs: number = 60000,
+  bucket: string = 'general'
+): Promise<RateLimitResult> {
+  const ip = getClientIp(req);
+  return checkKeyRateLimit(ip, limit, windowMs, bucket);
 }

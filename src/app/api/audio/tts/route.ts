@@ -87,6 +87,7 @@ async function fetchGoogleTTSFallback(text: string, lang: string): Promise<Buffe
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Referer': 'https://translate.google.com/',
       },
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) {
@@ -140,6 +141,7 @@ export async function GET(req: NextRequest) {
           'Content-Type': 'application/json',
           'Accept': 'audio/mpeg',
         },
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify({
           text,
           model_id: 'eleven_multilingual_v2',
@@ -179,6 +181,7 @@ export async function GET(req: NextRequest) {
           'Authorization': `Token ${deepgramKey}`,
           'Content-Type': 'application/json',
         },
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify({ text }),
       });
 

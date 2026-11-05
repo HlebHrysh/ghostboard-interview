@@ -254,14 +254,15 @@ describe('Security Audit Remediations & Zero-Trust Verifications', () => {
       expect(ip).toBe('203.0.113.195');
     });
 
-    it('correctly extracts first IP from comma-separated x-forwarded-for when CF header absent', () => {
+    it('extracts last trusted hop from comma-separated x-forwarded-for when CF header absent', () => {
       const req = new NextRequest('http://localhost:3000/api/test', {
         headers: {
           'x-forwarded-for': '198.51.100.42, 10.0.0.1, 192.168.1.1',
         },
       });
       const ip = getClientIp(req);
-      expect(ip).toBe('198.51.100.42');
+      // P0-4: Must extract the last hop (192.168.1.1), never the client-spoofed leftmost IP (198.51.100.42)
+      expect(ip).toBe('192.168.1.1');
     });
 
     it('falls back to default safe IP when headers are missing or empty', () => {

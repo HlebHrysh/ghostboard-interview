@@ -309,93 +309,100 @@ impl SpeculativeLlmClient {
             }
         };
 
-        // Send HTTP request with cancellation protection and 600ms hedged racing for Gemini
+        // Send HTTP request with cancellation protection (strictly sequential send().await)
         let response = if config.provider == LlmProviderType::Gemini {
-            let primary_fut = self
-                .client
-                .post(&url)
-                .headers(headers.clone())
-                .timeout(Duration::from_millis(3000))
-                .json(&body_json)
-                .send();
-            tokio::pin!(primary_fut);
+            if cancellation_token.is_cancelled() {
+                return Ok(LlmStreamOutcome::Cancelled);
+            }
 
+            // 1. Primary request using gemini-3.8-flash
             let primary_res = tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    return Ok(LlmStreamOutcome::Cancelled);
-                }
-                res = &mut primary_fut => Some(res),
-                _ = tokio::time::sleep(Duration::from_millis(600)) => None,
+                _ = cancellation_token.cancelled() => return Ok(LlmStreamOutcome::Cancelled),
+                res = self.client
+                    .post(&url)
+                    .headers(headers.clone())
+                    .timeout(Duration::from_millis(5000))
+                    .json(&body_json)
+                    .send() => res,
             };
 
-            let primary_ok = match primary_res {
-                Some(Ok(ref r)) if r.status().is_success() => true,
-                _ => false,
-            };
-
-            if primary_ok {
-                primary_res.unwrap().unwrap()
-            } else {
-                let fallbacks = [
-                    "gemini-3.6-flash",
-                    "gemini-3.5-flash-lite",
-                    "gemini-2.0-flash-lite",
-                    "gemini-flash-latest",
-                ];
-                let mut fallback_resp = None;
-
-                for fb_model in &fallbacks {
-                    if config.model == *fb_model {
-                        continue;
-                    }
-                    let fb_url = format!(
-                        "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
-                        fb_model,
-                        config.api_key.trim()
+            match primary_res {
+                Ok(resp) if resp.status().is_success() => resp,
+                other => {
+                    let (status, err_text) = match other {
+                        Ok(ref r) => (Some(r.status()), String::new()),
+                        Err(ref e) => (e.status(), e.to_string()),
+                    };
+                    tracing::warn!(
+                        target: "ghostboard::llm",
+                        model = %config.model,
+                        status = ?status,
+                        error = %err_text,
+                        "Primary Gemini request unsuccessful, trying fallbacks sequentially"
                     );
-                    let mut fb_body = body_json.clone();
-                    if fb_model.contains("flash-lite") {
-                        if let Some(obj) = fb_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
-                            obj.remove("thinkingConfig");
-                        }
-                    }
 
-                    let fb_req = self
-                        .client
-                        .post(&fb_url)
-                        .headers(headers.clone())
-                        .timeout(Duration::from_millis(2500))
-                        .json(&fb_body);
+                    let fallbacks = [
+                        "gemini-2.5-flash",
+                        "gemini-2.0-flash",
+                        "gemini-1.5-flash",
+                        "gemini-flash-latest",
+                    ];
+                    let mut fallback_resp = None;
 
-                    tokio::select! {
-                        _ = cancellation_token.cancelled() => {
+                    for fb_model in &fallbacks {
+                        if cancellation_token.is_cancelled() {
                             return Ok(LlmStreamOutcome::Cancelled);
                         }
-                        res = &mut primary_fut, if primary_res.is_none() => {
-                            if let Ok(r) = res {
-                                if r.status().is_success() {
-                                    fallback_resp = Some(r);
-                                    break;
-                                }
+                        if config.model == *fb_model {
+                            continue;
+                        }
+                        let fb_url = format!(
+                            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?alt=sse&key={}",
+                            fb_model,
+                            config.api_key.trim()
+                        );
+                        let mut fb_body = body_json.clone();
+                        if fb_model.contains("flash-lite") || fb_model.contains("1.5") {
+                            if let Some(obj) = fb_body.get_mut("generationConfig").and_then(|g| g.as_object_mut()) {
+                                obj.remove("thinkingConfig");
                             }
                         }
-                        fb_res = fb_req.send() => {
-                            if let Ok(r) = fb_res {
-                                if r.status().is_success() {
-                                    fallback_resp = Some(r);
-                                    break;
-                                }
+
+                        let fb_res = tokio::select! {
+                            _ = cancellation_token.cancelled() => return Ok(LlmStreamOutcome::Cancelled),
+                            res = self.client
+                                .post(&fb_url)
+                                .headers(headers.clone())
+                                .timeout(Duration::from_millis(4000))
+                                .json(&fb_body)
+                                .send() => res,
+                        };
+
+                        if let Ok(resp) = fb_res {
+                            if resp.status().is_success() {
+                                fallback_resp = Some(resp);
+                                break;
+                            } else {
+                                tracing::warn!(
+                                    target: "ghostboard::llm",
+                                    model = %fb_model,
+                                    status = %resp.status(),
+                                    "Fallback model returned non-success HTTP status"
+                                );
                             }
                         }
                     }
-                }
 
-                if let Some(r) = fallback_resp {
-                    r
-                } else if let Some(Ok(r)) = primary_res {
-                    r
-                } else {
-                    return Err("All Gemini models failed or timed out during hedged race".to_string());
+                    match fallback_resp {
+                        Some(r) => r,
+                        None => {
+                            if let Ok(r) = other {
+                                r
+                            } else {
+                                return Err(format!("Gemini request failed: {}", other.err().unwrap()));
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -403,7 +410,7 @@ impl SpeculativeLlmClient {
                 .client
                 .post(&url)
                 .headers(headers.clone())
-                .timeout(Duration::from_millis(4000))
+                .timeout(Duration::from_millis(5000))
                 .json(&body_json);
 
             tokio::select! {
@@ -419,36 +426,30 @@ impl SpeculativeLlmClient {
         if !response.status().is_success() {
             let status = response.status();
             let err_text = response.text().await.unwrap_or_default();
+            tracing::warn!(target: "ghostboard::llm", status = %status, body = %err_text, "LLM returned non-success HTTP status");
             return Err(format!("LLM Provider returned error HTTP {}: {}", status, err_text));
         }
 
-        // Stream SSE tokens
+        // Stream SSE tokens sequentially without re-polling completed futures
         let mut stream = response.bytes_stream().eventsource();
         let mut full_text = String::new();
         let mut token_count = 0;
 
-        loop {
-            tokio::select! {
-                _ = cancellation_token.cancelled() => {
-                    return Ok(LlmStreamOutcome::Cancelled);
-                }
-                event_option = stream.next() => {
-                    match event_option {
-                        Some(Ok(event)) => {
-                            if let Some(delta) = parse_sse_data_chunk(config.provider, &event.data) {
-                                full_text.push_str(&delta);
-                                token_count += 1;
-                                on_chunk(delta);
-                            }
-                        }
-                        Some(Err(e)) => {
-                            return Err(format!("SSE stream read error: {}", e));
-                        }
-                        None => {
-                            // End of stream
-                            break;
-                        }
+        while let Some(event_result) = tokio::select! {
+            _ = cancellation_token.cancelled() => return Ok(LlmStreamOutcome::Cancelled),
+            event = stream.next() => event,
+        } {
+            match event_result {
+                Ok(event) => {
+                    if let Some(delta) = parse_sse_data_chunk(config.provider, &event.data) {
+                        full_text.push_str(&delta);
+                        token_count += 1;
+                        on_chunk(delta);
                     }
+                }
+                Err(e) => {
+                    tracing::warn!(target: "ghostboard::llm", "SSE stream chunk error: {}", e);
+                    break;
                 }
             }
         }

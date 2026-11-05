@@ -184,6 +184,27 @@ export function useAudioCapture({
     }).catch(() => {});
   }, []);
 
+  const getDynamicDeepgramKey = useCallback(async (): Promise<string> => {
+    try {
+      const res = await fetch('/api/ai/deepgram', {
+        headers: { 'x-ghostboard-client': 'studio-session' },
+      });
+      const data = await res.json();
+      const clean = (data?.apiKey || '').trim().replace(/^["']|["']$/g, '');
+      if (clean) {
+        deepgramApiKeyRef.current = clean;
+        try {
+          sessionStorage.setItem('ghostboard_deepgram_token', clean);
+          localStorage.setItem('ghostboard_deepgram_api_key', clean);
+        } catch {}
+      }
+      return clean;
+    } catch (e) {
+      console.warn('[useAudioCapture] Dynamic Deepgram key fetch error:', e);
+      return deepgramApiKeyRef.current || '';
+    }
+  }, []);
+
   const startCapture = useCallback(async (sourceParam?: 'mic' | 'tab' | unknown) => {
     if (isCapturingRef.current) {
       stopCapture();
@@ -225,6 +246,7 @@ export function useAudioCapture({
         source,
         includeMic: true,
         deepgramApiKey: deepgramApiKeyRef.current,
+        getDeepgramApiKey: getDynamicDeepgramKey,
         speechLanguage: speechLanguageRef.current,
         onConnectionStateChange: handleSttStatusChange,
         onVolumeChange: (vol, candVol = 0) => {
@@ -311,7 +333,7 @@ export function useAudioCapture({
       stopCapture();
       toast.error((err as { message?: string })?.message || 'Не вдалося підключитися до звуку. Перевірте дозволи.');
     }
-  }, [onLiveTranscript, setShowTrialLimitModal, setSessionDuration, stopCapture, userPlanRef, speechLanguageRef]);
+  }, [onLiveTranscript, setShowTrialLimitModal, setSessionDuration, stopCapture, userPlanRef, speechLanguageRef, getDynamicDeepgramKey]);
 
   const handleManualReconnect = useCallback(() => {
     if (!isCapturingRef.current) {

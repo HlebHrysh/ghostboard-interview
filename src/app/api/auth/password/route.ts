@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     // If user already has a password, verify it
     if (user.passwordHash) {
-      if (!currentPassword || !verifyPassword(currentPassword, user.passwordHash)) {
+      if (!currentPassword || !(await verifyPassword(currentPassword, user.passwordHash))) {
         return NextResponse.json({ error: 'Current password incorrect', code: 'WRONG_CURRENT_PASSWORD' }, { status: 400 });
       }
     }

@@ -58,7 +58,7 @@ describe('Auth & Device Session Flow', () => {
     const dbUser = await getUserByEmail(testEmail);
     expect(dbUser).toBeDefined();
     expect(dbUser?.passwordHash).toBeDefined();
-    expect(verifyPassword(testPassword, dbUser?.passwordHash)).toBe(true);
+    expect(await verifyPassword(testPassword, dbUser?.passwordHash)).toBe(true);
   }, 15000);
 
   it('rejects duplicate email registration with EMAIL_TAKEN (409)', async () => {

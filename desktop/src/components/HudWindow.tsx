@@ -44,6 +44,7 @@ import { AudioWaveEqualizer } from './AudioWaveEqualizer';
 import { loadStoredProfile } from '../lib/profileStore';
 import { parseStreamingMarkdown, renderBilingualPhrase } from './DualColumnChat';
 import { DesktopAiLanguageSelector } from './AiLanguageSelector';
+import type { HudEvent } from '../types/hud';
 
 const SPRING_PHYSICS = {
   type: 'spring' as const,
@@ -57,6 +58,7 @@ interface DialogueMessage {
   speaker: 'interlocutor' | 'candidate';
   text: string;
   timestamp: number;
+  answer?: string;
 }
 
 export interface HudWindowProps {
@@ -128,12 +130,25 @@ interface WebSpeechRecognitionInstance {
   // Native Tauri event / audio stream hook
   const hudStream = useHudStream({
     autoConnect: true,
-    onQuestionDetected: (question) => {
+    onQuestionDetected: (question, id) => {
       if (isFrozen) return;
       setActiveQuestion(question);
       setStreamingText('');
       setHudError(null);
       setIsGenerating(true);
+      setDialogueMessages((prev) => {
+        const exists = prev.some((m) => (id && m.id === id) || (m.text === question && Date.now() - m.timestamp < 3000));
+        if (exists) return prev;
+        return [
+          ...prev.slice(-30),
+          {
+            id: id || `q-${Date.now()}`,
+            speaker: 'interlocutor',
+            text: question,
+            timestamp: Date.now(),
+          },
+        ];
+      });
     },
     onHotkey: (action) => {
       if (action === 'freeze') {
@@ -218,9 +233,32 @@ interface WebSpeechRecognitionInstance {
       }
     });
 
+    const unlistenTranscript = listenTauriEvent<HudEvent>('hud-event', (event) => {
+      if (event.type === 'sttTranscript' && event.payload.is_final && event.payload.text?.trim()) {
+        const text = event.payload.text.trim();
+        const speaker = (event.payload.speaker === 'candidate' ? 'candidate' : 'interlocutor') as 'candidate' | 'interlocutor';
+        setDialogueMessages((prev) => {
+          if (prev.length > 0 && prev[prev.length - 1].text === text && prev[prev.length - 1].speaker === speaker) {
+            return prev;
+          }
+          return [
+            ...prev.slice(-30),
+            {
+              id: `stt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              speaker,
+              text,
+              timestamp: Date.now(),
+            },
+          ];
+        });
+        setLiveInterim('');
+      }
+    });
+
     return () => {
       unlistenMode();
       unlistenSettings();
+      unlistenTranscript();
     };
   }, []);
 
@@ -284,6 +322,17 @@ interface WebSpeechRecognitionInstance {
             onToken: (_delta, cleanedText) => {
               if (isFrozen) return;
               setStreamingText(cleanedText);
+              setDialogueMessages((prev) => {
+                if (prev.length === 0) return prev;
+                const lastIdx = prev.map((m) => m.speaker).lastIndexOf('interlocutor');
+                if (lastIdx === -1) return prev;
+                const updated = [...prev];
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  answer: cleanedText,
+                };
+                return updated;
+              });
             },
             onFirstToken: (ttft) => {
               setTtftMs(ttft);
@@ -291,6 +340,20 @@ interface WebSpeechRecognitionInstance {
             onDone: (info) => {
               setIsGenerating(false);
               activeStreamRef.current = null;
+              if (info.text) {
+                setStreamingText(info.text);
+                setDialogueMessages((prev) => {
+                  if (prev.length === 0) return prev;
+                  const lastIdx = prev.map((m) => m.speaker).lastIndexOf('interlocutor');
+                  if (lastIdx === -1) return prev;
+                  const updated = [...prev];
+                  updated[lastIdx] = {
+                    ...updated[lastIdx],
+                    answer: info.text,
+                  };
+                  return updated;
+                });
+              }
               setTotalLatencyMs(info.totalMs);
               if (info.model) setModelName(info.model);
             },

@@ -85,6 +85,24 @@ pub async fn check_for_updates(app: tauri::AppHandle) -> Result<UpdateCheckResul
 pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     let hud_state = app.try_state::<HudChannelState>();
 
+    // Guard: Prevent update installation while audio engine is active (e.g., during live interview)
+    if let Some(audio) = app.try_state::<crate::audio::GlobalAudioState>() {
+        if let Ok(engine) = audio.engine.lock() {
+            if engine.is_running() {
+                let msg = "Не можна встановлювати оновлення під час активного запису аудіо або співбесіди".to_string();
+                if let Some(hud) = hud_state.as_deref() {
+                    hud.broadcast(HudEvent::UpdateStatus {
+                        status: "error".to_string(),
+                        progress: None,
+                        version: None,
+                        message: Some(msg.clone()),
+                    });
+                }
+                return Err(msg);
+            }
+        }
+    }
+
     let updater = match app.updater() {
         Ok(u) => u,
         Err(err) => {

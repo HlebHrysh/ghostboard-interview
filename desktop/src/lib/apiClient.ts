@@ -67,7 +67,15 @@ async function probeHealth(url: string, timeoutMs = 600): Promise<boolean> {
       },
     });
     clearTimeout(timeout);
-    return res.ok;
+    if (res.ok) return true;
+    // In dev mode, accept degraded health response (e.g. Postgres offline while memory fallback is ready)
+    if (res.status === 503) {
+      const data = await res.json().catch(() => null);
+      if (data && (data.status === 'healthy' || data.status === 'degraded' || data.services)) {
+        return true;
+      }
+    }
+    return false;
   } catch {
     return false;
   }
@@ -108,7 +116,7 @@ export async function detectBackendUrl(forceRefresh = false): Promise<string> {
 
   detectionPromise = (async () => {
     const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-    const envUrl = typeof meta !== 'undefined' ? meta.env?.VITE_API_URL : undefined;
+    const envUrl = typeof meta !== 'undefined' ? (meta.env?.VITE_API_URL || meta.env?.VITE_BACKEND_URL) : undefined;
     if (envUrl && envUrl.trim()) {
       const clean = envUrl.trim().replace(/\/+$/, '');
       if (!(IS_DEV_MODE && isProdUrl(clean)) && (await probeHealth(clean, 1000))) {

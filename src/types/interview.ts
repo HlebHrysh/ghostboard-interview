@@ -6,6 +6,7 @@ export interface CodeBreakdownItem {
 
 export interface InterviewQAItem {
   id: string;
+  sourceMessageId?: string;
   timecode: string;
   question: string;
   quickAnswer: string | null;
@@ -28,6 +29,11 @@ export interface InterviewQAItem {
   isStreaming?: boolean;
   pillars?: string[];
   deepDive?: string;
+  completedPillarIndices?: number[];
+  activePillarIndex?: number;
+  followUpTrap?: { question: string; answer: string };
+  isContinuationMerged?: boolean;
+  lineExplanations?: Record<number, string>;
   meta?: {
     domain: string;
     level: string;

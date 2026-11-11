@@ -8,7 +8,7 @@
  */
 
 import { detectBackendUrl } from './apiClient';
-import { getAccessToken, streamAiAnswer, isTauriEnvironment, listenTauriEvent } from './tauriBridge';
+import { getAccessToken, streamAiAnswer, isTauriEnvironment, listenTauriEvent, clearSession } from './tauriBridge';
 import { normalizeTechnicalSpeech } from './techSpeechNormalizer';
 import type { AnswerLength, AnswerSpeed, HintLanguage } from './desktopSettings';
 import type { CandidateProfile } from './profileStore';
@@ -20,6 +20,8 @@ export type DirectorModifier =
   | 'simpler'
   | 'code'
   | 're_angle'
+  | 'under_the_hood'
+  | 'explain_line'
   | 'bridge'
   | 'more_technical'
   | 'code_example'
@@ -79,37 +81,22 @@ export function buildAnswerPayload(req: AnswerRequest): {
   question: string;
   history: Array<{ speaker: 'interviewer' | 'candidate'; text: string }>;
   directorModifier: DirectorModifier;
-  candidateProfile?: { role?: string; primaryStack?: string; experienceLevel?: string };
+  candidateProfile?: {
+    role?: string;
+    primaryStack?: string;
+    experienceLevel?: string;
+    customBio?: string;
+    techStack?: string[];
+  };
   outputLanguage: string;
   helperLanguage?: string;
 } {
   const cleanQuestion = normalizeTechnicalSpeech(req.question.trim());
   const lang = resolveLanguage(req.language, cleanQuestion);
   const helperLanguage = req.language === 'bilingual_ru' ? 'ru' : 'uk';
-  const contextLines: string[] = [];
-
-  if (req.speed === 'deep') {
-    contextLines.push('Think step by step internally and give a precise, deeply reasoned answer.');
-  } else {
-    contextLines.push('Start answering immediately; no preamble.');
-  }
-  if (req.length === 'detailed') contextLines.push('Give a detailed answer with concrete technical depth.');
-  if (req.profile?.customBio?.trim()) {
-    contextLines.push(`Candidate CV highlights: ${req.profile.customBio.trim().slice(0, 600)}`);
-  }
-  if (req.profile?.techStack?.length) {
-    contextLines.push(`Candidate tech stack: ${req.profile.techStack.slice(0, 16).join(', ')}`);
-  }
-  if (req.customInstructions?.trim()) {
-    contextLines.push(`Candidate instructions: ${req.customInstructions.trim().slice(0, 600)}`);
-  }
-
-  const suffix = `\n\n[ANSWER CONTEXT - not part of the interviewer's question]\n${contextLines.join('\n')}`;
-  const room = Math.max(200, MAX_QUESTION_CHARS - suffix.length);
-  const question = `${cleanQuestion.slice(0, room)}${suffix}`.slice(0, MAX_QUESTION_CHARS);
 
   return {
-    question,
+    question: cleanQuestion.slice(0, MAX_QUESTION_CHARS),
     history: (req.history ?? []).slice(-4).map((h) => ({ speaker: h.speaker, text: h.text.slice(0, 400) })),
     directorModifier: resolveModifier(req),
     candidateProfile: req.profile
@@ -117,6 +104,8 @@ export function buildAnswerPayload(req: AnswerRequest): {
           role: req.profile.role,
           primaryStack: req.profile.primaryStack || req.profile.techStack?.join(', '),
           experienceLevel: req.profile.experienceLevel,
+          customBio: req.profile.customBio,
+          techStack: req.profile.techStack,
         }
       : undefined,
     outputLanguage: lang,
@@ -131,12 +120,14 @@ export function buildAnswerPayload(req: AnswerRequest): {
 export function cleanStreamText(raw: string): string {
   if (!raw) return '';
   return raw
-    .replace(/<<<\s*META:[^>]+>>>/gi, '')
-    .replace(/<<<\s*PHASE_1:[A-Za-z_]*\s*>>>/gi, '')
-    .replace(/<<<\s*PHASE_[2-9]:[A-Za-z_]*\s*>>>/gi, '\n\n')
+    .replace(/<<<\s*META:[^>]*>>>/gi, '')
+    .replace(/<<<\s*IGNORE\s*>>>/gi, '')
+    .replace(/<<<\s*PHASE[-_]?1:[A-Za-z0-9_\-]*\s*>>>/gi, '')
+    .replace(/<<<\s*PHASE[-_]?[2-9]:[A-Za-z0-9_\-]*\s*>>>/gi, '\n\n')
+    .replace(/<<<\s*PHASE[-_]?[A-Za-z0-9_\-:]*\s*>>>/gi, '')
     .replace(/<<<\s*END\s*>>>/gi, '')
     .replace(/\[DONE\]/gi, '')
-    .replace(/(?:<{3,}[A-Za-z0-9_:>|\s\-]*>{0,2}|<{1,2})$/, '')
+    .replace(/\s*<{3,}[A-Za-z0-9_:>|\s\-]*>{0,2}$/, '')
     .replace(/^\s+/, '')
     .replace(/\n{3,}/g, '\n\n');
 }
@@ -168,13 +159,27 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
     let accumulated = '';
     let ttftMs: number | null = null;
     let completed = false;
+    let activeQuestionId: string | null = null;
 
     // Listen to real-time streamed chunks from Rust
     const unlisten = listenTauriEvent<HudEvent>('hud-event', (event) => {
       if (completed || controller.signal.aborted) return;
 
-      if (event.type === 'llmChunk' || event.type === 'aiChunk') {
-        const p = event.payload as { token?: string; delta?: string; text?: string; chunk?: string };
+      if (event.type === 'questionDetected') {
+        const p = event.payload as { id?: string; questionId?: string };
+        const qid = p.id || p.questionId;
+        if (qid) {
+          activeQuestionId = qid;
+        }
+      } else if (event.type === 'llmChunk' || event.type === 'aiChunk') {
+        const p = event.payload as { token?: string; delta?: string; text?: string; chunk?: string; question_id?: string; questionId?: string };
+        const qid = p.question_id || p.questionId;
+        if (activeQuestionId && qid && qid !== activeQuestionId) {
+          return;
+        }
+        if (!activeQuestionId && qid) {
+          activeQuestionId = qid;
+        }
         const token = p.token || p.delta || p.text || p.chunk || '';
         if (token) {
           if (ttftMs === null) {
@@ -185,7 +190,11 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           handlers.onToken(token, cleanStreamText(accumulated));
         }
       } else if (event.type === 'llmDone' || event.type === 'aiDone') {
-        const p = event.payload as { full_text?: string; text?: string };
+        const p = event.payload as { full_text?: string; text?: string; question_id?: string; questionId?: string };
+        const qid = p.question_id || p.questionId;
+        if (activeQuestionId && qid && qid !== activeQuestionId) {
+          return;
+        }
         const full = p.full_text || p.text;
         if (full) {
           accumulated = full;
@@ -203,6 +212,8 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
       outputLanguage: payload.outputLanguage,
       helperLanguage: payload.helperLanguage,
       modifier: payload.directorModifier,
+      candidateProfile: payload.candidateProfile,
+      history: payload.history,
     })
       .then((fullText) => {
         if (completed || controller.signal.aborted) {
@@ -244,6 +255,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
         completed = true;
         unlisten();
         controller.abort();
+        void clearSession();
       },
     };
   }

@@ -16,16 +16,23 @@ import { toast } from 'sonner';
 interface VoiceSelectorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedVoiceId: string;
+  selectedVoiceId?: string;
+  selectedVoice?: ArenaVoice | string;
   onSelectVoice: (voice: ArenaVoice) => void;
+  locale?: string;
 }
 
 export const VoiceSelectorModal: React.FC<VoiceSelectorModalProps> = ({
   isOpen,
   onClose,
-  selectedVoiceId,
+  selectedVoiceId: selectedVoiceIdProp,
+  selectedVoice,
   onSelectVoice,
+  locale: _localeProp,
 }) => {
+  const selectedVoiceId = typeof selectedVoice === 'object' && selectedVoice !== null
+    ? selectedVoice.id
+    : (selectedVoice || selectedVoiceIdProp || '');
   const { locale } = useLocale();
   const [activeTab, setActiveTab] = useState<'deepgram' | 'elevenlabs'>('deepgram');
   const [elevenKey, setElevenKey] = useState<string>(() => {

@@ -1,4 +1,4 @@
-use tauri::WebviewWindow;
+use tauri::{Manager, WebviewWindow};
 
 /// Toggle click-through transparency for the HUD window.
 /// When enabled (`true`), mouse events pass directly through the transparent HUD to background windows (IDE, browser, terminal).
@@ -24,8 +24,10 @@ pub fn toggle_click_through(window: &WebviewWindow, enable: bool) -> Result<bool
         }
     }
 
-    window
-        .set_ignore_cursor_events(enable)
-        .map_err(|e| format!("Failed to set ignore_cursor_events({}): {}", enable, e))?;
+    let win = window.clone();
+    let app = window.app_handle().clone();
+    crate::window::run_window_op_on_main_thread(&app, move || {
+        let _ = win.set_ignore_cursor_events(enable);
+    })?;
     Ok(enable)
 }

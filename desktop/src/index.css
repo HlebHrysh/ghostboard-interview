@@ -1,65 +1,180 @@
 @import "tailwindcss";
 
+/* ==========================================================================================
+   GHOSTBOARD DESIGN SYSTEM — "Linear / Raycast monochrome"
+   Rules that keep it at a locked 60 FPS on WebKitGTK (Wayland/X11), WebView2 and WKWebView:
+   - NO full-surface backdrop-filter. HUD shell = dense #09090b/95 + crisp inner highlight.
+   - Animate ONLY transform / opacity. Layout-affecting properties never animate.
+   - Hot values (audio level) are CSS custom properties written outside React (--vu-level).
+   ========================================================================================== */
+
+@theme {
+  --color-surface: #09090b;
+  --color-panel: #111114;
+  --color-panel-hi: #17171c;
+  --color-line: rgba(255, 255, 255, 0.08);
+  --color-line-hi: rgba(255, 255, 255, 0.15);
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-bad: #fb7185;
+  --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
-  
-  html, body {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, #root {
     margin: 0;
     padding: 0;
     width: 100%;
     height: 100%;
     overflow: hidden;
-    user-select: none;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    color: #f4f4f5;
   }
 
-  body:not([data-window="hud"]) {
-    background-color: #09090b !important;
-  }
+  body { user-select: none; -webkit-user-select: none; }
+  body[data-window="hud"] { background: transparent !important; }
+  body:not([data-window="hud"]) { background: var(--color-surface) !important; }
 
-  body[data-window="hud"] {
-    background-color: transparent !important;
-  }
+  /* Selection stays possible where reading matters (answers, CV text). */
+  .gb-selectable, textarea, input { user-select: text; -webkit-user-select: text; }
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  :focus-visible { outline: 2px solid rgba(255, 255, 255, 0.55); outline-offset: 2px; }
 }
 
-/* Electron Frameless Window Dragging Controls */
-.drag-region {
-  -webkit-app-region: drag;
+/* ---- Surfaces ---------------------------------------------------------------------------- */
+.gb-office {
+  background:
+    radial-gradient(ellipse at top, rgba(255, 255, 255, 0.04), transparent 70%),
+    var(--color-surface);
 }
 
-.no-drag {
-  -webkit-app-region: no-drag;
+.gb-card {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  transition: border-color 140ms ease-out, background-color 140ms ease-out;
+}
+.gb-card-hover:hover { border-color: var(--color-line-hi); }
+.gb-card-active {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: var(--color-panel-hi);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
-/* High-Performance Clean Luxury Foundation (Zero Backdrop-Blur on Linux) */
-.glass-panel {
-  background: #0B0C10;
+/* HUD shell: dense, opaque, no blur. */
+.gb-hud-shell {
+  background: rgba(9, 9, 11, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 10px 30px rgba(0, 0, 0, 0.45);
 }
+.gb-hud-col { background: #0d0d10; border: 1px solid var(--color-line); border-radius: 10px; }
 
-.glass-pill {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* ---- Controls ---------------------------------------------------------------------------- */
+.gb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  border-radius: 10px; font-weight: 600; letter-spacing: -0.005em;
+  transition: transform 120ms cubic-bezier(.3,.7,.4,1), background-color 140ms, border-color 140ms, opacity 140ms;
+  will-change: transform;
 }
+.gb-btn:active:not(:disabled) { transform: scale(0.97); }
+.gb-btn-primary { background: #ffffff; color: #09090b; box-shadow: 0 1px 0 0 rgba(255,255,255,0.6) inset, 0 8px 24px rgba(255,255,255,0.08); }
+.gb-btn-primary:hover:not(:disabled) { background: #f4f4f5; transform: translateY(-1px); }
+.gb-btn-ghost { background: rgba(255,255,255,0.04); border: 1px solid var(--color-line); color: #e4e4e7; }
+.gb-btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.08); border-color: var(--color-line-hi); }
+.gb-btn-danger { background: rgba(251,113,133,0.1); border: 1px solid rgba(251,113,133,0.3); color: #fda4af; }
+.gb-btn-danger:hover:not(:disabled) { background: rgba(251,113,133,0.18); }
+.gb-btn:disabled { opacity: 0.45; }
 
-/* Custom Scrollbar for stealth HUD panels */
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+.gb-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.35rem; height: 1.35rem; padding: 0 0.35rem;
+  font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; line-height: 1;
+  color: #a1a1aa; background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1); border-bottom-width: 2px; border-radius: 6px;
 }
+.gb-btn-primary .gb-kbd { color: #52525b; background: rgba(0,0,0,0.06); border-color: rgba(0,0,0,0.14); }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+.gb-pill {
+  display: inline-flex; align-items: center; gap: 0.35rem; white-space: nowrap;
+  height: 1.4rem; padding: 0 0.55rem; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.01em;
+  border: 1px solid var(--color-line); background: rgba(255,255,255,0.04); color: #a1a1aa;
 }
+.gb-pill-ok { color: #6ee7b7; background: rgba(52,211,153,0.1); border-color: rgba(52,211,153,0.28); }
+.gb-pill-warn { color: #fcd34d; background: rgba(251,191,36,0.1); border-color: rgba(251,191,36,0.28); }
+.gb-pill-bad { color: #fda4af; background: rgba(251,113,133,0.1); border-color: rgba(251,113,133,0.28); }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+.gb-input {
+  width: 100%; height: 2.25rem; padding: 0 0.75rem; border-radius: 10px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--color-line); color: #f4f4f5;
+  font-size: 0.82rem; transition: border-color 140ms, background-color 140ms;
 }
+.gb-input:hover { border-color: var(--color-line-hi); }
+.gb-input:focus { border-color: rgba(255,255,255,0.4); background: rgba(255,255,255,0.05); outline: none; }
+.gb-input::placeholder { color: #71717a; }
+select.gb-input { appearance: none; padding-right: 2rem; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.7rem center; }
+select.gb-input option { background: #111114; color: #f4f4f5; }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+input[type="range"].gb-range { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.12); }
+input[type="range"].gb-range::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 0; box-shadow: 0 0 0 4px rgba(255,255,255,0.1), 0 2px 6px rgba(0,0,0,0.5); cursor: grab; }
+input[type="range"].gb-range:active::-webkit-slider-thumb { cursor: grabbing; }
+
+/* ---- Audio VU meter: driven by --vu-level written from a rAF loop (no React renders) ----- */
+.vu { --vu-level: 0; display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; contain: layout paint style; }
+.vu-bar {
+  width: 3px; height: 100%; border-radius: 2px; background: #34d399; opacity: 0.9;
+  transform-origin: bottom;
+  transform: scaleY(max(0.14, calc(var(--vu-level) * var(--k, 1))));
+  will-change: transform;
+}
+.vu-rose .vu-bar { background: #fb7185; }
+.vu-lg { height: 28px; gap: 3px; }
+.vu-lg .vu-bar { width: 5px; border-radius: 3px; }
+.vu-track { position: relative; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; contain: strict; }
+.vu-fill { position: absolute; inset: 0; border-radius: 999px; background: linear-gradient(90deg, #34d399, #fbbf24 78%, #fb7185); transform-origin: left; transform: scaleX(var(--vu-level, 0)); will-change: transform; }
+
+/* ---- Motion ------------------------------------------------------------------------------ */
+@keyframes gb-ping { 0% { transform: scale(1); opacity: 0.7; } 80%, 100% { transform: scale(2.4); opacity: 0; } }
+.gb-ping::after { content: ""; position: absolute; inset: 0; border-radius: 999px; background: currentColor; animation: gb-ping 1.8s cubic-bezier(0,0,.2,1) infinite; }
+
+@keyframes gb-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.gb-caret::after { content: ""; display: inline-block; width: 0.5ch; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: currentColor; animation: gb-caret 1s steps(1) infinite; }
+
+@keyframes gb-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.gb-rise { animation: gb-rise 220ms cubic-bezier(.2,.8,.3,1) both; }
+
+@keyframes gb-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.gb-skeleton { position: relative; overflow: hidden; background: rgba(255,255,255,0.05); border-radius: 8px; }
+.gb-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent); animation: gb-shimmer 1.4s ease-in-out infinite; }
+
+/* Live preview in the HUD mode cards (pure CSS, transform/opacity only). */
+@keyframes gb-type { 0% { transform: scaleX(0); } 55%, 100% { transform: scaleX(1); } }
+@keyframes gb-pulse-soft { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.gb-type { transform-origin: left; animation: gb-type 2.6s cubic-bezier(.3,.6,.3,1) infinite; }
+.gb-pulse-soft { animation: gb-pulse-soft 2s ease-in-out infinite; }
+
+/* ---- Scrollbars -------------------------------------------------------------------------- */
+.gb-scroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* Dragging: native Tauri drag regions are opt-in; everything interactive opts out explicitly. */
+.gb-nodrag { -webkit-app-region: no-drag; }
+
+/* Content rows that are long and off-screen skip layout/paint work. */
+.gb-row { content-visibility: auto; contain-intrinsic-size: auto 56px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }

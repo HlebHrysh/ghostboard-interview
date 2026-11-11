@@ -36,6 +36,12 @@ export interface SyncQAItem {
   deliveryTip?: string;
   tag?: string;
   meta?: { domain: string; level: string; language: string; raw?: string };
+  pillars?: string[];
+  completedPillarIndices?: number[];
+  activePillarIndex?: number;
+  followUpTrap?: { question: string; answer: string };
+  isContinuationMerged?: boolean;
+  lineExplanations?: Record<number, string>;
 }
 
 export type TeleprompterFontSize = 'sm' | 'md' | 'xl';
@@ -485,9 +491,16 @@ function CompanionContent({ params }: PageProps) {
               {/* Active Question Title */}
               {activeQA && (
                 <div className="border-l-2 border-white/20 pl-3">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 font-bold block mb-0.5">
-                    ЗАПИТАННЯ
-                  </span>
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 font-bold block">
+                      ЗАПИТАННЯ
+                    </span>
+                    {activeQA.isContinuationMerged && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-300">
+                        ⚡ Уточнено
+                      </span>
+                    )}
+                  </div>
                   <h2 className="text-sm sm:text-base font-semibold text-zinc-200 leading-snug">
                     {stripRawAiTags(activeQA.question)}
                   </h2>
@@ -535,6 +548,7 @@ function CompanionContent({ params }: PageProps) {
               )}
 
               {/* ── Фаза 2: КЛЮЧОВІ ТЕЗИ (Pillars with keyword capsules) ── */}
+              {/* ── Фаза 2: КЛЮЧОВІ ТЕЗИ (Pillars with keyword capsules & karaoke) ── */}
               {activeQA?.hints && activeQA.hints.length > 0 && (
                 <div className="space-y-2 pt-1">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-black block">
@@ -544,6 +558,8 @@ function CompanionContent({ params }: PageProps) {
                     {activeQA.hints.map((rawHint, i) => {
                       const hint = stripRawAiTags(rawHint);
                       if (!hint) return null;
+                      const isCompleted = activeQA.completedPillarIndices?.includes(i);
+                      const isActive = !isCompleted && activeQA.activePillarIndex === i;
                       const colonIdx = hint.indexOf(':');
                       const hasAnchor = colonIdx > 0 && colonIdx < 35;
                       const anchor = hasAnchor ? hint.slice(0, colonIdx) : null;
@@ -551,12 +567,26 @@ function CompanionContent({ params }: PageProps) {
                       return (
                         <li
                           key={i}
-                          className="text-zinc-100 flex items-start gap-2.5 bg-white/[0.03] p-3 rounded-2xl border border-white/[0.07]"
+                          className={`text-zinc-100 flex items-start gap-2.5 p-3 rounded-2xl border transition-all ${
+                            isCompleted
+                              ? 'bg-emerald-500/[0.08] border-emerald-500/30 text-emerald-100/90'
+                              : isActive
+                              ? 'bg-cyan-500/[0.09] border-cyan-500/40'
+                              : 'bg-white/[0.03] border-white/[0.07]'
+                          }`}
                         >
-                          <span className="text-cyan-400 font-mono text-xs font-black shrink-0 mt-0.5">
-                            {i + 1}.
+                          <span
+                            className={`font-mono text-xs font-black shrink-0 mt-0.5 w-5 h-5 rounded flex items-center justify-center ${
+                              isCompleted
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : isActive
+                                ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400'
+                                : 'text-cyan-400'
+                            }`}
+                          >
+                            {isCompleted ? '✓' : `${i + 1}.`}
                           </span>
-                          <div className={`leading-relaxed ${pillarFontClass} flex-1`}>
+                          <div className={`leading-relaxed ${pillarFontClass} flex-1 ${isCompleted ? 'line-through opacity-75' : ''}`}>
                             {anchor && (
                               <span className="text-cyan-300 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-md mr-1.5 text-xs border border-cyan-500/20">
                                 {anchor}
@@ -612,6 +642,30 @@ function CompanionContent({ params }: PageProps) {
                   <pre className="whitespace-pre-wrap leading-relaxed text-zinc-300 selection:bg-white/20">
                     {stripRawAiTags(activeQA.codeSnippet)}
                   </pre>
+                </div>
+              )}
+
+              {/* ── Фаза 4: ПАСТКА ІНТЕРВʼЮЕРА (Follow-Up Trap Shield) ── */}
+              {activeQA?.followUpTrap && (activeQA.followUpTrap.question || activeQA.followUpTrap.answer) && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
+                      Фаза 4 · Пастка інтервʼюера (Follow-Up Shield)
+                    </span>
+                  </div>
+                  {activeQA.followUpTrap.question && (
+                    <div className="text-xs font-medium text-amber-200/90 leading-relaxed">
+                      <strong className="text-amber-300 font-semibold mr-1">Q:</strong>
+                      {stripRawAiTags(activeQA.followUpTrap.question)}
+                    </div>
+                  )}
+                  {activeQA.followUpTrap.answer && (
+                    <div className="text-xs text-zinc-300 leading-relaxed bg-black/40 p-2 rounded-xl border border-white/5">
+                      <strong className="text-emerald-400 font-semibold mr-1">A:</strong>
+                      {stripRawAiTags(activeQA.followUpTrap.answer)}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

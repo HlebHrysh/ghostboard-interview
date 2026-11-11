@@ -78,6 +78,11 @@ pub enum HudEvent {
         mode: String,
     },
 
+    #[serde(rename = "sttLanguageChanged")]
+    SttLanguageChanged {
+        language: String,
+    },
+
     #[serde(rename = "error")]
     Error {
         code: String,

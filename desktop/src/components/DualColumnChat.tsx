@@ -21,6 +21,10 @@ import {
 import type { DialogueMessage } from '../lib/audioEngine';
 import type { StructuredAnswerOutput } from '../lib/streamClient';
 
+/**
+ * @deprecated Legacy component preserved for backwards compatibility and test suites.
+ * The production HUD teleprompter is now canonically implemented in `desktop/src/hud/SplitChat.tsx`.
+ */
 export interface DualColumnChatProps {
   dialogueMessages: DialogueMessage[];
   liveInterlocutorText: string;
@@ -255,6 +259,70 @@ function renderPillarWithAnchor(text: string): React.ReactNode {
   return renderBilingualPhrase(text);
 }
 
+interface DesktopDialogueRowProps {
+  msg: DialogueMessage;
+  onSelect?: (text: string) => void;
+}
+
+const DesktopDialogueRow = React.memo<DesktopDialogueRowProps>(({ msg, onSelect }) => {
+  const isInterlocutor = msg.speaker === 'interlocutor' || msg.speaker === 'interviewer';
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={SPRING_PHYSICS}
+      onClick={() => isInterlocutor && onSelect?.(msg.text)}
+      className={`flex flex-col group ${isInterlocutor ? 'items-start' : 'items-end'}`}
+    >
+      <div className="flex items-center gap-1.5 mb-1 px-1">
+        {isInterlocutor ? (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+            <span>{msg.label || "Інтерв'юер"}</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
+            <span>{msg.label || 'Ви'}</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+          </span>
+        )}
+        <span className="text-[10px] text-zinc-500 font-mono">
+          {new Date(msg.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+        {msg.answer && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+            <Zap className="w-2.5 h-2.5 text-amber-400" />
+            <span>Відповідь</span>
+          </span>
+        )}
+      </div>
+
+      <div
+        className={`p-3 rounded-xl max-w-[90%] text-xs leading-relaxed transition-all ${
+          isInterlocutor
+            ? 'bg-[#101014] border border-white/10 text-zinc-100 shadow-md hover:border-cyan-500/40 hover:bg-white/[0.03] cursor-pointer'
+            : 'bg-white/[0.05] border border-white/[0.08] text-zinc-300 ml-auto'
+        }`}
+      >
+        <p className="whitespace-pre-wrap">{renderFormattedInlineText(msg.text)}</p>
+        {isInterlocutor && !msg.answer && (
+          <div className="mt-1.5 pt-1.5 border-t border-white/[0.06] flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500 italic">Натисніть для відповіді ШІ</span>
+            <span className="text-[10px] font-mono text-cyan-400 flex items-center gap-0.5">
+              <Zap className="w-2.5 h-2.5" /> Запитати ШІ
+            </span>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+DesktopDialogueRow.displayName = 'DesktopDialogueRow';
+
 export const DualColumnChat: React.FC<DualColumnChatProps> = ({
   dialogueMessages,
   liveInterlocutorText,
@@ -445,54 +513,13 @@ export const DualColumnChat: React.FC<DualColumnChatProps> = ({
             </div>
           ) : null}
 
-          {filteredDialogue.map((msg) => {
-            // Speaker normalization: both 'interlocutor' and 'interviewer' are left-aligned
-            const isInterlocutor = msg.speaker === 'interlocutor' || msg.speaker === 'interviewer';
-
-            return (
-              <motion.div
-                key={msg.id}
-                layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={SPRING_PHYSICS}
-                onClick={() => isInterlocutor && onQuestionSelect?.(msg.text)}
-                className={`flex flex-col group ${
-                  isInterlocutor ? 'items-start' : 'items-end'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 mb-1 px-1">
-                  {isInterlocutor ? (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
-                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
-                      <span>{msg.label || "Інтерв'юер"}</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
-                      <span>{msg.label || 'Ви'}</span>
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
-                    </span>
-                  )}
-                  <span className="text-[10px] text-zinc-500 font-mono">
-                    {new Date(msg.timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </div>
-
-                <div
-                  className={`p-3 rounded-xl max-w-[90%] text-xs leading-relaxed transition-all ${
-                    isInterlocutor
-                      ? 'bg-[#101014] border border-white/10 text-zinc-100 shadow-md hover:border-cyan-500/30 cursor-pointer'
-                      : 'bg-white/[0.05] border border-white/[0.08] text-zinc-300 ml-auto'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{renderFormattedInlineText(msg.text)}</p>
-                </div>
-              </motion.div>
-            );
-          })}
+          {filteredDialogue.map((msg) => (
+            <DesktopDialogueRow
+              key={msg.id}
+              msg={msg}
+              onSelect={onQuestionSelect}
+            />
+          ))}
 
           {/* Live Interim Transcription for Interlocutor */}
           {liveInterlocutorText && (

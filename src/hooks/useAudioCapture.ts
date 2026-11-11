@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { toast } from 'sonner';
 import { TabAudioCapture } from '@/lib/tabAudioCapture';
 import { DeepgramLiveClient } from '@/lib/deepgramLive';
+import type { CandidateProfile } from '@/components/CandidateProfileModal';
+
+export type AudioCaptureMode = 'interviewer_only' | 'both_split' | 'mic_only';
 
 interface UseAudioCaptureOptions {
   speechLanguageRef: React.MutableRefObject<string>;
@@ -11,6 +14,7 @@ interface UseAudioCaptureOptions {
   setShowTrialLimitModal: (val: boolean) => void;
   sessionDuration: number;
   setSessionDuration: (val: number) => void;
+  candidateProfileRef?: React.MutableRefObject<CandidateProfile>;
 }
 
 export function useAudioCapture({
@@ -21,6 +25,7 @@ export function useAudioCapture({
   setShowTrialLimitModal,
   sessionDuration,
   setSessionDuration,
+  candidateProfileRef,
 }: UseAudioCaptureOptions) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [liveVolume, setLiveVolume] = useState<number>(0);
@@ -35,6 +40,23 @@ export function useAudioCapture({
   // Audio source: 'tab' (Meeting tab + mic mix) vs 'mic' (Microphone only)
   const [audioSource, setAudioSourceState] = useState<'tab' | 'mic'>('tab');
   const audioSourceRef = useRef<'tab' | 'mic'>('tab');
+
+  // Strict Audio Channel Isolation mode: interviewer_only | both_split | mic_only
+  const [audioMode, setAudioModeState] = useState<AudioCaptureMode>('both_split');
+  const audioModeRef = useRef<AudioCaptureMode>('both_split');
+
+  const setAudioMode = useCallback((mode: AudioCaptureMode) => {
+    setAudioModeState(mode);
+    audioModeRef.current = mode;
+    try {
+      localStorage.setItem('ghostboard_audio_mode', mode);
+    } catch {}
+    if (mode === 'interviewer_only') {
+      tabCaptureRef.current?.disableMicrophone();
+      setCandidateVolume(0);
+      setCandidateLiveTranscript('');
+    }
+  }, []);
 
   const setAudioSource = useCallback((src: 'tab' | 'mic') => {
     setAudioSourceState(src);
@@ -240,14 +262,29 @@ export function useAudioCapture({
     try {
       tabCaptureRef.current = new TabAudioCapture();
       
-      // Crucial: tabCaptureRef.current.startCapture is called directly without preceding await fetch,
-      // which preserves transient user activation for getDisplayMedia() in Chrome/Edge!
+      // Strict Channel Isolation: If audioMode is 'interviewer_only', never request or attach the microphone!
+      const shouldIncludeMic =
+        audioModeRef.current !== 'interviewer_only' &&
+        (source === 'mic' || audioModeRef.current === 'both_split' || audioModeRef.current === 'mic_only');
+
+      const profile = candidateProfileRef?.current;
+      const customStackOrCv: string[] = profile
+        ? [
+            ...(Array.isArray(profile.techStack) ? profile.techStack : []),
+            profile.role,
+            profile.cvContext,
+            profile.customContext,
+            profile.primaryStack,
+          ].filter((s): s is string => Boolean(s))
+        : [];
+
       await tabCaptureRef.current.startCapture({
         source,
-        includeMic: true,
+        includeMic: shouldIncludeMic,
         deepgramApiKey: deepgramApiKeyRef.current,
         getDeepgramApiKey: getDynamicDeepgramKey,
         speechLanguage: speechLanguageRef.current,
+        customStackOrCv,
         onConnectionStateChange: handleSttStatusChange,
         onVolumeChange: (vol, candVol = 0) => {
           const now = Date.now();
@@ -387,5 +424,7 @@ export function useAudioCapture({
     tabCaptureRef,
     audioSource,
     setAudioSource,
+    audioMode,
+    setAudioMode,
   };
 }

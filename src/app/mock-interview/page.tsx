@@ -1,7 +1,7 @@
 'use client';
 
-import { ArenaView } from '@/components/arena/ArenaView';
+import { ArenaViewUpgraded } from './ArenaViewUpgraded';
 
 export default function MockInterviewPage() {
-  return <ArenaView />;
+  return <ArenaViewUpgraded />;
 }

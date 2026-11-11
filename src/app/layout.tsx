@@ -8,6 +8,11 @@ import { CommandPalette } from '@/components/singularity/CommandPalette';
 import { GhostFx } from '@/components/ui/GhostFx';
 import { LocaleProvider } from '@/contexts/LocaleContext';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+import dynamic from 'next/dynamic';
+
+const QaTestDock = dynamic(
+  () => import('@/components/qa/QaTestDock').then((mod) => mod.QaTestDock)
+);
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -78,6 +83,7 @@ export default function RootLayout({
         </LocaleProvider>
         <ServiceWorkerRegister />
         <ThemedToaster />
+        {process.env.NEXT_PUBLIC_QA_MODE === 'true' && <QaTestDock />}
       </body>
     </html>
   );

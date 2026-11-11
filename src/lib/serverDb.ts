@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
-import { assertMemoryDbAllowed, failDbInProduction } from './envGuard';
+import { assertMemoryDbAllowed, failDbInProduction, isMemoryDbAllowed, EnvConfigError } from './envGuard';
 import { logger } from './logger';
 import {
   hashPassword,
@@ -129,7 +129,7 @@ function createPrismaCircuitBreakerProxy(rawClient: PrismaClient): PrismaClient 
 }
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
-const rawPrisma = globalForPrisma.prisma || new PrismaClient();
+export const rawPrisma = globalForPrisma.prisma || new PrismaClient();
 export const prisma = createPrismaCircuitBreakerProxy(rawPrisma);
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = rawPrisma;
 
@@ -209,7 +209,7 @@ function guardMemoryMap<K, V>(name: string, map: Map<K, V>): Map<K, V> {
       const value = Reflect.get(target, prop, target);
       if (typeof value !== 'function') return value;
       return (...args: unknown[]) => {
-        if (!process.env.DATABASE_URL) assertMemoryDbAllowed(name);
+        if (!isMemoryDbAllowed()) assertMemoryDbAllowed(name);
         return (value as (...a: unknown[]) => unknown).apply(target, args);
       };
     },
@@ -239,6 +239,9 @@ export async function setUserPassword(userId: string, password: string): Promise
       failDbInProduction(dbErr);
       // Fallback
     }
+  }
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
   }
   const memUser = memUsersById.get(userId);
   if (memUser) memUser.passwordHash = passwordHash;
@@ -316,6 +319,10 @@ export async function createUser(
     }
   }
 
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const existingMem = memUsersByEmail.get(normalized);
   if (existingMem) {
     setCachedUser(existingMem as CachedUser);
@@ -348,7 +355,29 @@ export async function findOrCreateUser(
   return createUser(email, name, 'free', role);
 }
 
+interface CachedSessionUser {
+  user: DbUser | null;
+  expiresAt: number;
+}
+const sessionUserCache = new Map<string, CachedSessionUser>();
+const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute fast in-memory cache
+
+export function invalidateSessionUserCache(token?: string, userId?: string): void {
+  if (token) {
+    sessionUserCache.delete(token);
+  } else if (userId) {
+    for (const [t, entry] of sessionUserCache.entries()) {
+      if (entry.user?.id === userId) {
+        sessionUserCache.delete(t);
+      }
+    }
+  } else {
+    sessionUserCache.clear();
+  }
+}
+
 export async function updateUserPlan(userId: string, plan: string): Promise<void> {
+  invalidateSessionUserCache(undefined, userId);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({
@@ -379,6 +408,7 @@ export async function updateUser(
     trialQuestionsUsed?: number;
   }
 ): Promise<DbUser | null> {
+  invalidateSessionUserCache(undefined, userId);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       return await prisma.user.update({
@@ -518,6 +548,10 @@ export async function createSession(
     }
   }
 
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const session: DbSession = {
     token,
     userId,
@@ -626,21 +660,6 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
   return allTokensToRevoke.length;
 }
 
-interface CachedSessionUser {
-  user: DbUser | null;
-  expiresAt: number;
-}
-const sessionUserCache = new Map<string, CachedSessionUser>();
-const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute fast in-memory cache
-
-export function invalidateSessionUserCache(token?: string): void {
-  if (token) {
-    sessionUserCache.delete(token);
-  } else {
-    sessionUserCache.clear();
-  }
-}
-
 export async function getSessionUser(token: string): Promise<DbUser | null> {
   if (!token) return null;
   const now = new Date();
@@ -720,6 +739,10 @@ export async function saveInterviewSession(
       failDbInProduction(dbErr);
       // Fallback
     }
+  }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
   }
 
   const entry: DbSavedSession = {
@@ -889,6 +912,10 @@ export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): 
     }
   }
 
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const entry: DbPayment = {
     ...payment,
     id: `pay_${crypto.randomBytes(12).toString('hex')}`,
@@ -969,6 +996,13 @@ export async function getUserCandidateProfile(userId: string): Promise<Prisma.Js
 }
 
 export async function incrementUserTrialQuestions(userId: string): Promise<number> {
+  // Immediately sync in-memory cached session
+  for (const entry of sessionUserCache.values()) {
+    if (entry.user && entry.user.id === userId) {
+      entry.user.trialQuestionsUsed = (entry.user.trialQuestionsUsed || 0) + 1;
+    }
+  }
+
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const user = await prisma.user.update({
@@ -1007,5 +1041,6 @@ export async function updateUserResumeContext(userId: string, context: string): 
 }
 
 
-// Since we can't reliably update serverDb from the webhook without importing logPayment,
-// let's make sure it's exported in serverDb.ts. Oh wait, it IS exported.
+export async function resetUserTrialQuestions(userId: string): Promise<void> {
+  await updateUser(userId, { trialQuestionsUsed: 0 });
+}

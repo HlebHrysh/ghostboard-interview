@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { callGeminiWithFallback, FLASH_MODELS } from '@/lib/geminiApi';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { makeSessionPublic } from '@/lib/serverDb';
+import { generateArenaEvaluationFallback, normalizeEvaluationResult } from './evaluationHelper';
 
 const TRACK_PROFILES: Record<string, { title: string; skills: string }> = {
   frontend: {
@@ -211,7 +212,7 @@ Return ONLY a valid JSON object matching this schema:
       throw new Error('Не вдалося згенерувати запитання арени через Gemini.');
     }
 
-    // ── 2. EVALUATE ANSWER: Score across 5 dimensions ───────────────────────
+    // ── 2. EVALUATE ANSWER: Senior Rubric & Trap Simulator ──────────────────
     if (action === 'EVALUATE_ANSWER') {
       const {
         question,
@@ -235,7 +236,17 @@ Return ONLY a valid JSON object matching this schema:
       else if (answerTimeSec < 120) calculatedSpeed = 74;
       else calculatedSpeed = 62;
 
-      const prompt = `You are a demanding Staff Engineer at a top tech company evaluating a candidate's answer for role: "${targetRoleTitle}" (${vacancyProfile?.seniority || level}).
+      const fallbackParams = {
+        question,
+        candidateAnswer,
+        track,
+        level,
+        isArchitectureCase,
+        language,
+        calculatedSpeed,
+      };
+
+      const prompt = `You are an elite Principal/Staff Architect at a top FAANG company evaluating a candidate's answer for role: "${targetRoleTitle}" (${vacancyProfile?.seniority || level}).
 Required Skills & Tech: ${targetSkills}
 ${vacancyProfile?.domain ? `Business Domain: ${vacancyProfile.domain}` : ''}
 
@@ -246,19 +257,31 @@ Is architectural case: ${isArchitectureCase ? 'YES' : 'NO'}
 
 LANGUAGE DIRECTIVE (CRITICAL - YOU MUST FOLLOW THIS STRICTLY):
 ${targetDirective}
-(Write verdict, strengths, missingKeyConcepts, and staffEngineerAnswer strictly in the target language).
+(Write all verdicts, feedback, whatWorked, weakSpots, seniorBenchmark, and trapDrill strictly in the target language).
 
 Objectively evaluate the answer across 5 dimensions (score 10 to 100):
-1. technicalAccuracy (Technical accuracy, absence of errors or falsehoods)
+1. technicalAccuracy (Technical accuracy, absence of falsehoods)
 2. architecturalVision (Grasp of scale, trade-offs, design patterns)
-3. communication (Clarity, structural thought, no fluff)
+3. communication (Clarity, structural thought, zero fluff)
 4. stressResilience (Confidence, problem solving demeanor)
 5. thinkingSpeed (Evaluate pace: proposed base score ${calculatedSpeed})
 
-Return ONLY valid JSON:
+Senior Rubric Requirements:
+- whatWorked: 2-3 concrete bullet points highlighting effective structure, metrics, and depth.
+- weakSpots: 2-3 targeted points on omissions, missing numbers, or unaddressed failure modes.
+- seniorBenchmark:
+  * hook: First sentence spoken aloud with instant punch and technical authority.
+  * pillars: 3 bold anchor pillars candidate should use in real interview.
+  * productionExample: Concrete production code snippet or architectural configuration pattern.
+- trapDrill:
+  * trapQuestion: Toughest follow-up trap question on this exact topic testing race conditions, split-brain, or scale limits.
+  * interviewerAngle: What specific weakness the interviewer is probing for.
+  * idealDefense: How a Staff engineer deflects or answers the trap under pressure.
+
+Return ONLY valid JSON matching this schema:
 {
   "score": 88,
-  "verdict": "Verdict in target language (e.g. Excellent / Good / Needs Improvement)",
+  "verdict": "Verdict in target language",
   "scores": {
     "technicalAccuracy": 90,
     "architecturalVision": 85,
@@ -266,25 +289,109 @@ Return ONLY valid JSON:
     "stressResilience": 90,
     "thinkingSpeed": ${calculatedSpeed}
   },
-  "strengths": ["Points stated correctly (in target language)"],
-  "missingKeyConcepts": ["Omissions or misunderstandings (in target language)"],
-  "staffEngineerAnswer": "Benchmark Staff Engineer concise answer with zero fluff (in target language)."
+  "strengths": ["Strengths in target language"],
+  "missingKeyConcepts": ["Weak spots in target language"],
+  "whatWorked": ["Structure and technical depth in target language"],
+  "weakSpots": ["Gaps or omissions in target language"],
+  "seniorBenchmark": {
+    "hook": "First sentence aloud in target language",
+    "pillars": ["Pillar 1", "Pillar 2", "Pillar 3"],
+    "productionExample": "Code or architectural snippet"
+  },
+  "trapDrill": {
+    "trapQuestion": "Tough follow-up trap question in target language",
+    "interviewerAngle": "Interviewer angle in target language",
+    "idealDefense": "Staff engineer defense in target language"
+  },
+  "staffEngineerAnswer": "Benchmark Staff Engineer concise answer with zero fluff in target language."
 }`;
 
-      const res = await callGeminiWithFallback({
-        models: FLASH_MODELS,
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
-        timeoutMs: 3500,
-      });
+      try {
+        const res = await callGeminiWithFallback({
+          models: FLASH_MODELS,
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+          timeoutMs: 3800,
+        });
 
-      if (res.ok && res.text) {
-        let jsonStr = res.text.trim();
-        if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
-        if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
-        return NextResponse.json(JSON.parse(jsonStr));
+        if (res.ok && res.text) {
+          let jsonStr = res.text.trim();
+          if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
+          if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
+          const parsed = JSON.parse(jsonStr);
+          return NextResponse.json(normalizeEvaluationResult(parsed, fallbackParams));
+        }
+      } catch (err: unknown) {
+        console.warn('AI evaluation failed, returning senior rubric fallback:', err);
       }
-      throw new Error('Не вдалося оцінити відповідь.');
+
+      // Safe deterministic fallback
+      return NextResponse.json(generateArenaEvaluationFallback(fallbackParams));
+    }
+
+    // ── 2.5 TRAP DRILL EVALUATE: Instant Pressure Defense Check ─────────────
+    if (action === 'TRAP_DRILL_EVALUATE') {
+      const {
+        trapQuestion,
+        candidateDefense = '',
+        topic = 'Architecture',
+        idealDefense = '',
+      } = body;
+
+      const hasDefense = candidateDefense.trim().length > 25;
+      const isUa = language === 'uk' || language === 'ua';
+
+      const prompt = `You are evaluating a candidate's defense to a high-pressure follow-up trap question in a Staff technical interview.
+Trap Question: "${trapQuestion}"
+Candidate Defense: "${candidateDefense || '(Candidate hesitated)'}"
+Ideal Reference Defense: "${idealDefense}"
+Topic: ${topic}
+
+LANGUAGE DIRECTIVE:
+${targetDirective}
+
+Return ONLY valid JSON:
+{
+  "passed": ${hasDefense},
+  "score": ${hasDefense ? 88 : 55},
+  "verdict": "Verdict in target language",
+  "feedback": "2-3 sentences of feedback in target language analyzing if they defended against the trap",
+  "recommendedCounter": "Concise Staff counter-argument in target language"
+}`;
+
+      try {
+        const res = await callGeminiWithFallback({
+          models: FLASH_MODELS,
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+          timeoutMs: 3000,
+        });
+
+        if (res.ok && res.text) {
+          let jsonStr = res.text.trim();
+          if (jsonStr.startsWith('```json')) jsonStr = jsonStr.replace(/^```json\s*/, '');
+          if (jsonStr.endsWith('```')) jsonStr = jsonStr.replace(/\s*```$/, '');
+          return NextResponse.json(JSON.parse(jsonStr));
+        }
+      } catch {}
+
+      return NextResponse.json({
+        passed: hasDefense,
+        score: hasDefense ? 85 : 55,
+        verdict: isUa
+          ? (hasDefense ? 'Пастку успішно відбито!' : 'Пастка спрацювала: захист потребує більшої чіткості')
+          : (hasDefense ? 'Trap successfully neutralized!' : 'Trap sprung: defense lacked concrete invariant'),
+        feedback: isUa
+          ? (hasDefense
+              ? 'Ви чітко вказали на ідемпотентність та збереження узгодженості при розриві зʼєднання.'
+              : 'Уникайте загальних фраз на кшталт "ми просто перезапустимо"; називайте конкретні механізми (Outbox, Idempotency-Key).')
+          : (hasDefense
+              ? 'You successfully defended the invariant by identifying idempotency and state rollback.'
+              : 'Avoid generic promises like "we will just retry"; name specific fencing tokens or transactional boundaries.'),
+        recommendedCounter: idealDefense || (isUa
+          ? 'Використовувати Idempotency-Key у заголовку запиту з атомарною фіксацією статусу в базі перед викликом стороннього API.'
+          : 'Enforce unique client idempotency keys atomically persisted before triggering upstream mutations.'),
+      });
     }
 
     // ── 3. FINALIZE ARENA: Build full 3D Hologram Scorecard & generate slug ──

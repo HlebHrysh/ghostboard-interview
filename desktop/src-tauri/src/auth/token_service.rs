@@ -27,7 +27,8 @@ pub async fn exchange_auth_code(
     let body = resp.text().await.map_err(|e| e.to_string())?;
 
     if !status.is_success() {
-        // Fallback for offline testing or simulated token creation
+        // Fallback for offline testing or simulated token creation (debug/tests only)
+        #[cfg(any(test, debug_assertions))]
         if code.starts_with("test_") || code.starts_with("mock_") {
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -54,14 +55,17 @@ pub async fn exchange_auth_code(
         .to_string();
     let refresh_token = val["refresh_token"]
         .as_str()
-        .unwrap_or("mock_refresh")
+        .unwrap_or_default()
         .to_string();
     let email = val["email"]
         .as_str()
-        .unwrap_or("candidate@ghostboard.ai")
+        .ok_or("Missing email in token response")?
         .to_string();
-    let user_id = val["user_id"].as_str().unwrap_or("usr_active").to_string();
-    let plan = val["plan"].as_str().unwrap_or("pro").to_string();
+    let user_id = val["user_id"]
+        .as_str()
+        .ok_or("Missing user_id in token response")?
+        .to_string();
+    let plan = val["plan"].as_str().unwrap_or("free").to_string();
     let expires_in = val["expires_in"].as_u64().unwrap_or(86400 * 30);
 
     let now_ms = SystemTime::now()
@@ -102,6 +106,7 @@ pub async fn refresh_access_token(
     let body = resp.text().await.map_err(|e| e.to_string())?;
 
     if !status.is_success() {
+        #[cfg(any(test, debug_assertions))]
         if refresh_token.starts_with("mock_") || refresh_token.starts_with("test_") {
             let now_ms = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -132,10 +137,13 @@ pub async fn refresh_access_token(
         .to_string();
     let email = val["email"]
         .as_str()
-        .unwrap_or("candidate@ghostboard.ai")
+        .ok_or("Missing email in refresh response")?
         .to_string();
-    let user_id = val["user_id"].as_str().unwrap_or("usr_active").to_string();
-    let plan = val["plan"].as_str().unwrap_or("pro").to_string();
+    let user_id = val["user_id"]
+        .as_str()
+        .ok_or("Missing user_id in refresh response")?
+        .to_string();
+    let plan = val["plan"].as_str().unwrap_or("free").to_string();
     let expires_in = val["expires_in"].as_u64().unwrap_or(86400 * 30);
 
     let now_ms = SystemTime::now()

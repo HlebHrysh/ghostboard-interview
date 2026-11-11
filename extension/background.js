@@ -142,8 +142,83 @@ async function deliverProblem(payload) {
   throw lastError || new Error('Could not connect to any Ghostboard server (localhost:3000, localhost:3001, ghostboard.ai)');
 }
 
+async function pushProblemDirect(payload) {
+  const { apiUrl = DEFAULT_PROD_API_URL, outputLanguage = 'en', authToken = '' } =
+    await chrome.storage.sync.get(['apiUrl', 'outputLanguage', 'authToken']);
+
+  const configuredUrl = (apiUrl || DEFAULT_PROD_API_URL).trim();
+  const candidates = [];
+  if (configuredUrl) candidates.push(configuredUrl);
+  if (!candidates.includes(DEFAULT_PROD_API_URL)) candidates.push(DEFAULT_PROD_API_URL);
+  if (!candidates.includes(DEFAULT_LOCAL_API_URL)) candidates.push(DEFAULT_LOCAL_API_URL);
+  if (!candidates.includes('http://localhost:3001')) candidates.push('http://localhost:3001');
+
+  let responseData = null;
+  let successfulServer = null;
+  let lastError = null;
+
+  const authHeaders = {
+    'Content-Type': 'application/json',
+    'x-ghostboard-client': 'chrome-extension-v2',
+    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+  };
+
+  for (const base of candidates) {
+    const cleanBase = base.replace(/\/$/, '');
+    const pushUrl = `${cleanBase}/api/companion/push-problem`;
+    try {
+      const res = await fetchWithRetry(
+        pushUrl,
+        {
+          method: 'POST',
+          headers: authHeaders,
+          credentials: 'include',
+          body: JSON.stringify({
+            title: payload.title,
+            description: payload.question || payload.description || payload.fullPrompt,
+            language: payload.language || 'TypeScript',
+            starterCode: payload.starterCode || '',
+            url: payload.url || '',
+            outputLanguage: outputLanguage,
+          }),
+        },
+        1,
+        8000
+      );
+
+      if (res.ok) {
+        responseData = await res.json();
+        successfulServer = cleanBase.replace(/^https?:\/\//, '');
+        chrome.storage.local.set({ lastSuccessfulServer: successfulServer });
+        break;
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        lastError = new Error(errJson.error || `Server ${cleanBase} returned HTTP ${res.status}`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  if (responseData) {
+    return { success: true, serverUsed: successfulServer, data: responseData };
+  }
+
+  throw lastError || new Error('Could not push problem to any Ghostboard server');
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'PUSH_PROBLEM_DIRECT') {
+      pushProblemDirect(message.payload)
+        .then((res) => sendResponse(res))
+        .catch((err) => {
+          console.error('[Ghostboard Push Problem Direct Error]', err);
+          sendResponse({ success: false, error: err.message || 'Push failed' });
+        });
+      return true;
+    }
+
     if (message.type === 'SOLVE_PROBLEM' || message.type === 'SOLVE_LEETCODE') {
       deliverProblem(message.payload)
         .then((res) => sendResponse(res))
@@ -182,6 +257,7 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fetchWithRetry,
     deliverProblem,
+    pushProblemDirect,
   };
 }
 

@@ -32,6 +32,8 @@
     "*://*.codeforces.com/*",
     "*://app.codesignal.com/*",
     "*://*.codesignal.com/*",
+    "*://app.codility.com/*",
+    "*://*.codility.com/*",
     "http://localhost:3000/*",
     "http://localhost:3001/*",
     "http://127.0.0.1:3000/*",
@@ -69,6 +71,8 @@
         "*://*.codeforces.com/*",
         "*://app.codesignal.com/*",
         "*://*.codesignal.com/*",
+        "*://app.codility.com/*",
+        "*://*.codility.com/*",
         "<all_urls>"
       ],
       "js": ["content.js"],

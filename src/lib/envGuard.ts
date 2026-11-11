@@ -23,9 +23,15 @@ export function isMemoryDbAllowed(env: NodeJS.ProcessEnv = process.env): boolean
   return !isProduction(env) || env.ALLOW_MEMORY_DB === 'true';
 }
 
-/** Payment simulator & mocked emails are allowed outside production or with ENABLE_PROD_SIMULATOR=true. */
+/** Payment simulator & mocked emails are strictly gated behind ENABLE_PROD_SIMULATOR=true or NEXT_PUBLIC_QA_MODE=true (with test-suite pass-through). */
 export function isProdSimulatorAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return !isProduction(env) || env.ENABLE_PROD_SIMULATOR === 'true';
+  if (env.ENABLE_PROD_SIMULATOR === 'true' || env.NEXT_PUBLIC_QA_MODE === 'true') {
+    return true;
+  }
+  if (!isProduction(env) && env.NODE_ENV === 'test') {
+    return true;
+  }
+  return false;
 }
 
 export function isRedisConfigured(env: NodeJS.ProcessEnv = process.env): boolean {

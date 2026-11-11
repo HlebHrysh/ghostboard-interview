@@ -1,22 +1,31 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { useSampledLevel, AudioLevelsRef } from '../hooks/useSampledLevel';
 
 export interface AudioWaveEqualizerProps {
-  level: number; // 0 - 100
+  level?: number; // 0 - 100
+  levelsRef?: React.MutableRefObject<AudioLevelsRef>;
   isActive?: boolean;
   className?: string;
   label?: string;
 }
 
 const BAR_MULTIPLIERS = [0.45, 0.85, 1.0, 0.72, 0.5];
+const DEFAULT_LEVELS_REF: AudioLevelsRef = { interviewer: 0, candidate: 0 };
 
 export const AudioWaveEqualizer: React.FC<AudioWaveEqualizerProps> = ({
-  level,
+  level: directLevel,
+  levelsRef,
   isActive = true,
   className = '',
   label,
 }) => {
-  const normalized = Math.min(100, Math.max(0, level));
+  const dummyRef = useRef<AudioLevelsRef>(DEFAULT_LEVELS_REF);
+  const targetRef = levelsRef || dummyRef;
+  const internalSampled = useSampledLevel(targetRef, (l) => Math.max(l.interviewer, l.candidate), 1, 60);
+
+  const effectiveLevel = directLevel !== undefined ? directLevel : (levelsRef ? internalSampled : 0);
+  const normalized = Math.min(100, Math.max(0, effectiveLevel));
   const isAudible = normalized > 2;
 
   const barHeights = useMemo(() => {

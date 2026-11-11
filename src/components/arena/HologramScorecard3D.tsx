@@ -35,14 +35,17 @@ export interface ScorecardData {
 }
 
 interface HologramScorecard3DProps {
-  data: ScorecardData;
+  data?: ScorecardData;
+  scorecard?: ScorecardData;
   showShareActions?: boolean;
 }
 
 export const HologramScorecard3D: React.FC<HologramScorecard3DProps> = ({
-  data,
+  data: dataProp,
+  scorecard,
   showShareActions = true,
 }) => {
+  const data = (dataProp || scorecard)!;
   const { locale } = useLocale();
   const sc = getModalsTranslations(locale).scorecard;
   const cardRef = useRef<HTMLDivElement>(null);

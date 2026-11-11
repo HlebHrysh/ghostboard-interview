@@ -35,6 +35,19 @@ export interface BattleCheatSheetData {
     conclusion: string;
   };
   trickyQuestions: TrickyQuestionItem[];
+  battleCards?: Array<{
+    id: string;
+    title: string;
+    domain: string;
+    domainBadge: string;
+    hook: string;
+    pillars: string[];
+    trap: {
+      question: string;
+      counterAnswer: string;
+    };
+    codeSnippet?: string;
+  }>;
   systemDesign: SystemDesignTopic[];
   redFlags: Array<{ mistake: string; fix: string }>;
   reverseQuestions: string[];
@@ -502,6 +515,25 @@ export async function POST(req: NextRequest) {
       readinessScore: Math.min(85 + (techStack.length >= 4 ? 10 : 5), 98),
       elevatorPitch,
       trickyQuestions: questions.slice(0, 10),
+      battleCards: questions.slice(0, 6).map((q) => ({
+        id: q.id,
+        title: q.question,
+        domain: q.category,
+        domainBadge: q.category,
+        hook: q.leadHook,
+        pillars: [
+          q.keyPillars[0] || 'Core architecture and reliability',
+          q.keyPillars[1] || 'Failure resilience and bottleneck mitigation',
+          q.keyPillars[2] || 'Resource efficiency and error handling',
+        ],
+        trap: {
+          question: isUa
+            ? '«Як ваша система поведеться при раптовому випаданні або розділенні мережі?»'
+            : '«How does this behave under sudden network partition or peak load?»',
+          counterAnswer: q.pitfall,
+        },
+        codeSnippet: q.codeSnippet,
+      })),
       systemDesign,
       redFlags,
       reverseQuestions,

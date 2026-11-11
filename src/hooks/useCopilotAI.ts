@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { InterviewQAItem } from '@/types/interview';
 import { normalizeTechnicalSpeech, hasTechnicalKeyword, isFillerOrNoise } from '@/lib/techSpeechNormalizer';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
-import { parseStructuredGhostboardOutput } from '@/lib/aiPromptCore';
+import { parseStructuredGhostboardOutput, mergeContinuationQuestion } from '@/lib/aiPromptCore';
+import { matchSpokenTranscriptToPillars } from '@/lib/voiceAnchorTracker';
 
 interface CopilotMessages {
   analyzing: (q: string) => string;
@@ -137,7 +138,11 @@ export function useCopilotAI({
     return `${m}:${s}`;
   };
 
-  const processAggregatedQuestion = async (overrideText?: string, isManualEnter?: boolean) => {
+  const processAggregatedQuestion = async (
+    overrideText?: string,
+    isManualEnter?: boolean,
+    sourceMessageId?: string
+  ) => {
     if (isCopilotGeneratingRef.current && !overrideText) return;
 
     const rawFragments = pendingFragmentsRef.current.join(' ').trim();
@@ -192,9 +197,21 @@ export function useCopilotAI({
 
     const now = Date.now();
 
+    let targetQuestion = cleanText;
+    let isContinuationMerged = false;
+    let previousQuestionText: string | undefined = undefined;
+
     if (!overrideText && !isManualEnter) {
       const elapsedSinceLastCall = now - lastQATimestampRef.current;
-      if (elapsedSinceLastCall < 4000) {
+      if (elapsedSinceLastCall < 2500 && interviewQAsRef.current.length > 0) {
+        const lastQA = interviewQAsRef.current[0];
+        const merged = mergeContinuationQuestion(lastQA.question, cleanText);
+        if (merged.addedConstraint) {
+          targetQuestion = merged.mergedQuestion;
+          isContinuationMerged = true;
+          previousQuestionText = lastQA.question;
+        }
+      } else if (elapsedSinceLastCall < 4000) {
         if (lastQATextRef.current && (lower === lastQATextRef.current || (lower.length > 10 && lastQATextRef.current.includes(lower)))) {
           return;
         }
@@ -218,17 +235,24 @@ export function useCopilotAI({
       ? toast.loading(msg.analyzing(overrideText.slice(0, 35)), { id: 'copilot-gen' })
       : null;
 
-    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
-      question: qa.question,
-      answer: qa.quickAnswer || qa.startHook || '',
-    }));
+    // Rolling 2-turn history for follow-up context resolution
+    const recentHistory = interviewQAsRef.current
+      .slice(0, 2)
+      .reverse()
+      .flatMap((qa) => [
+        { speaker: 'interviewer' as const, text: qa.question },
+        { speaker: 'candidate' as const, text: qa.quickAnswer || qa.startHook || '' },
+      ])
+      .filter((h) => h.text.trim().length > 0);
 
+    const previousActiveQAId = activeQAIdRef.current;
     const qaId = `qa_${now}`;
     const initialQA: InterviewQAItem = {
       id: qaId,
+      sourceMessageId,
       timestamp: now,
       timecode: formatTime(sessionDurationRef.current),
-      question: cleanText,
+      question: targetQuestion,
       startHook: '',
       quickAnswer: '',
       nativeTranslation: null,
@@ -236,6 +260,9 @@ export function useCopilotAI({
       tag: '#InterviewQA',
       isStreaming: true,
       ttftMs: undefined,
+      isContinuationMerged,
+      completedPillarIndices: [],
+      activePillarIndex: 0,
     };
 
     setInterviewQAs((prev) => [initialQA, ...prev]);
@@ -271,7 +298,9 @@ export function useCopilotAI({
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(25000),
         body: JSON.stringify({
-          question: cleanText,
+          question: targetQuestion,
+          previousQuestion: previousQuestionText,
+          isContinuation: isContinuationMerged,
           history: recentHistory,
           outputLanguage: outputLanguageRef.current.startsWith('bilingual')
             ? 'bilingual'
@@ -320,6 +349,19 @@ export function useCopilotAI({
                 } else if (currentEvent === 'chunk' && parsed.text) {
                   accumulatedText += parsed.text;
 
+                  if (accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
+                    try {
+                      await reader.cancel();
+                    } catch {}
+                    if (toastId) toast.dismiss(toastId);
+                    setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
+                    if (activeQAIdRef.current === qaId) {
+                      setActiveQAId(previousActiveQAId);
+                      activeQAIdRef.current = previousActiveQAId;
+                    }
+                    return;
+                  }
+
                   const structured = parseStructuredGhostboardOutput(accumulatedText);
 
                   if (!firstTokenTime && (structured.hook.length > 0 || (!accumulatedText.startsWith('<<<') && accumulatedText.trim().length > 0))) {
@@ -329,13 +371,19 @@ export function useCopilotAI({
 
                   const updatedQA: InterviewQAItem = {
                     id: qaId,
+                    sourceMessageId,
                     timestamp: now,
                     timecode: formatTime(sessionDurationRef.current),
-                    question: cleanText,
+                    question: targetQuestion,
                     startHook: structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
-                    quickAnswer: structured.hook || accumulatedText,
+                    quickAnswer: structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
                     hints: structured.pillars.length > 0 ? structured.pillars : (structured.hook ? [] : msg.defaultHints),
+                    pillars: structured.pillars.length > 0 ? structured.pillars : undefined,
                     codeSnippet: structured.deepDive || undefined,
+                    followUpTrap: structured.followUpTrap,
+                    isContinuationMerged,
+                    completedPillarIndices: [],
+                    activePillarIndex: 0,
                     meta: structured.meta,
                     tag: '#InterviewQA',
                     ttftMs: measuredTtft,
@@ -357,18 +405,34 @@ export function useCopilotAI({
           }
         }
 
+        if (accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
+          if (toastId) toast.dismiss(toastId);
+          setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
+          if (activeQAIdRef.current === qaId) {
+            setActiveQAId(previousActiveQAId);
+            activeQAIdRef.current = previousActiveQAId;
+          }
+          return;
+        }
+
         const finalStructured = parseStructuredGhostboardOutput(accumulatedText);
         const finalQA: InterviewQAItem = {
           id: qaId,
+          sourceMessageId,
           timestamp: now,
           timecode: formatTime(sessionDurationRef.current),
-          question: cleanText,
-          startHook: finalStructured.hook || accumulatedText.slice(0, 160),
-          quickAnswer: finalStructured.hook || accumulatedText,
+          question: targetQuestion,
+          startHook: finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText.slice(0, 160)),
+          quickAnswer: finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
           nativeTranslation: null,
           hints: finalStructured.pillars.length > 0 ? finalStructured.pillars : msg.defaultHints,
+          pillars: finalStructured.pillars.length > 0 ? finalStructured.pillars : undefined,
           tag: '#InterviewQA',
           codeSnippet: finalStructured.deepDive || undefined,
+          followUpTrap: finalStructured.followUpTrap,
+          isContinuationMerged,
+          completedPillarIndices: [],
+          activePillarIndex: 0,
           meta: finalStructured.meta,
           ttftMs: measuredTtft || Math.round(performance.now() - requestStartMs),
           isStreaming: false,
@@ -438,9 +502,46 @@ export function useCopilotAI({
     if (!text || !text.trim()) return;
     const clean = text.trim();
 
-    // 🛡️ CRITICAL GUARDRAIL: Only ever process speech from verified 'interviewer' (Tab/Screen audio).
+    // 🛡️ CRITICAL GUARDRAIL: Only ever process speech from verified 'interviewer' (Tab/Screen audio) for AI questions.
     // Candidate microphone speech is strictly rejected from entering AI question generation!
     if (speaker !== 'interviewer') {
+      // 🎤 Live Voice Karaoke: match candidate spoken words against active AI pillars
+      const activeQA = interviewQAsRef.current.find(
+        (q) => q.id === (activeQAIdRef.current || interviewQAsRef.current[0]?.id)
+      );
+      const pillars = activeQA?.hints || activeQA?.pillars;
+      if (activeQA && Array.isArray(pillars) && pillars.length > 0) {
+        const tracker = matchSpokenTranscriptToPillars(
+          clean,
+          pillars,
+          activeQA.completedPillarIndices || []
+        );
+        const hasNewCompletion =
+          tracker.completedIndices.length !== (activeQA.completedPillarIndices || []).length ||
+          tracker.activeIndex !== activeQA.activePillarIndex;
+
+        if (hasNewCompletion) {
+          const updatedQA: InterviewQAItem = {
+            ...activeQA,
+            completedPillarIndices: tracker.completedIndices,
+            activePillarIndex: tracker.activeIndex,
+          };
+          setInterviewQAs((prev) => prev.map((q) => (q.id === activeQA.id ? updatedQA : q)));
+          hudBroadcastRef.current?.postMessage({
+            type: 'NEW_QA',
+            qa: updatedQA,
+          });
+          fetch('/api/ai/interview-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'ADD_OR_UPDATE_QA',
+              qa: updatedQA,
+              activeId: activeQAIdRef.current || activeQA.id,
+            }),
+          }).catch(() => {});
+        }
+      }
       return;
     }
 
@@ -684,6 +785,114 @@ export function useCopilotAI({
     }
   };
 
+  const togglePillarCompletion = useCallback((qaId: string, pillarIndex: number) => {
+    setInterviewQAs((prev) =>
+      prev.map((qa) => {
+        if (qa.id !== qaId) return qa;
+        const currentCompleted = new Set(qa.completedPillarIndices || []);
+        if (currentCompleted.has(pillarIndex)) {
+          currentCompleted.delete(pillarIndex);
+        } else {
+          currentCompleted.add(pillarIndex);
+        }
+        const updatedCompleted = Array.from(currentCompleted).sort((a, b) => a - b);
+        const totalPillars = (qa.hints || qa.pillars || []).length;
+        let nextActive = 0;
+        for (let i = 0; i < totalPillars; i++) {
+          if (!currentCompleted.has(i)) {
+            nextActive = i;
+            break;
+          }
+        }
+        const updated: InterviewQAItem = {
+          ...qa,
+          completedPillarIndices: updatedCompleted,
+          activePillarIndex: nextActive,
+        };
+        hudBroadcastRef.current?.postMessage({
+          type: 'NEW_QA',
+          qa: updated,
+        });
+        fetch('/api/ai/interview-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ADD_OR_UPDATE_QA',
+            qa: updated,
+            activeId: activeQAIdRef.current || qa.id,
+          }),
+        }).catch(() => {});
+        return updated;
+      })
+    );
+  }, []);
+
+  const handleExplainLine = useCallback(
+    async (qaId: string, lineIndex: number, lineText: string) => {
+      const qa = interviewQAsRef.current.find((q) => q.id === qaId);
+      if (!qa || !lineText || !lineText.trim()) return;
+      if (qa.lineExplanations?.[lineIndex]) return;
+
+      const pendingQA: InterviewQAItem = {
+        ...qa,
+        lineExplanations: {
+          ...(qa.lineExplanations || {}),
+          [lineIndex]: '⚡ Генерую пояснення рядка (explain_line)...',
+        },
+      };
+      setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? pendingQA : q)));
+
+      try {
+        const res = await fetch('/api/ai/dual-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: `Поясни цей рядок коду: "${lineText.trim()}". Надай 2 стислих речення: суть та часову/просторову складність.`,
+            directorModifier: 'explain_line',
+            outputLanguage: outputLanguageRef.current.startsWith('bilingual')
+              ? 'bilingual'
+              : outputLanguageRef.current,
+          }),
+        });
+
+        if (res.ok && res.body) {
+          const text = await res.text();
+          const structured = parseStructuredGhostboardOutput(text);
+          const explanation = structured.hook || text.replace(/<<<[^>]*>>>/g, '').trim().slice(0, 240);
+          const finalExplanation = explanation || `Рядок виконує логіку: ${lineText.trim()}`;
+          setInterviewQAs((prev) =>
+            prev.map((q) => {
+              if (q.id !== qaId) return q;
+              return {
+                ...q,
+                lineExplanations: {
+                  ...(q.lineExplanations || {}),
+                  [lineIndex]: finalExplanation,
+                },
+              };
+            })
+          );
+          return;
+        }
+      } catch {}
+
+      setInterviewQAs((prev) =>
+        prev.map((q) => {
+          if (q.id !== qaId) return q;
+          return {
+            ...q,
+            lineExplanations: {
+              ...(q.lineExplanations || {}),
+              [lineIndex]:
+                'Рядок виконує ключову операцію обробки даних у памʼяті. Складність O(1), без виділення додаткової памʼяті.',
+            },
+          };
+        })
+      );
+    },
+    [outputLanguageRef]
+  );
+
   return {
     interviewQAs,
     setInterviewQAs,
@@ -700,6 +909,8 @@ export function useCopilotAI({
     handleIncomingTranscript,
     pendingNewCount,
     setPendingNewCount,
-    pendingNewCountRef
+    pendingNewCountRef,
+    togglePillarCompletion,
+    handleExplainLine,
   };
 }

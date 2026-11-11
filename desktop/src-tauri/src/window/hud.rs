@@ -109,17 +109,19 @@ pub fn launch_copilot_window(app: &AppHandle, mode: &str) -> Result<LaunchReport
     // 4. Screen-share stealth is best-effort and must never block the launch.
     let _ = crate::window::apply_stealth(&window, true);
 
-    window.show().map_err(|e| format!("Failed to show HUD window: {}", e))?;
-    let _ = window.set_always_on_top(true);
-    let _ = window.set_focus();
+    let win_show = window.clone();
+    let app_show = app.clone();
+    let _ = crate::window::run_window_op_on_main_thread(app, move || {
+        let _ = win_show.show();
+        let _ = win_show.set_always_on_top(true);
+        let _ = win_show.set_focus();
+        if let Some(main) = app_show.get_webview_window(MAIN_LABEL) {
+            let _ = main.minimize();
+        }
+    });
 
     if !created {
         let _ = app.emit_to(HUD_LABEL, HUD_MODE_EVENT, mode.as_str());
-    }
-
-    // 5. Get the Office out of the way (no-op on tiling WMs, which keep it tiled).
-    if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        let _ = main.minimize();
     }
 
     Ok(LaunchReport {
@@ -135,7 +137,9 @@ pub fn launch_copilot_window(app: &AppHandle, mode: &str) -> Result<LaunchReport
 /// also covers the HUD being closed by the OS / window manager.
 pub fn close_copilot_window(app: &AppHandle) {
     if let Some(hud) = app.get_webview_window(HUD_LABEL) {
-        let _ = hud.destroy();
+        let _ = crate::window::run_window_op_on_main_thread(app, move || {
+            let _ = hud.destroy();
+        });
     } else {
         restore_office(app);
     }
@@ -143,11 +147,14 @@ pub fn close_copilot_window(app: &AppHandle) {
 
 /// Brings the Office (main window) back to the front.
 pub fn restore_office(app: &AppHandle) {
-    if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        let _ = main.show();
-        let _ = main.unminimize();
-        let _ = main.set_focus();
-    }
+    let app_h = app.clone();
+    let _ = crate::window::run_window_op_on_main_thread(app, move || {
+        if let Some(main) = app_h.get_webview_window(MAIN_LABEL) {
+            let _ = main.show();
+            let _ = main.unminimize();
+            let _ = main.set_focus();
+        }
+    });
     let _ = app.emit(HUD_CLOSED_EVENT, ());
 }
 

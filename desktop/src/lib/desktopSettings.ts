@@ -24,13 +24,18 @@ export type HintLanguage =
   | 'es'
   | 'fr';
 
+/** Strict 3-way audio isolation: interviewer loopback only / interviewer + mic / mic only. */
+export type ListenMode = 'interviewer' | 'dual' | 'mic';
+
 export interface DesktopSettings {
   copilotMode: CopilotMode;
 
   // Audio
+  listenMode: ListenMode;
   loopbackDevice: string | null;
   micDevice: string | null;
   splitChannels: boolean;
+  sttLanguage: 'multi' | 'uk' | 'ru' | 'en';
 
   // AI
   answerSpeed: AnswerSpeed;
@@ -39,8 +44,8 @@ export interface DesktopSettings {
   customInstructions: string;
 
   // HUD window
-  hudOpacity: number; // 0.2 .. 1
-  hudFontSize: number; // px, 12 .. 28
+  hudOpacity: number; // 0.3 .. 1
+  hudFontSize: number; // px, 14 .. 20
   stealth: boolean;
   clickThrough: boolean;
 }
@@ -48,14 +53,16 @@ export interface DesktopSettings {
 export const SETTINGS_STORAGE_KEY = 'ghostboard_desktop_settings_v2';
 export const SETTINGS_EVENT = 'gb:settings-changed';
 
-export const OPACITY_RANGE = { min: 0.2, max: 1 } as const;
-export const FONT_RANGE = { min: 12, max: 28 } as const;
+export const OPACITY_RANGE = { min: 0.3, max: 1 } as const;
+export const FONT_RANGE = { min: 14, max: 20 } as const;
 
 export const DEFAULT_SETTINGS: DesktopSettings = {
   copilotMode: 'chat',
+  listenMode: 'interviewer',
   loopbackDevice: null,
   micDevice: null,
-  splitChannels: true,
+  splitChannels: false,
+  sttLanguage: 'multi',
   answerSpeed: 'fast',
   answerLength: 'detailed',
   hintLanguage: 'auto',
@@ -75,13 +82,16 @@ export function sanitizeSettings(input: Partial<DesktopSettings> | null | undefi
     typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
   const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
   const bool = (v: unknown, fallback: boolean) => (typeof v === 'boolean' ? v : fallback);
+  const listenMode = pick(src.listenMode, ['interviewer', 'dual', 'mic'] as const, DEFAULT_SETTINGS.listenMode);
   const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
   return {
     copilotMode: pick(src.copilotMode, ['chat', 'top_bar'] as const, DEFAULT_SETTINGS.copilotMode),
+    listenMode,
     loopbackDevice: str(src.loopbackDevice),
     micDevice: str(src.micDevice),
-    splitChannels: bool(src.splitChannels, DEFAULT_SETTINGS.splitChannels),
+    splitChannels: listenMode === 'dual',
+    sttLanguage: pick(src.sttLanguage, ['multi', 'uk', 'ru', 'en'] as const, DEFAULT_SETTINGS.sttLanguage),
     answerSpeed: pick(src.answerSpeed, ['fast', 'deep'] as const, DEFAULT_SETTINGS.answerSpeed),
     answerLength: pick(src.answerLength, ['short', 'detailed', 'code'] as const, DEFAULT_SETTINGS.answerLength),
     hintLanguage: pick(

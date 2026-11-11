@@ -32,6 +32,7 @@ import { SecuritySettings } from "@/components/cabinet/SecuritySettings";
 import { SpecializationTab } from "@/components/cabinet/SpecializationTab";
 import { SessionHistoryTab } from "@/components/cabinet/SessionHistoryTab";
 import { BattleCheatSheetTab } from "@/components/cabinet/BattleCheatSheetTab";
+import { CVBattleCards } from "./CVBattleCards";
 import { Flame } from "lucide-react";
 
 interface UserAccount {
@@ -492,12 +493,20 @@ export default function ProfilePage() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
+                  className="space-y-8"
                 >
-                  <BattleCheatSheetTab
+                  <CVBattleCards
                     candidateProfile={candidateProfile}
                     resumeContext={resumeContext}
                     locale={locale}
                   />
+                  <div className="pt-6 border-t border-white/10">
+                    <BattleCheatSheetTab
+                      candidateProfile={candidateProfile}
+                      resumeContext={resumeContext}
+                      locale={locale}
+                    />
+                  </div>
                 </motion.div>
               )}
 

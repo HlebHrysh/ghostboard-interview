@@ -16,25 +16,21 @@ import {
   getAuthState,
   setListenMode as nativeSetListenMode,
   getListenMode as nativeGetListenMode,
+  setSttLanguage as nativeSetSttLanguage,
+  getSttLanguage as nativeGetSttLanguage,
 } from '../lib/tauriBridge';
 import {
   StructuredAnswerOutput,
   parseDualStreamDelimiters,
 } from '../lib/streamClient';
+import { cleanStreamText } from '../lib/answerStream';
 
 // Module-level: the native capture auto-start must happen at most once per app session.
 let autoCaptureStartPromise: Promise<boolean> | null = null;
 
 function cleanStreamingAnswerText(raw: string): string {
   if (!raw) return '';
-  return raw
-    .replace(/<<<\s*META:[^>]+>>>/gi, '')
-    .replace(/<<<\s*PHASE_[123]:[A-Za-z0-9_]+\s*>>>/gi, '')
-    .replace(/<<<\s*END\s*>>>/gi, '')
-    .replace(/\[DONE\]/gi, '')
-    .replace(/(?:\r?\n|\s)*(?:<{1,3}[A-Za-z0-9_:>-]*>{0,3})\s*$/gi, '')
-    .replace(/(?:\r?\n|\s)*(?:<{1,3}|>{1,3})\s*$/g, '')
-    .trim();
+  return cleanStreamText(raw);
 }
 
 export interface SttStatusState {
@@ -84,10 +80,15 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
   const [connectionLatencyMs, setConnectionLatencyMs] = useState<number>(45);
   const [isCapturing, setIsCapturing] = useState(false);
   const [listenMode, setListenModeState] = useState<'all' | 'system_only'>('all');
+  const [sttLanguage, setSttLanguageState] = useState<'multi' | 'uk' | 'ru' | 'en' | string>('multi');
 
   const accumulatedTokensRef = useRef('');
   const questionStartTimeRef = useRef<number | null>(null);
   const firstTokenTimeRef = useRef<number | null>(null);
+  const lastValidQuestionRef = useRef<string>('');
+  const lastValidQuestionIdRef = useRef<string | null>(null);
+  const lastValidStructuredRef = useRef<StructuredAnswerOutput | null>(null);
+  const lastValidStreamingRef = useRef<string>('');
 
   const onQuestionDetectedRef = useRef(onQuestionDetected);
   const onHotkeyRef = useRef(onHotkey);
@@ -154,6 +155,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
       case 'questionDetected': {
         const q = event.payload.question || event.payload.text || '';
         const id = event.payload.id || event.payload.questionId || `q-${Date.now()}`;
+        if (structuredAnswer && !accumulatedTokensRef.current.trim().startsWith('<<<IGNORE>>>')) {
+          lastValidQuestionRef.current = currentQuestion;
+          lastValidQuestionIdRef.current = currentQuestionId;
+          lastValidStructuredRef.current = structuredAnswer;
+          lastValidStreamingRef.current = streamingAnswer;
+        }
         setCurrentQuestion(q);
         setCurrentQuestionId(id);
         accumulatedTokensRef.current = '';
@@ -170,10 +177,28 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
 
       case 'llmChunk':
       case 'aiChunk': {
-        const payload = event.payload as { token?: string; delta?: string; text?: string; is_first?: boolean };
+        const payload = event.payload as { token?: string; delta?: string; text?: string; is_first?: boolean; question_id?: string; questionId?: string };
         const token = payload.token || payload.delta || payload.text || '';
+        const qId = payload.question_id || payload.questionId;
+        if (qId && (!currentQuestionId || currentQuestionId !== qId)) {
+          setCurrentQuestionId(qId);
+        }
+        if (!currentQuestion) {
+          setCurrentQuestion('Запитання співрозмовника');
+        }
         accumulatedTokensRef.current += token;
         const fullSoFar = accumulatedTokensRef.current;
+
+        if (fullSoFar.trim().startsWith('<<<IGNORE>>>')) {
+          setIsStreaming(false);
+          setCurrentQuestion(lastValidQuestionRef.current);
+          setCurrentQuestionId(lastValidQuestionIdRef.current);
+          setStructuredAnswer(lastValidStructuredRef.current);
+          setStreamingAnswer(lastValidStreamingRef.current);
+          accumulatedTokensRef.current = '';
+          return;
+        }
+
         const cleaned = cleanStreamingAnswerText(fullSoFar);
         setStreamingAnswer(cleaned || fullSoFar);
 
@@ -192,7 +217,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           ? Date.now() - questionStartTimeRef.current
           : 0;
 
-        setStructuredAnswer({
+        const newStructured: StructuredAnswerOutput = {
           hook: parsed.hook || cleaned || fullSoFar,
           pillars: parsed.pillars,
           deepDive: parsed.deepDive,
@@ -200,7 +225,8 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           ttftMs: currentTtft,
           totalDurationMs: currentDuration,
           model: 'Gemini 3.8 Flash / Groq',
-        });
+        };
+        setStructuredAnswer(newStructured);
         setIsStreaming(true);
         break;
       }
@@ -210,6 +236,16 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         setIsStreaming(false);
         const payload = event.payload as { full_text?: string; text?: string; latency_ms?: number };
         const fullText = payload.full_text || payload.text || accumulatedTokensRef.current;
+
+        if (fullText.trim().startsWith('<<<IGNORE>>>')) {
+          setCurrentQuestion(lastValidQuestionRef.current);
+          setCurrentQuestionId(lastValidQuestionIdRef.current);
+          setStructuredAnswer(lastValidStructuredRef.current);
+          setStreamingAnswer(lastValidStreamingRef.current);
+          accumulatedTokensRef.current = '';
+          return;
+        }
+
         accumulatedTokensRef.current = fullText;
         const cleaned = cleanStreamingAnswerText(fullText);
         setStreamingAnswer(cleaned || fullText);
@@ -225,7 +261,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           setLatencyMs(Date.now() - questionStartTimeRef.current);
         }
 
-        setStructuredAnswer({
+        const finalStructured: StructuredAnswerOutput = {
           hook: finalParsed.hook || cleaned || fullText,
           pillars: finalParsed.pillars,
           deepDive: finalParsed.deepDive,
@@ -233,7 +269,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
           ttftMs: ttftMs ?? 0,
           totalDurationMs: finalLatency,
           model: 'Gemini 3.8 Flash / Groq',
-        });
+        };
+        setStructuredAnswer(finalStructured);
+        lastValidStructuredRef.current = finalStructured;
+        lastValidQuestionRef.current = currentQuestion;
+        lastValidQuestionIdRef.current = currentQuestionId;
+        lastValidStreamingRef.current = cleaned || fullText;
         break;
       }
 
@@ -256,6 +297,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
       case 'listenModeChanged': {
         const mode = event.payload.mode;
         setListenModeState(mode === 'system_only' ? 'system_only' : 'all');
+        break;
+      }
+
+      case 'sttLanguageChanged': {
+        const lang = event.payload.language;
+        setSttLanguageState(lang);
         break;
       }
 
@@ -294,6 +341,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
 
       case 'error': {
         setError(event.payload);
+        setIsStreaming(false);
         if (event.payload.code === 'AUDIO_PIPELINE_ERROR') {
           setSttStatus((prev) => ({
             ...prev,
@@ -314,6 +362,11 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     // Initial listen mode load
     nativeGetListenMode().then((m) => {
       if (isMounted) setListenModeState(m === 'system_only' ? 'system_only' : 'all');
+    }).catch(console.warn);
+
+    // Initial STT language load
+    nativeGetSttLanguage().then((l) => {
+      if (isMounted && l) setSttLanguageState(l);
     }).catch(console.warn);
 
     // Auto-start native dual audio capture once per session (guard survives remounts / StrictMode)
@@ -443,6 +496,12 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     return res;
   }, []);
 
+  const switchSttLanguage = useCallback(async (lang: 'multi' | 'uk' | 'ru' | 'en' | string) => {
+    const res = await nativeSetSttLanguage(lang);
+    setSttLanguageState(res);
+    return res;
+  }, []);
+
   return {
     // Reactive State
     sttStatus,
@@ -462,6 +521,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     isStealth,
     isClickThrough,
     listenMode,
+    sttLanguage,
     error,
     isAuthenticated,
     user,
@@ -475,6 +535,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     stopCapture,
     restartCapture,
     switchListenMode,
+    switchSttLanguage,
     triggerAnswer,
     clearSession,
     setOpacity,

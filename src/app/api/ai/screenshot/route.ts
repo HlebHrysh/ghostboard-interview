@@ -27,6 +27,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const isProGet = user.plan === 'pro' || user.plan === 'lifetime' || user.plan === 'emergency';
+  if (!isProGet) {
+    return NextResponse.json({ error: 'Pro subscription required for OCR sync', code: 'TIER_REQUIRED' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
   const since = Number(searchParams.get('since') || 0);
 
@@ -59,6 +64,18 @@ export async function POST(req: NextRequest) {
     const user = await getSessionUser(token);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized: Invalid session.' }, { status: 401 });
+    }
+
+    const isPro = user.plan === 'pro' || user.plan === 'lifetime' || user.plan === 'emergency';
+    if (!isPro) {
+      return NextResponse.json(
+        {
+          error: 'Функція аналізу скріншотів (OCR) доступна лише у Pro та Lifetime планах. Оновіть ваш план для доступу.',
+          code: 'TIER_REQUIRED',
+          plan: user.plan,
+        },
+        { status: 403 }
+      );
     }
 
     const rateLimit = await checkRateLimit(req, 10, 60000, 'screenshot_ai');

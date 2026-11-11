@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { DesktopAuthGate } from './components/DesktopAuthGate';
 import { OfficeWindow } from './components/OfficeWindow';
 import { HudWindow } from './components/HudWindow';
+import { HudErrorBoundary } from './hud/HudErrorBoundary';
 import { EyeLineTeleprompter } from './components/EyeLineTeleprompter';
 import { useHudStream } from './hooks/useHudStream';
 import {
@@ -151,10 +152,10 @@ export default function App() {
   // 1. Detached HUD Window (Opened via launch_copilot_window) or In-Window HUD Fallback
   if (isUrlHud || isHudActive) {
     return (
-      <>
+      <HudErrorBoundary fallbackTitle="HUD Overlay">
         <HudWindow onReturnToOffice={isHudActive ? handleReturnToOffice : undefined} />
         <LegacyEyeLineBridge />
-      </>
+      </HudErrorBoundary>
     );
   }
 
@@ -176,19 +177,19 @@ export default function App() {
   // 3. Authentication Gate (Strictly Login / Register / Offline Demo)
   if (!isAuthenticated) {
     return (
-      <>
+      <HudErrorBoundary fallbackTitle="Authentication">
         <DesktopAuthGate
           onSuccess={handleAuthSuccess}
           onDemoMode={handleDemoMode}
         />
         <LegacyEyeLineBridge />
-      </>
+      </HudErrorBoundary>
     );
   }
 
   // 4. Ghostboard Office (The ONLY main window interface: 5 Working Tabs + Interview Arena)
   return (
-    <>
+    <HudErrorBoundary fallbackTitle="Ghostboard Office">
       <OfficeWindow
         user={authUser}
         onLogout={handleLogout}
@@ -196,6 +197,6 @@ export default function App() {
         onStartHud={handleStartHud}
       />
       <LegacyEyeLineBridge />
-    </>
+    </HudErrorBoundary>
   );
 }

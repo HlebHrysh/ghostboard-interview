@@ -1,4 +1,4 @@
-import { DeepgramLiveClient } from './deepgramLive';
+import { DeepgramLiveClient, DeepgramTranscriptResult } from './deepgramLive';
 
 export type SpeakerType = 'interviewer' | 'candidate';
 
@@ -18,6 +18,7 @@ export interface TabCaptureOptions {
     speaker?: SpeakerType
   ) => void;
   onConnectionStateChange?: (state: 'connected' | 'reconnecting' | 'disconnected') => void;
+  customStackOrCv?: string | string[];
 }
 
 export interface TabCaptureResult {
@@ -213,8 +214,10 @@ export class TabAudioCapture {
         }
       }
 
-      // Capture default microphone directly if source is 'mic', or if includeMic requested, or if tab lacked audio
-      if (requestedSource === 'mic' || options?.includeMic || !hasTabAudio) {
+      // Capture default microphone directly ONLY if source is explicitly 'mic', or if includeMic was explicitly requested
+      const shouldCaptureMic = requestedSource === 'mic' || Boolean(options?.includeMic);
+
+      if (shouldCaptureMic) {
         try {
           const micAudio = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -232,6 +235,13 @@ export class TabAudioCapture {
             throw new Error('Не вдалося отримати доступ до мікрофона за замовчуванням. Перевірте дозволи браузера.');
           }
         }
+      } else {
+        // Strict Channel Isolation: Ensure any microphone tracks are physically stopped so user's own voice cannot be picked up
+        if (this.micStream) {
+          this.micStream.getTracks().forEach((track) => track.stop());
+          this.micStream = null;
+        }
+        this.isMicActive = false;
       }
 
       // If no separate display stream, use micStream as the primary stream
@@ -373,7 +383,8 @@ export class TabAudioCapture {
             await this.deepgramClient.startWithNode(this.audioContext, this.interviewerGainNode, {
               getApiKey: getApiKeyProvider,
               language: options.speechLanguage || 'uk',
-              onTranscript: (res) => {
+              customStackOrCv: options.customStackOrCv,
+              onTranscript: (res: DeepgramTranscriptResult) => {
                 options.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'interviewer');
               },
               onStateChange: (state) => {
@@ -540,6 +551,21 @@ export class TabAudioCapture {
 
     if (this.micStream) {
       const nextActive = !this.isMicActive;
+      if (!nextActive) {
+        // Strict Channel Isolation: Physically stop hardware microphone track so it cannot capture voice
+        this.micStream.getAudioTracks().forEach((track) => {
+          track.stop();
+        });
+        this.micStream = null;
+        if (this.micSourceNode) {
+          try {
+            this.micSourceNode.disconnect();
+          } catch {}
+          this.micSourceNode = null;
+        }
+        this.isMicActive = false;
+        return false;
+      }
       this.micStream.getAudioTracks().forEach((track) => {
         track.enabled = nextActive;
       });
@@ -566,6 +592,22 @@ export class TabAudioCapture {
         return false;
       }
     }
+  }
+
+  public disableMicrophone(): void {
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach((track) => {
+        track.stop();
+      });
+      this.micStream = null;
+    }
+    if (this.micSourceNode) {
+      try {
+        this.micSourceNode.disconnect();
+      } catch {}
+      this.micSourceNode = null;
+    }
+    this.isMicActive = false;
   }
 
   public stopCapture(): void {
@@ -744,7 +786,8 @@ export class TabAudioCapture {
         await this.candidateDeepgramClient.startWithNode(this.audioContext, this.candidateGainNode, {
           getApiKey: getApiKeyProvider,
           language: options?.speechLanguage || 'uk',
-          onTranscript: (res) => {
+          customStackOrCv: options?.customStackOrCv,
+          onTranscript: (res: DeepgramTranscriptResult) => {
             options?.onLiveTranscript?.(res.text, res.isFinal, res.speechFinal, 'candidate');
           },
           onError: (err) => {

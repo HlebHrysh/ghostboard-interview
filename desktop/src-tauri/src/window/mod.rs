@@ -21,6 +21,15 @@ pub use stealth::{
     apply_linux_stealth, apply_macos_stealth, apply_stealth, apply_windows_stealth,
 };
 
+/// Safely dispatches a window manipulation closure onto the main OS thread,
+/// preventing GDK / GTK / Win32 threading panics.
+pub fn run_window_op_on_main_thread<F>(app: &tauri::AppHandle, op: F) -> Result<(), String>
+where
+    F: FnOnce() + Send + 'static,
+{
+    app.run_on_main_thread(op).map_err(|e| format!("Main thread dispatch error: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

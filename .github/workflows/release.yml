@@ -82,7 +82,7 @@ jobs:
 
       # Prepare Optional Code Signing for macOS (Apple Developer ID & Notarytool)
       - name: Setup macOS Code Signing Identity (Optional)
-        if: matrix.platform == 'mac' && env.APPLE_CERTIFICATE != ''
+        if: matrix.platform == 'mac' && secrets.APPLE_CERTIFICATE != ''
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -98,7 +98,7 @@ jobs:
 
       # Prepare Optional Code Signing for Windows (Authenticode)
       - name: Setup Windows Authenticode Certificate (Optional)
-        if: matrix.platform == 'win' && env.WINDOWS_CERTIFICATE != ''
+        if: matrix.platform == 'win' && secrets.WINDOWS_CERTIFICATE != ''
         shell: bash
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}

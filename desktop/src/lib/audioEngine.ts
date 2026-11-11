@@ -33,6 +33,7 @@ export interface DialogueMessage {
   isFinal: boolean;
   timestamp: number;
   qaId?: string;
+  answer?: string;
 }
 
 export interface DesktopAudioEngineOptions {

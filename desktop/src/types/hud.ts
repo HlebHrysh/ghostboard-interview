@@ -121,6 +121,10 @@ export interface ListenModeChangedPayload {
   mode: 'all' | 'system_only' | string;
 }
 
+export interface SttLanguageChangedPayload {
+  language: 'multi' | 'uk' | 'ru' | 'en' | string;
+}
+
 export type HudEvent =
   | { type: 'vadState'; payload: VadStatePayload }
   | { type: 'sttTranscript'; payload: SttTranscriptPayload }
@@ -134,6 +138,7 @@ export type HudEvent =
   | { type: 'stealthChanged'; payload: StealthChangedPayload }
   | { type: 'clickThroughChanged'; payload: ClickThroughChangedPayload }
   | { type: 'listenModeChanged'; payload: ListenModeChangedPayload }
+  | { type: 'sttLanguageChanged'; payload: SttLanguageChangedPayload }
   | { type: 'authChanged'; payload: AuthChangedPayload }
   | { type: 'deviceCodePending'; payload: DeviceCodePendingPayload }
   | { type: 'planUpdated'; payload: PlanUpdatedPayload }
@@ -169,6 +174,7 @@ export interface HudStreamState {
   ttftMs: number | null;
   latencyMs: number | null;
   lastHotkeyAction: string | null;
+  sttLanguage?: 'multi' | 'uk' | 'ru' | 'en' | string;
   isStealthEnabled: boolean;
   isClickThroughEnabled: boolean;
   isAuthenticated: boolean;

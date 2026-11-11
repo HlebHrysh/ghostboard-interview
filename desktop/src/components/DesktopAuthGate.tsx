@@ -63,6 +63,7 @@ export function DesktopAuthGate({ onSuccess, onDemoMode, backendUrl }: DesktopAu
   const [password, setPassword] = useState('');
   const [isSubmittingFallback, setIsSubmittingFallback] = useState(false);
   const [fallbackError, setFallbackError] = useState<string | null>(null);
+  const [isQaLoggingIn, setIsQaLoggingIn] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -242,6 +243,32 @@ export function DesktopAuthGate({ onSuccess, onDemoMode, backendUrl }: DesktopAu
       setPollError((err as Error)?.message || 'Помилка перевірки авторизації');
     } finally {
       setIsCheckingDirectly(false);
+    }
+  };
+
+  const handleQaLogin = async () => {
+    setIsQaLoggingIn(true);
+    setFallbackError(null);
+    try {
+      const res = await apiFetch<{
+        success: boolean;
+        token: string;
+        user: UserProfileData;
+      }>('/api/qa/control', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'seed_test_user' }),
+      });
+
+      if (!res.ok || !res.data?.token) {
+        setFallbackError(res.error || 'Не вдалося підключитися до QA контролера');
+        return;
+      }
+
+      await completeLoginSuccess(res.data.token, res.data.user);
+    } catch (err: unknown) {
+      setFallbackError((err as Error)?.message || 'Помилка QA авторизації');
+    } finally {
+      setIsQaLoggingIn(false);
     }
   };
 
@@ -453,6 +480,19 @@ export function DesktopAuthGate({ onSuccess, onDemoMode, backendUrl }: DesktopAu
                   <span>{pollError}</span>
                 </div>
               )}
+
+              {/* 1-Click QA Login (Instant God-Mode Testing) */}
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={handleQaLogin}
+                disabled={isQaLoggingIn}
+                className="w-full py-3 px-4 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 font-semibold text-xs tracking-wide shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer font-sans"
+              >
+                <Zap className={`w-4 h-4 text-cyan-400 ${isQaLoggingIn ? 'animate-spin' : ''}`} />
+                <span>⚡ 1-Click QA Login (qa@ghostboard.ai)</span>
+                <ArrowRight className="w-4 h-4 ml-auto text-cyan-400/80" />
+              </motion.button>
 
               {/* Main Action 1: Sign in via Browser Handshake */}
               <motion.button

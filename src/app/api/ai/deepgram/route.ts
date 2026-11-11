@@ -54,10 +54,10 @@ export async function GET(req: NextRequest) {
     req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for')
   );
 
-  const isExplicitDevOrDemo = isDemo || isDesktop || isStudioClient;
+  const isExplicitDevOrDemo = isDev && (isDemo || isDesktop || isStudioClient);
 
   // 1. Origin & Anti-Hotlinking protection (relaxed for dev/desktop/demo)
-  if (!isExplicitDevOrDemo && !isDev && !validateOrigin(req)) {
+  if (!isExplicitDevOrDemo && !validateOrigin(req)) {
     return NextResponse.json({ error: 'Запит відхилено: недозволене джерело (Origin mismatch)' }, { status: 403 });
   }
 
@@ -78,10 +78,10 @@ export async function GET(req: NextRequest) {
     req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
   let user = token ? await getSessionUser(token) : null;
-  if (!user && (isExplicitDevOrDemo || (isDev && !isExternalClientIp))) {
+  if (!user && (isDemo || (isDev && isStudioClient))) {
     user = {
-      id: isDemo ? 'demo-guest-user' : 'dev-local-user',
-      email: isDemo ? 'guest@ghostboard.local' : 'developer@ghostboard.local',
+      id: isDemo ? 'demo-guest-user' : 'studio-dev-user',
+      email: isDemo ? 'guest@ghostboard.local' : 'studio@ghostboard.local',
       plan: isDemo ? 'free' : 'pro',
       createdAt: new Date(),
     };
@@ -122,7 +122,7 @@ export async function GET(req: NextRequest) {
     : '***';
 
   // In development, instantly issue configured key in ~1ms without external Deepgram roundtrip
-  if (isDev || isDesktop) {
+  if (isDev) {
     return NextResponse.json({
       configured: true,
       maskedKey: masked,
@@ -199,6 +199,16 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      if (!isDev) {
+        return NextResponse.json(
+          {
+            error: 'Сервіс розпізнавання мови тимчасово недоступний (помилка генерації сесійного ключа)',
+            code: 'EPHEMERAL_KEY_FAILED',
+          },
+          { status: 503 }
+        );
+      }
+
       return NextResponse.json({
         configured: true,
         maskedKey: masked,
@@ -207,6 +217,16 @@ export async function GET(req: NextRequest) {
         status: 'valid',
         message: 'Deepgram API ключ готовий до сесії',
       });
+    }
+
+    if (!isDev) {
+      return NextResponse.json(
+        {
+          error: 'Не вдалося отримати доступ до проектів Deepgram',
+          code: 'DEEPGRAM_PROJECT_ERROR',
+        },
+        { status: 503 }
+      );
     }
 
     const errText = await projectsRes.text().catch(() => '');
@@ -218,6 +238,15 @@ export async function GET(req: NextRequest) {
       message: errText || 'Помилка валідації Deepgram ключа, використано базовий ключ',
     });
   } catch {
+    if (!isDev) {
+      return NextResponse.json(
+        {
+          error: 'Помилка з\'єднання з Deepgram сервісом',
+          code: 'DEEPGRAM_SERVICE_ERROR',
+        },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({
       configured: true,
       maskedKey: masked,

@@ -6,18 +6,14 @@ import { logger } from './logger';
 const log = logger.child({ component: 'geminiApi' });
 
 export const FLASH_MODELS = [
+  'gemini-3.5-flash',
   'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-2.0-flash-lite',
   'gemini-flash-latest',
 ];
 
 export const PRO_MODELS = [
+  'gemini-3.5-flash',
   'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-2.0-flash-lite',
   'gemini-flash-latest',
 ];
 
@@ -34,8 +30,8 @@ let preferredFastModel: string | null = null;
 
 export const MODEL_DEMOTION_TTL_MS = 3 * 60 * 1000; // 3-minute demotion on timeout/503
 
-// In-memory Circuit Breaker: marks a model dead for 60 seconds on 429, 503, 404
-export const CIRCUIT_BREAKER_TTL_MS = 60_000;
+// In-memory Circuit Breaker: marks a model dead for 15 seconds on repeated 429/503
+export const CIRCUIT_BREAKER_TTL_MS = 15_000;
 const circuitBreakerMap = new Map<string, number>();
 
 export function isModelCircuitBroken(model: string): boolean {
@@ -95,6 +91,12 @@ export function getPrioritizedModels(pool: string[] = FLASH_MODELS): string[] {
     }
   }
 
+  // Never-Dead Cooldown Bypass: if every model is circuit-broken or demoted, clear and return pool
+  if (healthy.length === 0 && pool.length > 0) {
+    resetModelHealth();
+    return [...pool];
+  }
+
   // If preferredFastModel is set, healthy, and not circuit-broken, move it to the very front
   if (preferredFastModel && healthy.includes(preferredFastModel) && !isModelCircuitBroken(preferredFastModel)) {
     const idx = healthy.indexOf(preferredFastModel);
@@ -133,7 +135,8 @@ export function getCleanGroqKey(): string | null {
 export interface GeminiCallOptions {
   apiKey?: string;
   models?: string[];
-  contents: unknown[];
+  contents?: unknown[];
+  prompt?: string;
   generationConfig?: Record<string, unknown>;
   /** Per-model request timeout in ms (default 4000). Lower = faster failover. */
   timeoutMs?: number;
@@ -183,9 +186,15 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
   }
 
   const prioritized = getPrioritizedModels(options.models || FLASH_MODELS);
-  // Filter models that are not circuit-broken; if all are broken, fallback to full pool
-  const unbroken = prioritized.filter((m) => !isModelCircuitBroken(m));
-  const modelsToTry = unbroken.length > 0 ? unbroken : prioritized;
+  let unbroken = prioritized.filter((m) => !isModelCircuitBroken(m));
+
+  // Never-Dead Cooldown Bypass: if all models in cascade are cooling down, reset and force live request
+  if (unbroken.length === 0) {
+    log.warn('All models on cooldown, clearing cooldown state and forcing live request (Never-Dead Cooldown Bypass)');
+    resetModelCircuitBreaker();
+    unbroken = prioritized;
+  }
+  const modelsToTry = unbroken;
 
   let lastError = 'No models available';
   let isQuota = false;
@@ -227,11 +236,14 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
         genConfig.thinkingConfig = { thinkingBudget: 0 };
       }
 
+      const contentsPayload =
+        options.contents || (options.prompt ? [{ role: 'user', parts: [{ text: options.prompt }] }] : []);
+
       let res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: options.contents,
+          contents: contentsPayload,
           generationConfig: genConfig,
         }),
         signal: controller.signal,
@@ -417,11 +429,15 @@ export interface HedgedStreamContender {
   ttftMs: number;
 }
 
+export type ConversationHistoryItem =
+  | { speaker: string; text: string }
+  | { question: string; answer?: string; shortHook?: string };
+
 export interface HedgedStreamRaceOptions {
   contents: unknown[];
   systemPrompt: string;
   normalizedQuestion: string;
-  history?: Array<{ speaker: string; text: string }>;
+  history?: Array<ConversationHistoryItem>;
   generationConfig?: Record<string, unknown>;
   maxTokens?: number;
   temperature?: number;
@@ -498,10 +514,24 @@ export async function runHedgedStreamRace(
       ];
       if (options.history && options.history.length > 0) {
         options.history.slice(-4).forEach((h) => {
-          groqMessages.push({
-            role: h.speaker === 'interviewer' ? 'user' : 'assistant',
-            content: `${h.speaker.toUpperCase()}: ${h.text}`,
-          });
+          if ('speaker' in h) {
+            groqMessages.push({
+              role: h.speaker === 'interviewer' ? 'user' : 'assistant',
+              content: `${h.speaker.toUpperCase()}: ${h.text}`,
+            });
+          } else if ('question' in h) {
+            groqMessages.push({
+              role: 'user',
+              content: `INTERVIEWER: ${h.question}`,
+            });
+            const ans = (h.shortHook || h.answer || '').trim();
+            if (ans) {
+              groqMessages.push({
+                role: 'assistant',
+                content: `CANDIDATE: ${ans}`,
+              });
+            }
+          }
         });
       }
       groqMessages.push({
@@ -612,7 +642,7 @@ export async function runHedgedStreamRace(
 
       if (!res.ok) {
         if (res.status === 503 || res.status === 429 || res.status === 404) {
-          recordModelFailure(model);
+          tripModelCircuitBreaker(model);
           return;
         }
         const errBody = await res.text().catch(() => '');
@@ -693,7 +723,13 @@ export async function runHedgedStreamRace(
     }
   };
 
-  const prioritizedGemini = getPrioritizedModels(FLASH_MODELS);
+  let prioritizedGemini = getPrioritizedModels(FLASH_MODELS);
+  let unbrokenGemini = prioritizedGemini.filter((m) => !isModelCircuitBroken(m));
+  if (unbrokenGemini.length === 0) {
+    resetModelCircuitBreaker();
+    unbrokenGemini = prioritizedGemini;
+  }
+  prioritizedGemini = unbrokenGemini;
   let geminiIndex = 0;
 
   if (groqKey) {
@@ -859,3 +895,19 @@ export async function callFastHedgedLlm(options: HedgedStreamRaceOptions): Promi
     };
   }
 }
+
+/**
+ * Fast direct text generation with Gemini using smart fallback cascade.
+ * Used for live coding problem extraction and low-latency analysis.
+ */
+export async function generateFastTextWithGemini(prompt: string): Promise<string> {
+  const res = await callGeminiWithFallback({
+    prompt,
+    timeoutMs: 7000,
+  });
+  if (!res.ok || !res.text) {
+    throw new Error(res.error || 'Gemini fast text generation failed');
+  }
+  return res.text;
+}
+

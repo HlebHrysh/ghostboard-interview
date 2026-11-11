@@ -103,9 +103,6 @@ pub fn find_loopback_device(host: &Host) -> Result<Device, String> {
             }
         }
 
-        if let Some(device) = host.default_input_device() {
-            return Ok(device);
-        }
         if let Some(device) = host.default_output_device() {
             return Ok(device);
         }
@@ -113,15 +110,14 @@ pub fn find_loopback_device(host: &Host) -> Result<Device, String> {
 
     #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
-        if let Some(device) = host.default_input_device() {
+        if let Some(device) = host.default_output_device() {
             return Ok(device);
         }
     }
 
-    // Ultimate fallback
+    // Ultimate fallback: must be an output (render) device for loopback, never microphone
     host.default_output_device()
-        .or_else(|| host.default_input_device())
-        .ok_or_else(|| "No loopback or audio capture device found on host system".to_string())
+        .ok_or_else(|| "No loopback audio capture device found on host system".to_string())
 }
 
 /// Finds the default candidate microphone device.
@@ -260,6 +256,7 @@ pub struct AudioCaptureStream {
     sample_rate: u32,
     channels: u16,
     is_running: Arc<AtomicBool>,
+    alive: Arc<AtomicBool>,
 }
 
 unsafe impl Send for AudioCaptureStream {}
@@ -268,11 +265,49 @@ unsafe impl Sync for AudioCaptureStream {}
 impl Drop for AudioCaptureStream {
     fn drop(&mut self) {
         self.is_running.store(false, Ordering::SeqCst);
+        self.alive.store(false, Ordering::SeqCst);
         if let AudioStreamBackend::Process { child } = &self._backend {
             if let Ok(mut c) = child.lock() {
                 let _ = c.kill();
                 let _ = c.wait();
             }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn run_pactl_arg_with_timeout(arg: &str, timeout_ms: u64) -> Option<String> {
+    use std::time::{Duration, Instant};
+    let mut child = std::process::Command::new("pactl")
+        .arg(arg)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let start = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if status.success() {
+                    let mut stdout = child.stdout.take()?;
+                    use std::io::Read;
+                    let mut s = String::new();
+                    let _ = stdout.read_to_string(&mut s);
+                    let res = s.trim().to_string();
+                    return if res.is_empty() { None } else { Some(res) };
+                }
+                return None;
+            }
+            Ok(None) => {
+                if start.elapsed() > Duration::from_millis(timeout_ms) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => return None,
         }
     }
 }
@@ -291,7 +326,11 @@ impl AudioCaptureStream {
     }
 
     pub fn is_running(&self) -> bool {
-        self.is_running.load(Ordering::SeqCst)
+        self.is_running.load(Ordering::SeqCst) && self.alive.load(Ordering::SeqCst)
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.alive.load(Ordering::SeqCst)
     }
 
     /// Linux-native direct capture via PipeWire / PulseAudio (`parec` or `pw-record`).
@@ -309,32 +348,16 @@ impl AudioCaptureStream {
                 d.to_string()
             }
         } else if is_monitor {
-            // Query default sink via pactl
-            let sink_out = std::process::Command::new("pactl")
-                .arg("get-default-sink")
-                .output();
-            if let Ok(out) = sink_out {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    format!("{}.monitor", s)
-                } else {
-                    "@DEFAULT_MONITOR@".to_string()
-                }
+            // Query default sink via pactl with timeout
+            if let Some(s) = run_pactl_arg_with_timeout("get-default-sink", 500) {
+                format!("{}.monitor", s)
             } else {
                 "@DEFAULT_MONITOR@".to_string()
             }
         } else {
-            // Query default source via pactl
-            let src_out = std::process::Command::new("pactl")
-                .arg("get-default-source")
-                .output();
-            if let Ok(out) = src_out {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    s
-                } else {
-                    "@DEFAULT_SOURCE@".to_string()
-                }
+            // Query default source via pactl with timeout
+            if let Some(s) = run_pactl_arg_with_timeout("get-default-source", 500) {
+                s
             } else {
                 "@DEFAULT_SOURCE@".to_string()
             }
@@ -342,6 +365,8 @@ impl AudioCaptureStream {
 
         let is_running = Arc::new(AtomicBool::new(true));
         let is_running_clone = is_running.clone();
+        let alive = Arc::new(AtomicBool::new(true));
+        let alive_clone = alive.clone();
 
         // 1. Try launching parec
         let mut child_opt = std::process::Command::new("parec")
@@ -387,7 +412,10 @@ impl AudioCaptureStream {
             let mut buf = [0u8; 640]; // 20ms of audio (320 samples @ 16kHz, 2 bytes/sample)
             while is_running_clone.load(Ordering::Relaxed) {
                 match stdout.read(&mut buf) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        alive_clone.store(false, Ordering::SeqCst);
+                        break;
+                    }
                     Ok(n) => {
                         let samples = n / 2;
                         for i in 0..samples {
@@ -398,10 +426,12 @@ impl AudioCaptureStream {
                     }
                     Err(e) => {
                         tracing::debug!(target: "ghostboard::audio", "Process capture read exited: {:?}", e);
+                        alive_clone.store(false, Ordering::SeqCst);
                         break;
                     }
                 }
             }
+            alive_clone.store(false, Ordering::SeqCst);
         });
 
         tracing::info!(
@@ -418,6 +448,7 @@ impl AudioCaptureStream {
             sample_rate: 16000,
             channels: 1,
             is_running,
+            alive,
         })
     }
 
@@ -442,8 +473,11 @@ impl AudioCaptureStream {
 
         let is_running = Arc::new(AtomicBool::new(true));
         let is_running_clone = is_running.clone();
+        let alive = Arc::new(AtomicBool::new(true));
+        let alive_err = alive.clone();
 
         let err_fn = move |err| {
+            alive_err.store(false, Ordering::SeqCst);
             tracing::error!(target: "ghostboard::audio", "Audio capture stream error: {:?}", err);
         };
 
@@ -498,6 +532,7 @@ impl AudioCaptureStream {
             sample_rate,
             channels,
             is_running,
+            alive,
         })
     }
 
@@ -544,5 +579,18 @@ mod tests {
         let host = cpal::default_host();
         let mic_res = find_microphone_device(&host);
         println!("Microphone discovery result: {:?}", mic_res.as_ref().map(|d| d.name()));
+    }
+
+    #[test]
+    fn test_audio_capture_stream_liveness_lifecycle() {
+        let is_running = Arc::new(AtomicBool::new(true));
+        let alive = Arc::new(AtomicBool::new(true));
+        let is_stream_running = |r: &AtomicBool, a: &AtomicBool| r.load(Ordering::SeqCst) && a.load(Ordering::SeqCst);
+
+        assert!(is_stream_running(&is_running, &alive));
+
+        // When stream encounters an error or EOF in pipe
+        alive.store(false, Ordering::SeqCst);
+        assert!(!is_stream_running(&is_running, &alive));
     }
 }

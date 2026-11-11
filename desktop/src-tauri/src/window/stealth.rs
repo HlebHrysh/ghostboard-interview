@@ -94,9 +94,6 @@ pub fn apply_macos_stealth(_ns_window_ptr: *mut c_void, _enable: bool) -> Result
 /// 3. Hyprland: executes batch rules (float, pin, noblur, noshadow, noborder).
 /// 4. X11: sets atoms _NET_WM_STATE_SKIP_TASKBAR, _NET_WM_STATE_SKIP_PAGER, _NET_WM_STATE_ABOVE, and _NET_WM_BYPASS_COMPOSITOR.
 pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), String> {
-    window.set_skip_taskbar(enable).map_err(|e| format!("Failed to set skip_taskbar: {}", e))?;
-    let _ = window.set_always_on_top(enable);
-
     // Hyprland integration: dispatch window properties without re-registering rules
     if crate::window::hyprland::is_hyprland() {
         if let Ok(pos) = window.outer_position() {
@@ -104,11 +101,14 @@ pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), S
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        let win = window.clone();
-        let app = window.app_handle().clone();
-        let _ = app.run_on_main_thread(move || {
+    let win = window.clone();
+    let app = window.app_handle().clone();
+    crate::window::run_window_op_on_main_thread(&app, move || {
+        let _ = win.set_skip_taskbar(enable);
+        let _ = win.set_always_on_top(enable);
+
+        #[cfg(target_os = "linux")]
+        {
             if let Ok(gtk_win) = win.gtk_window() {
                 use gtk::prelude::*;
                 gtk_win.set_skip_taskbar_hint(enable);
@@ -133,8 +133,8 @@ pub fn apply_linux_stealth(window: &WebviewWindow, enable: bool) -> Result<(), S
                     }
                 }
             }
-        });
-    }
+        }
+    })?;
 
     Ok(())
 }

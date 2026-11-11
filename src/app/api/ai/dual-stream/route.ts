@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSessionUser, DbUser } from '@/lib/serverDb';
+import { getSessionUser, DbUser, incrementUserTrialQuestions } from '@/lib/serverDb';
 import {
   FLASH_MODELS,
   getCleanGeminiKey,
@@ -17,6 +17,7 @@ import { checkRateLimit, validateOrigin } from '@/lib/rateLimit';
 import {
   buildGhostboardSystemPrompt,
   parseStructuredGhostboardOutput,
+  mergeContinuationQuestion,
   AiModifier,
 } from '@/lib/aiPromptCore';
 
@@ -31,16 +32,37 @@ interface CachedUserRecord {
 }
 const sessionUserCache = new Map<string, CachedUserRecord>();
 const USER_CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute in-memory cache for 0ms pre-flight
+const MAX_USER_CACHE_SIZE = 500;
+
+function pruneUserCache(now: number) {
+  if (sessionUserCache.size > MAX_USER_CACHE_SIZE) {
+    for (const [key, record] of sessionUserCache.entries()) {
+      if (now - record.cachedAt >= USER_CACHE_TTL_MS) {
+        sessionUserCache.delete(key);
+      }
+    }
+    if (sessionUserCache.size > MAX_USER_CACHE_SIZE) {
+      const excess = sessionUserCache.size - MAX_USER_CACHE_SIZE;
+      let count = 0;
+      for (const key of sessionUserCache.keys()) {
+        sessionUserCache.delete(key);
+        count++;
+        if (count >= excess) break;
+      }
+    }
+  }
+}
 
 async function resolveSessionUserFast(token: string | undefined): Promise<FastUser | null> {
   if (!token) return null;
-  const cached = sessionUserCache.get(token);
   const now = Date.now();
+  const cached = sessionUserCache.get(token);
   if (cached && now - cached.cachedAt < USER_CACHE_TTL_MS) {
     return cached.user;
   }
   const user = await getSessionUser(token);
   if (user) {
+    pruneUserCache(now);
     sessionUserCache.set(token, { user, cachedAt: now });
   }
   return user;
@@ -55,16 +77,33 @@ const ALLOWED_MODIFIERS = [
   'more_technical',
   'code_example',
   'tradeoffs',
+  'explain_line',
 ] as const;
+
+interface RecentQuestionRecord {
+  question: string;
+  timestamp: number;
+}
+const recentQuestionCache = new Map<string, RecentQuestionRecord>();
 
 const DualStreamPayloadSchema = z.object({
   question: z.string().trim().min(1, 'Question cannot be empty').max(3000),
+  previousQuestion: z.string().optional(),
+  continuationFragment: z.string().optional(),
+  isContinuation: z.boolean().optional(),
   history: z
     .array(
-      z.object({
-        speaker: z.enum(['interviewer', 'candidate']),
-        text: z.string(),
-      })
+      z.union([
+        z.object({
+          speaker: z.enum(['interviewer', 'candidate']),
+          text: z.string(),
+        }),
+        z.object({
+          question: z.string(),
+          answer: z.string().optional(),
+          shortHook: z.string().optional(),
+        }),
+      ])
     )
     .optional()
     .default([]),
@@ -87,13 +126,15 @@ const DualStreamPayloadSchema = z.object({
   helperLanguage: z.string().optional().default('uk'),
 });
 
-export async function OPTIONS() {
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get('origin');
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': origin || '*',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
+      ...(origin ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
     },
   });
 }
@@ -120,32 +161,56 @@ export async function POST(req: NextRequest) {
       req.nextUrl.searchParams.get('demo') === '1';
 
     let user = token ? await resolveSessionUserFast(token) : null;
-    if (!user && (process.env.NODE_ENV === 'development' || isDemo)) {
+    if (!user && isDemo) {
       user = {
-        id: isDemo ? 'demo-guest-user' : 'dev-local-user',
-        email: isDemo ? 'guest@ghostboard.local' : 'developer@ghostboard.local',
-        plan: isDemo ? 'free' : 'pro',
+        id: 'demo-guest-user',
+        email: 'guest@ghostboard.local',
+        plan: 'free',
         createdAt: new Date(),
       };
     }
 
     if (!user) {
+      const origin = req.headers.get('origin');
       return NextResponse.json(
         { error: 'Unauthorized. Please sign in to access Dual-Stream Copilot.', code: 'AUTH_REQUIRED' },
         {
           status: 401,
           headers: {
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': origin || '*',
             'Access-Control-Allow-Methods': 'POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
+            ...(origin ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
           },
         }
       );
     }
 
+    if ('isBanned' in user && user.isBanned) {
+      return NextResponse.json(
+        { error: 'Your account has been suspended.', code: 'ACCOUNT_SUSPENDED' },
+        { status: 403 }
+      );
+    }
+
+    const isPro = user.plan === 'pro' || user.plan === 'lifetime' || user.plan === 'emergency';
+    const trialQuestionsUsed = Number(
+      ('trialQuestionsUsed' in user ? (user as { trialQuestionsUsed?: number }).trialQuestionsUsed : 0) || 0
+    );
+
+    if (!isPro && user.id !== 'demo-guest-user' && trialQuestionsUsed >= 5) {
+      return NextResponse.json(
+        {
+          error: 'Trial limit reached (5 questions). Please upgrade to an Emergency Pass or Pro Plan.',
+          code: 'TRIAL_LIMIT_REACHED',
+        },
+        { status: 403 }
+      );
+    }
+
     const rateLimit = await checkRateLimit(
       req,
-      isDemo ? 15 : 40,
+      isDemo ? 5 : 40,
       60000,
       isDemo ? 'dual_stream_demo' : 'dual_stream_ai'
     );
@@ -184,6 +249,32 @@ export async function POST(req: NextRequest) {
     } = parseResult.data;
 
     const normalizedQuestion = normalizeTechnicalSpeech(question.trim());
+
+    // Incremental Question Merge on Speaker Continuation (<2500ms or explicit)
+    let finalQuestion = normalizedQuestion;
+    let addedConstraint: string | undefined = undefined;
+
+    const previousQ = parseResult.data.previousQuestion;
+    const isContinuationExplicit = parseResult.data.isContinuation;
+
+    if (previousQ) {
+      const merged = mergeContinuationQuestion(previousQ, normalizedQuestion);
+      finalQuestion = merged.mergedQuestion;
+      addedConstraint = merged.addedConstraint;
+    } else {
+      const last = recentQuestionCache.get(user.id);
+      if (
+        last &&
+        (requestStartTime - last.timestamp <= 2500 || isContinuationExplicit) &&
+        last.question !== normalizedQuestion
+      ) {
+        const merged = mergeContinuationQuestion(last.question, normalizedQuestion);
+        finalQuestion = merged.mergedQuestion;
+        addedConstraint = merged.addedConstraint;
+      }
+    }
+    recentQuestionCache.set(user.id, { question: finalQuestion, timestamp: requestStartTime });
+
     const apiKey = getCleanGeminiKey();
     const groqKey = getCleanGroqKey();
 
@@ -196,7 +287,7 @@ export async function POST(req: NextRequest) {
 
     // Build the zero-fluff system prompt with domain auto-classification (<450 tokens)
     const { systemPrompt, domain, level, langTag } = buildGhostboardSystemPrompt({
-      question: normalizedQuestion,
+      question: finalQuestion,
       modifier: directorModifier as AiModifier,
       profile: candidateProfile,
       outputLanguage,
@@ -216,19 +307,48 @@ export async function POST(req: NextRequest) {
     ];
 
     if (history && history.length > 0) {
-      // Include last 4 turns for low prompt latency & fast prefill
+      // Include last 4 turns for low prompt latency & fast prefill (capped at 200 chars to avoid prefill bloat)
       history.slice(-4).forEach((h) => {
-        contents.push({
-          role: h.speaker === 'interviewer' ? 'user' : 'model',
-          parts: [{ text: `${h.speaker.toUpperCase()}: ${h.text}` }],
-        });
+        if ('speaker' in h) {
+          const text =
+            h.speaker === 'candidate' && h.text.length > 200
+              ? `${h.text.slice(0, 200)}...`
+              : h.text;
+          contents.push({
+            role: h.speaker === 'interviewer' ? 'user' : 'model',
+            parts: [{ text: `${h.speaker.toUpperCase()}: ${text}` }],
+          });
+        } else if ('question' in h) {
+          contents.push({
+            role: 'user',
+            parts: [{ text: `INTERVIEWER: ${h.question}` }],
+          });
+          const rawAns = (h.shortHook || h.answer || '').trim();
+          if (rawAns) {
+            const shortAns = rawAns.length > 200 ? `${rawAns.slice(0, 200)}...` : rawAns;
+            contents.push({
+              role: 'model',
+              parts: [{ text: `CANDIDATE: ${shortAns}` }],
+            });
+          }
+        }
       });
     }
 
+    const userQuestionText = addedConstraint
+      ? `INTERVIEW QUESTION: ${finalQuestion}\n\n[CONTINUATION REFINEMENT: Keep the opening natural, and specifically address the newly added constraint: "${addedConstraint}"]`
+      : `INTERVIEW QUESTION: ${finalQuestion}`;
+
     contents.push({
       role: 'user',
-      parts: [{ text: `INTERVIEW QUESTION: ${normalizedQuestion}` }],
+      parts: [{ text: userQuestionText }],
     });
+
+    if (!isPro && user.id !== 'demo-guest-user') {
+      incrementUserTrialQuestions(user.id).catch((err) => {
+        console.warn('[dual-stream] Failed to increment trial questions:', err);
+      });
+    }
 
     const encoder = new TextEncoder();
 
@@ -246,12 +366,13 @@ export async function POST(req: NextRequest) {
           );
         };
 
-        const maxTokens = directorModifier === 'shorter' ? 350 : 850;
+        const maxTokens =
+          directorModifier === 'shorter' || directorModifier === 'explain_line' ? 350 : 850;
 
         const winner = await runHedgedStreamRace({
           contents,
           systemPrompt,
-          normalizedQuestion,
+          normalizedQuestion: finalQuestion,
           history,
           maxTokens,
           temperature: 0.3,
@@ -292,6 +413,7 @@ export async function POST(req: NextRequest) {
           }
         };
 
+        let hasStreamError = false;
         try {
           for await (const chunk of iterateHedgedStreamChunks(winner, req.signal)) {
             fullGeneratedText += chunk;
@@ -302,7 +424,23 @@ export async function POST(req: NextRequest) {
             });
           }
         } catch (streamErr) {
+          hasStreamError = true;
           console.warn(`[DualStream] Stream pump error on ${winner.model}:`, streamErr);
+          sendEvent('error', {
+            id: `ds-err-${Date.now()}`,
+            message: 'Помилка потокової генерації відповіді ШІ. Спробуйте ще раз.',
+          });
+        }
+
+        if (hasStreamError || !fullGeneratedText.trim()) {
+          if (!hasStreamError) {
+            sendEvent('error', {
+              id: `ds-empty-${Date.now()}`,
+              message: 'ШІ повернув порожню відповідь.',
+            });
+          }
+          controller.close();
+          return;
         }
 
         // Parse structured output phases
@@ -314,15 +452,7 @@ export async function POST(req: NextRequest) {
         const finalMetaRaw =
           structured.meta?.raw || `${domain} | ${level} | ${langTag}`;
 
-        // Fallback pillars if LLM produced fewer than 2 bullets
-        const finalPillars =
-          structured.pillars.length >= 2
-            ? structured.pillars
-            : [
-                '**Архітектура**: Пряма реалізація без зайвих шарів абстракцій.',
-                '**Паралелізм**: Неблокуюче асинхронне виконання задач.',
-                '**Надійність**: Ізоляція збоїв та передбачуваний стан системи.',
-              ];
+        const finalPillars = structured.pillars;
 
         // Final structured completion event
         sendEvent('complete', {
@@ -339,6 +469,7 @@ export async function POST(req: NextRequest) {
             hook: structured.hook || fullGeneratedText.slice(0, 160),
             pillars: finalPillars,
             deepDive: structured.deepDive,
+            followUpTrap: structured.followUpTrap,
           },
         });
 
@@ -346,15 +477,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    const resOrigin = req.headers.get('origin');
     return new Response(readableStream, {
       headers: {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
         'X-Accel-Buffering': 'no',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': resOrigin || '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-ghostboard-client, x-ghostboard-demo',
+        ...(resOrigin ? { 'Access-Control-Allow-Credentials': 'true' } : {}),
       },
     });
   } catch (error: unknown) {

@@ -59,6 +59,7 @@ export interface CandidateProfile {
   customNuances?: string;
   speakingStyle?: string;
   speakingStyleBrief?: string;
+  primaryStack?: string;
 }
 
 export const DEFAULT_AI_DIRECTIVES: AiDirectives = {

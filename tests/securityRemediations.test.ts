@@ -9,6 +9,7 @@ import { POST as resumeParsePost } from '../src/app/api/resume/parse/route';
 import { POST as adminAuthPost } from '../src/app/api/admin/auth/route';
 import { GET as retentionGet } from '../src/app/api/cron/retention/route';
 import { getClientIp } from '../src/lib/rateLimit';
+import { cleanStreamText } from '../desktop/src/lib/answerStream';
 
 describe('Security Audit Remediations & Zero-Trust Verifications', () => {
   const originalCronSecret = process.env.CRON_SECRET;
@@ -270,5 +271,42 @@ describe('Security Audit Remediations & Zero-Trust Verifications', () => {
       const ip = getClientIp(req);
       expect(ip).toBe('127.0.0.1');
     });
+
+    it('rejects spoofed x-ghostboard-client in production without valid session', async () => {
+      const prevEnv = process.env.NODE_ENV;
+      try {
+        (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
+        const req = new NextRequest('http://localhost:3000/api/ai/deepgram', {
+          headers: { 'x-ghostboard-client': 'desktop-app' },
+        });
+        const res = await deepgramGet(req);
+        expect(res.status).toBe(401);
+      } finally {
+        (process.env as Record<string, string | undefined>).NODE_ENV = prevEnv;
+      }
+    });
+  });
+
+  describe('Vector 6: Stream Marker Cleaning & C++ Code Preservations', () => {
+    it('preserves C++ stream operators and bitshift without truncation', () => {
+      expect(cleanStreamText('std::cout <<')).toBe('std::cout <<');
+      expect(cleanStreamText('int x = 1 << 4;')).toBe('int x = 1 << 4;');
+      expect(cleanStreamText('std::cin >> x;')).toBe('std::cin >> x;');
+    });
+
+    it('cleans complete phase markers including hyphens and numbers', () => {
+      const raw = '<<<PHASE_1:fast-resp>>>First part<<<PHASE-2:deep-dive>>>Second part<<<END>>>';
+      const cleaned = cleanStreamText(raw);
+      expect(cleaned).toContain('First part');
+      expect(cleaned).toContain('Second part');
+      expect(cleaned).not.toContain('PHASE');
+      expect(cleaned).not.toContain('<<<');
+    });
+
+    it('strips incomplete trailing phase markers while streaming', () => {
+      expect(cleanStreamText('Thinking... <<<PHASE_1:fast')).toBe('Thinking...');
+      expect(cleanStreamText('Thinking... <<<')).toBe('Thinking...');
+    });
   });
 });
+

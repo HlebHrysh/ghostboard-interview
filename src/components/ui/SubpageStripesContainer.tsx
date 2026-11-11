@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef } from "react";
 
-export type SubpagePattern = "horizon" | "blueprint" | "spine" | "telemetry" | "fracture";
+export type SubpagePattern = "horizon" | "blueprint" | "spine" | "telemetry" | "fracture" | "dots";
 
 interface SubpageStripesContainerProps {
   pattern?: SubpagePattern;
@@ -59,6 +59,7 @@ export function SubpageStripesContainer({
             "linear-gradient(to right, black 20%, rgba(0,0,0,0.5) 70%, transparent 95%)",
         };
       case "telemetry":
+      case "dots":
         return {
           backgroundImage: `
             radial-gradient(circle, rgba(255,255,255,0.03) 1px, transparent 1px),

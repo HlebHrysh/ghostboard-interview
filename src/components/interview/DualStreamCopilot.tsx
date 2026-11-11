@@ -59,8 +59,14 @@ import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer
 // Technical terms highlighted inside the live dialogue feed
 const TECH_TERMS_REGEX =
   /\b(PostgreSQL|MySQL|Redis|Kafka|RabbitMQ|Docker|Kubernetes|K8s|FastAPI|Django|React|Next\.js|Node\.js|TypeScript|Python|Golang|Rust|GraphQL|gRPC|REST|WebSockets?|SSE|Microservices|Prisma|CI\/CD|AWS|GCP|Azure|Nginx|Linux|ACID|CAP|OAuth|JWT|Tailwind)\b/gi;
+const TECH_TERMS_TEST =
+  /\b(PostgreSQL|MySQL|Redis|Kafka|RabbitMQ|Docker|Kubernetes|K8s|FastAPI|Django|React|Next\.js|Node\.js|TypeScript|Python|Golang|Rust|GraphQL|gRPC|REST|WebSockets?|SSE|Microservices|Prisma|CI\/CD|AWS|GCP|Azure|Nginx|Linux|ACID|CAP|OAuth|JWT|Tailwind)\b/i;
 
 function highlightTech(text: string): React.ReactNode[] {
+  if (!text) return [];
+  if (!TECH_TERMS_TEST.test(text)) {
+    return [text];
+  }
   const parts: React.ReactNode[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
@@ -80,7 +86,10 @@ function highlightTech(text: string): React.ReactNode[] {
 
 function renderBilingualPhrase(text: string): React.ReactNode {
   if (!text) return null;
-  // Splits by parenthesized hints containing Cyrillic, e.g. (У продакшені вирішуємо це...)
+  // Fast path: if no Cyrillic hints in text, skip regex splitting
+  if (!/[а-яА-ЯёЁіІїЇєЄґҐ]/.test(text)) {
+    return <span>{highlightTech(text)}</span>;
+  }
   const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
   const parts = text.split(regex);
   return parts.map((part, idx) => {
@@ -163,10 +172,11 @@ export interface DualStreamCopilotProps {
 }
 
 const TARGET_MODIFIERS = [
-  { key: 'shorter', label: '⚡ Коротше', tooltip: 'Стиснути до 3 коротких тез' },
-  { key: 'simpler', label: '💡 Простіше', tooltip: 'Пояснити на пальцях без важкого жаргону' },
-  { key: 'code', label: '</> Код', tooltip: 'Одразу чистий робочий код + O(n)' },
-  { key: 're_angle', label: '🔄 Інший підхід', tooltip: 'Альтернативна архітектура та компроміси' },
+  { key: 'code', label: '</> Код', tooltip: 'Одразу чистий робочий код + O(n)', hotkey: '1' },
+  { key: 'shorter', label: '⚡ Коротше', tooltip: 'Стиснути до 3 коротких тез', hotkey: '2' },
+  { key: 'simpler', label: '💡 Простіше', tooltip: 'Пояснити на пальцях без важкого жаргону', hotkey: '3' },
+  { key: 're_angle', label: '🔄 Інший підхід', tooltip: 'Альтернативна архітектура та компроміси', hotkey: '4' },
+  { key: 'under_the_hood', label: '⚙️ Під капотом', tooltip: 'Глибока механіка та структури даних', hotkey: '5' },
 ] as const;
 
 const BRIDGE_PHRASES: Record<string, string[]> = {
@@ -185,6 +195,115 @@ const BRIDGE_PHRASES: Record<string, string[]> = {
     "Очень практичный вопрос. Здесь важно разделить уровень протокола и уровень работы с памятью...",
   ],
 };
+
+interface DialogueMessageBubbleProps {
+  item: {
+    id: string;
+    speaker: 'interviewer' | 'candidate';
+    text: string;
+    timestamp: number;
+    qaId?: string;
+  };
+  matchingQA: InterviewQAItem | null;
+  qaNumber: number | null;
+  isActive: boolean;
+  onSelectQA: (qaId: string) => void;
+  onAskAI: (text: string, msgId: string) => void;
+}
+
+const DialogueMessageBubble = React.memo<DialogueMessageBubbleProps>(({
+  item,
+  matchingQA,
+  qaNumber,
+  isActive,
+  onSelectQA,
+  onAskAI,
+}) => {
+  const isInterviewer = item.speaker === 'interviewer';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className={`flex flex-col ${isInterviewer ? 'items-start' : 'items-end'} group`}
+    >
+      <div className="flex items-center gap-1.5 mb-1 px-1">
+        {isInterviewer ? (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+            <span>Інтерв&apos;юер</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
+            <span>Ви</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+          </span>
+        )}
+        <span className="text-[10px] text-zinc-500 font-mono">
+          {new Date(item.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          })}
+        </span>
+        {matchingQA && qaNumber !== null && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectQA(matchingQA.id);
+            }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer"
+            title="Перейти до відповіді ШІ"
+          >
+            <Zap className="w-2.5 h-2.5 text-amber-400" />
+            <span>⚡ Відповідь #{qaNumber}</span>
+          </button>
+        )}
+      </div>
+
+      <div
+        onClick={() => {
+          if (!isInterviewer) return;
+          if (matchingQA) {
+            onSelectQA(matchingQA.id);
+          } else {
+            onAskAI(item.text, item.id);
+          }
+        }}
+        className={`max-w-[88%] text-left px-4 py-3 rounded-2xl border text-sm leading-relaxed transition-all ${
+          isInterviewer
+            ? `bg-[#101014] ${
+                isActive
+                  ? 'border-cyan-400/80 ring-2 ring-cyan-500/40 shadow-[0_0_16px_rgba(6,182,212,0.25)]'
+                  : 'border-white/[0.08] hover:border-white/25 hover:bg-white/[0.03]'
+              } text-zinc-100 rounded-tl-sm cursor-pointer`
+            : 'bg-white/[0.06] border-white/[0.06] text-zinc-300 rounded-tr-sm cursor-default ml-auto'
+        }`}
+      >
+        <p className="whitespace-pre-wrap">{highlightTech(item.text)}</p>
+        {isInterviewer && !matchingQA && (
+          <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between">
+            <span className="text-[10px] text-zinc-500 italic">Натисніть для відповіді ШІ</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAskAI(item.text, item.id);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition cursor-pointer"
+            >
+              <Zap className="w-2.5 h-2.5 text-cyan-400" />
+              <span>⚡ Запитати ШІ</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+});
+DialogueMessageBubble.displayName = 'DialogueMessageBubble';
 
 export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExit }) => {
   const router = useRouter();
@@ -286,6 +405,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     pendingNewCount,
     setPendingNewCount,
     pendingNewCountRef,
+    togglePillarCompletion,
+    handleExplainLine,
   } = useCopilotAI({
     speechLanguageRef,
     outputLanguageRef,
@@ -338,6 +459,22 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     }
   }, [handleIncomingTranscript]);
 
+  useEffect(() => {
+    const handleQaInject = (e: Event) => {
+      const detail = (e as CustomEvent<{ text: string; isFinal?: boolean; speechFinal?: boolean; speaker?: 'interviewer' | 'candidate' }>).detail;
+      if (detail?.text) {
+        handleLiveTranscript(
+          detail.text,
+          detail.isFinal ?? true,
+          detail.speechFinal ?? true,
+          detail.speaker ?? 'interviewer'
+        );
+      }
+    };
+    window.addEventListener('ghostboard:qa_inject_transcript', handleQaInject);
+    return () => window.removeEventListener('ghostboard:qa_inject_transcript', handleQaInject);
+  }, [handleLiveTranscript]);
+
   const {
     isCapturing,
     isCapturingRef,
@@ -364,6 +501,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     setShowTrialLimitModal,
     sessionDuration,
     setSessionDuration,
+    candidateProfileRef,
   });
 
   const handleStartCaptureRequest = (source?: 'mic' | 'tab') => {
@@ -461,18 +599,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     }, 9000);
   }, []);
 
-  // Extra hotkeys: font zoom & emergency bridge
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === '=' || e.key === '+') setFontSize((s) => Math.min(32, s + 2));
-      else if (e.key === '-') setFontSize((s) => Math.max(14, s - 2));
-      else if (e.key.toLowerCase() === 'b') handleTriggerBridge();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleTriggerBridge]);
+  const manualInputRef = useRef<HTMLInputElement | null>(null);
+
 
   // Cross-device SSE synchronization with Desktop HUD & Companion
   useEffect(() => {
@@ -605,6 +733,41 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const activeIndex = Math.max(0, interviewQAs.findIndex((q) => q.id === activeQAId));
   const activeQA = interviewQAs[activeIndex] || null;
 
+  // Extra hotkeys: font zoom, emergency bridge, modifiers (1-5), and Ctrl+K focus
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // Ctrl+K / Cmd+K: Focus manual question input
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        manualInputRef.current?.focus();
+        manualInputRef.current?.select();
+        return;
+      }
+
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === '=' || e.key === '+') setFontSize((s) => Math.min(32, s + 2));
+      else if (e.key === '-') setFontSize((s) => Math.max(14, s - 2));
+      else if (e.key.toLowerCase() === 'b') handleTriggerBridge();
+      else if (activeQA && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        e.preventDefault();
+        const modMap: Record<string, 'code' | 'shorter' | 'simpler' | 're_angle' | 'under_the_hood'> = {
+          '1': 'code',
+          '2': 'shorter',
+          '3': 'simpler',
+          '4': 're_angle',
+          '5': 'under_the_hood',
+        };
+        const modKey = modMap[e.key];
+        if (modKey) {
+          handleRefineQA(activeQA.id, modKey);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleTriggerBridge, activeQA, handleRefineQA]);
+
   // New answer arrived → reset teleprompter to top, nudge mobile users to the prompter
   useEffect(() => {
     if (!activeQA) return;
@@ -613,19 +776,27 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQA?.id]);
 
-  // Synchronize incoming AI QA questions with dialogue messages so all questions appear in the stream
+  // Synchronize incoming AI QA questions with dialogue messages so all questions appear in the stream with bidirectional linking
   useEffect(() => {
     if (interviewQAs.length === 0) return;
     setDialogueMessages((prev) => {
       const updated = [...prev];
       let changed = false;
       [...interviewQAs].reverse().forEach((qa) => {
-        const exists = updated.some(
-          (m) => m.speaker === 'interviewer' && (m.qaId === qa.id || m.text.trim() === qa.question.trim())
+        const existingIdx = updated.findIndex(
+          (m) =>
+            (qa.sourceMessageId && m.id === qa.sourceMessageId) ||
+            m.qaId === qa.id ||
+            (m.speaker === 'interviewer' && m.text.trim().toLowerCase() === qa.question.trim().toLowerCase())
         );
-        if (!exists) {
+        if (existingIdx !== -1) {
+          if (!updated[existingIdx].qaId) {
+            updated[existingIdx] = { ...updated[existingIdx], qaId: qa.id };
+            changed = true;
+          }
+        } else {
           updated.push({
-            id: `qa_${qa.id}`,
+            id: qa.sourceMessageId || `qa_${qa.id}`,
             speaker: 'interviewer',
             text: qa.question,
             timestamp: qa.timestamp || Date.now(),
@@ -640,6 +811,15 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       return prev;
     });
   }, [interviewQAs]);
+
+  const handleSelectQA = useCallback((qaId: string) => {
+    setActiveQAId(qaId);
+    prompterRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setActiveQAId]);
+
+  const handleAskAIFromMessage = useCallback((text: string, msgId: string) => {
+    processAggregatedQuestion(text, true, msgId);
+  }, [processAggregatedQuestion]);
 
   // Smart auto-scroll with pause when scrolled up
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
@@ -665,6 +845,21 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       scrollToBottom();
     }
   }, [dialogueMessages.length, liveTranscript, candidateLiveTranscript, isUserScrolledUp, scrollToBottom]);
+
+  // Memoized O(1) lookup table for matching dialogue messages to QA items
+  const qaLookup = useMemo(() => {
+    const bySourceMsgId = new Map<string, { qa: InterviewQAItem; number: number }>();
+    const byQaId = new Map<string, { qa: InterviewQAItem; number: number }>();
+    const total = interviewQAs.length;
+    interviewQAs.forEach((qa, idx) => {
+      const entry = { qa, number: total - idx };
+      if (qa.sourceMessageId) {
+        bySourceMsgId.set(qa.sourceMessageId, entry);
+      }
+      byQaId.set(qa.id, entry);
+    });
+    return { bySourceMsgId, byQaId, items: interviewQAs };
+  }, [interviewQAs]);
 
   const sampleQuestion = 'Explain optimistic vs pessimistic locking in databases and when to use each.';
 
@@ -816,53 +1011,32 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         <AnimatePresence initial={false}>
           {dialogueMessages.map((item) => {
             const isInterviewer = item.speaker === 'interviewer';
-            const matchingQA = isInterviewer
-              ? interviewQAs.find(
-                  (qa) => qa.id === item.qaId || qa.question.includes(item.text) || item.text.includes(qa.question)
-                )
+            const matchedEntry = isInterviewer
+              ? (item.id ? qaLookup.bySourceMsgId.get(item.id) : null) ||
+                (item.qaId ? qaLookup.byQaId.get(item.qaId) : null) ||
+                (() => {
+                  const idx = qaLookup.items.findIndex(
+                    (qa) => qa.question.includes(item.text) || item.text.includes(qa.question)
+                  );
+                  return idx !== -1
+                    ? { qa: qaLookup.items[idx], number: qaLookup.items.length - idx }
+                    : null;
+                })()
               : null;
+            const matchingQA = matchedEntry?.qa ?? null;
+            const qaNumber = matchedEntry?.number ?? null;
             const isActive = isInterviewer && matchingQA?.id === activeQA?.id;
 
             return (
-              <motion.div
+              <DialogueMessageBubble
                 key={item.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className={`flex flex-col ${isInterviewer ? 'items-start' : 'items-end'}`}
-              >
-                <div className="flex items-center gap-1.5 mb-1 px-1">
-                  {isInterviewer ? (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
-                      <span>Інтерв&apos;юер</span>
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
-                      <span>Ви</span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
-                    </span>
-                  )}
-                  <span className="text-[10px] text-zinc-500 font-mono">
-                    {new Date(item.timestamp).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit',
-                    })}
-                  </span>
-                </div>
-
-                <div
-                  onClick={() => isInterviewer && matchingQA && setActiveQAId(matchingQA.id)}
-                  className={`max-w-[88%] text-left px-4 py-3 rounded-2xl border text-sm leading-relaxed transition-colors ${
-                    isInterviewer
-                      ? `bg-[#101014] ${isActive ? 'border-cyan-500/50 ring-1 ring-cyan-500/30' : 'border-white/[0.08] hover:border-white/20'} text-zinc-100 rounded-tl-sm ${matchingQA ? 'cursor-pointer' : 'cursor-default'}`
-                      : 'bg-white/[0.06] border-white/[0.06] text-zinc-300 rounded-tr-sm cursor-default ml-auto'
-                  }`}
-                >
-                  <p className="whitespace-pre-wrap">{highlightTech(item.text)}</p>
-                </div>
-              </motion.div>
+                item={item}
+                matchingQA={matchingQA}
+                qaNumber={qaNumber}
+                isActive={isActive}
+                onSelectQA={handleSelectQA}
+                onAskAI={handleAskAIFromMessage}
+              />
             );
           })}
         </AnimatePresence>
@@ -926,17 +1100,40 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         )}
       </div>
 
-      {triggerMode === 'enter' && liveTranscript && (
-        <div className="px-4 py-3 border-t border-white/[0.06]">
+      <div className="px-4 py-3 border-t border-white/[0.06] bg-[#07080a]">
+        {triggerMode === 'enter' && liveTranscript && (
           <button
             type="button"
             onClick={() => handleManualEnterTriggerRef.current()}
-            className="w-full py-2 rounded-xl bg-white text-black text-xs font-mono font-bold hover:bg-zinc-200 transition cursor-pointer"
+            className="w-full mb-2.5 py-2 rounded-xl bg-white text-black text-xs font-mono font-bold hover:bg-zinc-200 transition cursor-pointer"
           >
             {hudT.answerNowBtn} ↵
           </button>
-        </div>
-      )}
+        )}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (manualInputRef.current && manualInputRef.current.value.trim()) {
+              processAggregatedQuestion(manualInputRef.current.value.trim(), true);
+              manualInputRef.current.value = '';
+            }
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            ref={manualInputRef}
+            type="text"
+            placeholder="Запитати ШІ вручну... (Ctrl+K)"
+            className="flex-1 bg-white/[0.04] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500/60 font-mono transition-colors"
+          />
+          <button
+            type="submit"
+            className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-semibold transition cursor-pointer shrink-0"
+          >
+            Enter ↵
+          </button>
+        </form>
+      </div>
     </section>
   );
 
@@ -1079,9 +1276,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               className="space-y-6"
               style={{ fontSize }}
             >
-              <p className="text-[11px] font-mono text-zinc-500 leading-relaxed" style={{ fontSize: 12 }}>
-                Q · {activeQA.question}
-              </p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-mono text-zinc-500 leading-relaxed flex-1" style={{ fontSize: 12 }}>
+                  Q · {activeQA.question}
+                </p>
+                {activeQA.isContinuationMerged && (
+                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono font-bold text-amber-300">
+                    ⚡ Уточнено
+                  </span>
+                )}
+              </div>
 
               {/* Context Badge from <<<META>>> and TTFT */}
               <div className="flex items-center gap-2 flex-wrap">
@@ -1140,29 +1344,48 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 </div>
               )}
 
-              {/* Phase 2: PILLARS / Key Points (Spacious bullets with bold anchor keywords) */}
+              {/* Phase 2: PILLARS / Key Points (Spacious bullets with bold anchor keywords & voice karaoke) */}
               {activeQA.hints && activeQA.hints.length > 0 && (
                 <div className="space-y-2.5">
                   <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold flex items-center gap-1.5 px-0.5">
                     <Layers className="w-3.5 h-3.5 text-cyan-400" /> Фаза 2 · Ключові тези (Pillars)
                   </span>
                   <ol className="space-y-2.5">
-                    {activeQA.hints.map((hint, i) => (
-                      <li
-                        key={i}
-                        className="p-3 sm:p-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/[0.08] flex items-start gap-3 transition-colors"
-                      >
-                        <span className="shrink-0 mt-0.5 w-5 h-5 rounded-md bg-cyan-500/15 border border-cyan-500/30 text-[10px] font-mono font-bold text-cyan-300 flex items-center justify-center">
-                          {i + 1}
-                        </span>
-                        <div className="leading-[1.55] text-sm sm:text-base flex-1">
-                          {formatPillarAnchor(hint)}
-                          {activeQA.isStreaming && i === activeQA.hints.length - 1 && !activeQA.codeSnippet && (
-                            <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
-                          )}
-                        </div>
-                      </li>
-                    ))}
+                    {activeQA.hints.map((hint, i) => {
+                      const isCompleted = activeQA.completedPillarIndices?.includes(i);
+                      const isActive = !isCompleted && activeQA.activePillarIndex === i;
+                      return (
+                        <li
+                          key={i}
+                          onClick={() => togglePillarCompletion(activeQA.id, i)}
+                          className={`p-3 sm:p-3.5 rounded-xl border flex items-start gap-3 transition-all cursor-pointer select-none ${
+                            isCompleted
+                              ? 'bg-emerald-500/[0.07] border-emerald-500/30 text-emerald-100/90'
+                              : isActive
+                              ? 'bg-cyan-500/[0.09] border-cyan-500/40 text-white shadow-[0_0_12px_rgba(6,182,212,0.15)]'
+                              : 'bg-white/[0.03] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300'
+                          }`}
+                        >
+                          <span
+                            className={`shrink-0 mt-0.5 w-5 h-5 rounded-md text-[10px] font-mono font-bold flex items-center justify-center transition-colors ${
+                              isCompleted
+                                ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300'
+                                : isActive
+                                ? 'bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 ring-2 ring-cyan-500/40 animate-pulse'
+                                : 'bg-zinc-800/80 border border-white/10 text-zinc-400'
+                            }`}
+                          >
+                            {isCompleted ? '✓' : i + 1}
+                          </span>
+                          <div className={`leading-[1.55] text-sm sm:text-base flex-1 ${isCompleted ? 'line-through opacity-75' : ''}`}>
+                            {formatPillarAnchor(hint)}
+                            {activeQA.isStreaming && i === activeQA.hints.length - 1 && !activeQA.codeSnippet && (
+                              <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
                   </ol>
                 </div>
               )}
@@ -1195,12 +1418,58 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     </div>
                   </div>
                   {isCodeExpanded && (
-                    <pre className="p-4 text-zinc-200 font-mono overflow-x-auto leading-relaxed max-h-[320px] scrollbar-thin text-xs sm:text-sm">
-                      <code>{activeQA.codeSnippet.trim()}</code>
+                    <div className="p-4 text-zinc-200 font-mono overflow-x-auto leading-relaxed max-h-[380px] scrollbar-thin text-xs sm:text-sm divide-y divide-white/[0.03]">
+                      {activeQA.codeSnippet.trim().split('\n').map((lineText, idx) => {
+                        const lineExplanation = activeQA.lineExplanations?.[idx];
+                        return (
+                          <div key={idx} className="group">
+                            <div
+                              onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
+                              className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
+                              title="Клікніть для пояснення рядка (explain_line)"
+                            >
+                              <span className="shrink-0 select-none text-[11px] font-mono text-zinc-600 group-hover:text-cyan-400 w-6 text-right">
+                                {idx + 1}
+                              </span>
+                              <code className="flex-1 whitespace-pre">{lineText || ' '}</code>
+                            </div>
+                            {lineExplanation && (
+                              <div className="my-1.5 ml-9 mr-2 p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 leading-relaxed animate-in fade-in">
+                                <span className="font-mono text-[10px] text-cyan-300 font-bold mr-1.5 uppercase">⚡ Пояснення (explain_line):</span>
+                                {lineExplanation}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       {activeQA.isStreaming && (
                         <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
                       )}
-                    </pre>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Phase 4: Follow-Up Trap Shield (<<<PHASE_4:TRAP>>>) */}
+              {activeQA.followUpTrap && (activeQA.followUpTrap.question || activeQA.followUpTrap.answer) && (
+                <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/[0.08] to-transparent p-4 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
+                      Фаза 4 · Пастка інтервʼюера (Follow-Up Shield)
+                    </span>
+                  </div>
+                  {activeQA.followUpTrap.question && (
+                    <div className="text-xs sm:text-sm font-medium text-amber-200/90 leading-relaxed">
+                      <strong className="text-amber-300 font-semibold mr-1">Q:</strong>
+                      {activeQA.followUpTrap.question}
+                    </div>
+                  )}
+                  {activeQA.followUpTrap.answer && (
+                    <div className="text-xs sm:text-sm text-zinc-300 leading-relaxed bg-black/30 p-2.5 rounded-xl border border-white/[0.05]">
+                      <strong className="text-emerald-400 font-semibold mr-1">A:</strong>
+                      {activeQA.followUpTrap.answer}
+                    </div>
                   )}
                 </div>
               )}
@@ -1229,6 +1498,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/20 text-zinc-200 hover:text-white transition-all disabled:opacity-40 cursor-pointer font-mono text-xs flex items-center gap-1 shadow-sm active:scale-95"
                   >
                     <span>{mod.label}</span>
+                    <kbd className="text-[9px] font-mono text-zinc-500 bg-white/[0.04] px-1 rounded ml-1">{mod.hotkey}</kbd>
                   </button>
                 ))}
               </div>
@@ -1247,6 +1517,21 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           )}
         </AnimatePresence>
       </div>
+
+      {/* Floating Return to Current Live Answer Pill */}
+      {interviewQAs.length > 0 && activeQA && activeQA.id !== interviewQAs[0].id && (
+        <button
+          type="button"
+          onClick={() => {
+            setActiveQAId(interviewQAs[0].id);
+            prompterRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-[#0d0f12]/95 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-bold shadow-[0_8px_32px_rgba(16,185,129,0.3)] backdrop-blur-md flex items-center gap-2 hover:bg-emerald-950/80 hover:scale-105 active:scale-95 transition-all cursor-pointer z-30 animate-in fade-in"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>🟢 Повернутися до поточної відповіді</span>
+        </button>
+      )}
     </section>
   );
 

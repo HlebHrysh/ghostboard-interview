@@ -73,6 +73,13 @@ impl AuthManager {
                     }
                     Err(e) => {
                         tracing::warn!(target: "ghostboard::auth", "Refresh token rotation notice: {}", e);
+                        if now_ms >= session.expires_at_ms {
+                            let _ = self.keyring_store.clear();
+                            if let Ok(mut lock) = self.current_session.write() {
+                                *lock = None;
+                            }
+                            return Ok(None);
+                        }
                     }
                 }
             }

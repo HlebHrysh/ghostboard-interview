@@ -1,4 +1,4 @@
-use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct WindowGeometry {
@@ -106,13 +106,12 @@ pub fn align_to_active_display_with_padding(
         Some(target_phys_height),
     );
 
-    window
-        .set_size(PhysicalSize::new(geom.width, geom.height))
-        .map_err(|e| format!("Failed to set window size: {}", e))?;
-
-    window
-        .set_position(PhysicalPosition::new(geom.x, geom.y))
-        .map_err(|e| format!("Failed to set window position: {}", e))?;
+    let win = window.clone();
+    let app = window.app_handle().clone();
+    crate::window::run_window_op_on_main_thread(&app, move || {
+        let _ = win.set_size(PhysicalSize::new(geom.width, geom.height));
+        let _ = win.set_position(PhysicalPosition::new(geom.x, geom.y));
+    })?;
 
     Ok(true)
 }
@@ -131,8 +130,12 @@ pub fn align_to_active_display(window: &WebviewWindow) -> Result<bool, String> {
 pub fn apply_window_mode(window: &WebviewWindow, mode: &str) -> Result<bool, String> {
     match mode {
         "launcher" => {
-            let _ = window.set_size(tauri::LogicalSize::new(600.0, 400.0));
-            let _ = window.center();
+            let win = window.clone();
+            let app = window.app_handle().clone();
+            crate::window::run_window_op_on_main_thread(&app, move || {
+                let _ = win.set_size(tauri::LogicalSize::new(600.0, 400.0));
+                let _ = win.center();
+            })?;
             Ok(true)
         }
         "notch" => {

@@ -19,43 +19,42 @@ function isValidIp(ip: string): boolean {
 }
 
 export function getClientIp(req: NextRequest): string {
-  // Cloudflare Connecting IP (most trusted when behind Cloudflare proxy)
-  const cfIp = req.headers.get('cf-connecting-ip');
-  if (cfIp && isValidIp(cfIp.trim())) {
-    return cfIp.trim();
-  }
+  const isTrusted =
+    process.env.TRUST_PROXY === '1' ||
+    process.env.TRUST_PROXY === 'true' ||
+    process.env.NODE_ENV !== 'production';
 
-  // x-real-ip is set by trusted reverse proxies (Nginx/Vercel/Cloud Run)
-  const realIp = req.headers.get('x-real-ip');
-  if (realIp && isValidIp(realIp.trim())) {
-    return realIp.trim();
+  if (isTrusted) {
+    // Cloudflare Connecting IP (trusted when behind Cloudflare proxy)
+    const cfIp = req.headers.get('cf-connecting-ip');
+    if (cfIp && isValidIp(cfIp.trim())) {
+      return cfIp.trim();
+    }
+
+    // x-real-ip is set by trusted reverse proxies (Nginx/Vercel/Cloud Run)
+    const realIp = req.headers.get('x-real-ip');
+    if (realIp && isValidIp(realIp.trim())) {
+      return realIp.trim();
+    }
+
+    // x-forwarded-for: last trusted hop
+    const forwarded = req.headers.get('x-forwarded-for');
+    if (forwarded) {
+      const hops = forwarded
+        .split(',')
+        .map((h) => h.trim())
+        .filter((h) => isValidIp(h));
+
+      if (hops.length > 0) {
+        return hops[hops.length - 1];
+      }
+    }
   }
 
   // Next.js socket connection IP
   const nextIp = (req as unknown as { ip?: string }).ip;
   if (nextIp && isValidIp(nextIp)) {
     return nextIp;
-  }
-
-  // x-forwarded-for: never blindly trust the leftmost IP (first element) which is easily spoofed by the client.
-  // When behind a trusted proxy (TRUST_PROXY=1) or in dev/test fallback, extract the last trusted hop (rightmost IP).
-  const forwarded = req.headers.get('x-forwarded-for');
-  if (forwarded) {
-    const hops = forwarded
-      .split(',')
-      .map((h) => h.trim())
-      .filter((h) => isValidIp(h));
-
-    if (hops.length > 0) {
-      const isTrusted =
-        process.env.TRUST_PROXY === '1' ||
-        process.env.TRUST_PROXY === 'true' ||
-        process.env.NODE_ENV !== 'production';
-
-      if (isTrusted) {
-        return hops[hops.length - 1];
-      }
-    }
   }
 
   return '127.0.0.1';
@@ -76,11 +75,10 @@ export function validateOrigin(req: NextRequest): boolean {
     return true;
   }
 
-  // Allow Tauri desktop app and desktop client headers
+  // Allow Tauri desktop app
   if (
     origin?.startsWith('tauri://') ||
-    origin?.includes('tauri.localhost') ||
-    req.headers.get('x-ghostboard-client') === 'desktop-app'
+    origin?.includes('tauri.localhost')
   ) {
     return true;
   }

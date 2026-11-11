@@ -47,30 +47,13 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
   }
 
   try {
-    let lastKey = '';
-    let lastSource = '';
-    let lastTime = 0;
-
-    const safeDispatch = (ev: HudEvent, source: 'channel' | 'global') => {
-      if (!active) return;
-      const now = Date.now();
-      const payloadStr = ev.payload ? JSON.stringify(ev.payload) : '';
-      const key = `${ev.type}:${payloadStr}`;
-
-      // Only deduplicate if the exact same event arrives from the OTHER source within 100ms
-      if (key === lastKey && source !== lastSource && now - lastTime < 100) {
-        return;
-      }
-
-      lastKey = key;
-      lastSource = source;
-      lastTime = now;
-      onEvent(ev);
-    };
+    let channelActive = false;
 
     const channel = new Channel<HudEvent>();
     channel.onmessage = (event: HudEvent) => {
-      safeDispatch(event, 'channel');
+      if (!active) return;
+      channelActive = true;
+      onEvent(event);
     };
 
     invoke('start_copilot_stream', { onEvent: channel }).catch((err) => {
@@ -80,7 +63,10 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
     });
 
     const unlistenGlobal = listenTauriEvent<HudEvent>('hud-event', (event) => {
-      safeDispatch(event, 'global');
+      if (!active) return;
+      // If direct IPC channel is actively delivering events, skip global webview broadcast to avoid duplicates/out-of-order tokens
+      if (channelActive) return;
+      onEvent(event);
     });
 
     return () => {
@@ -96,6 +82,19 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
   }
 }
 
+export interface CandidateProfilePayload {
+  role?: string;
+  primaryStack?: string;
+  experienceLevel?: string;
+  customBio?: string;
+  techStack?: string[];
+}
+
+export interface HistoryTurnPayload {
+  speaker: 'interviewer' | 'candidate';
+  text: string;
+}
+
 /**
  * Streams AI answer directly via Rust LLM client (supporting offline Next.js fallback and manual prompt).
  */
@@ -105,6 +104,8 @@ export async function streamAiAnswer(
     outputLanguage?: string;
     helperLanguage?: string;
     modifier?: string;
+    candidateProfile?: CandidateProfilePayload | null;
+    history?: HistoryTurnPayload[] | null;
   }
 ): Promise<string> {
   if (!isTauriEnvironment()) {
@@ -116,6 +117,8 @@ export async function streamAiAnswer(
       outputLanguage: options?.outputLanguage ?? null,
       helperLanguage: options?.helperLanguage ?? null,
       modifier: options?.modifier ?? null,
+      candidateProfile: options?.candidateProfile ?? null,
+      history: options?.history ?? null,
     });
   } catch (err) {
     console.warn('[tauriBridge] stream_ai_answer invocation error:', err);
@@ -127,12 +130,15 @@ export async function streamAiAnswer(
  * Starts native audio capture via Tauri IPC with graceful fallback.
  * @param source Optional capture source ('dual' | 'loopback' | 'mic')
  */
-export async function startAudioCapture(source?: string): Promise<boolean> {
+export async function startAudioCapture(source?: string, sttLanguage?: string): Promise<boolean> {
   if (!isTauriEnvironment()) {
     return false;
   }
   try {
-    return await invoke<boolean>('start_audio_capture', { source: source || 'dual' });
+    return await invoke<boolean>('start_audio_capture', {
+      source: source || 'dual',
+      sttLanguage: sttLanguage || null,
+    });
   } catch (err) {
     console.warn('[tauriBridge] start_audio_capture failed:', err);
     return false;
@@ -157,7 +163,9 @@ export async function stopAudioCapture(): Promise<boolean> {
 /**
  * Sets native audio listen mode: 'all' (System sound + Candidate Mic) or 'system_only' (Loopback only).
  */
-export async function setListenMode(mode: 'all' | 'system_only'): Promise<string> {
+export async function setListenMode(
+  mode: 'all' | 'system_only' | 'interviewer_only' | 'both' | 'mic_only'
+): Promise<string> {
   if (!isTauriEnvironment()) {
     return mode;
   }
@@ -166,6 +174,33 @@ export async function setListenMode(mode: 'all' | 'system_only'): Promise<string
   } catch (err) {
     console.warn('[tauriBridge] set_listen_mode failed:', err);
     return mode;
+  }
+}
+
+/**
+ * Syncs AI preferences (language, depth, candidate context) into the native pipeline so that
+ * auto-detected questions honor the same settings as manual asks.
+ */
+export async function setAiPreferences(prefs: {
+  outputLanguage?: string | null;
+  helperLanguage?: string | null;
+  modifier?: string | null;
+  concise?: boolean;
+  candidateProfile?: string | null;
+}): Promise<boolean> {
+  if (!isTauriEnvironment()) return false;
+  try {
+    await invoke('set_ai_preferences', {
+      outputLanguage: prefs.outputLanguage ?? null,
+      helperLanguage: prefs.helperLanguage ?? null,
+      modifier: prefs.modifier ?? null,
+      concise: prefs.concise ?? false,
+      candidateProfile: prefs.candidateProfile ?? null,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[tauriBridge] set_ai_preferences failed:', err);
+    return false;
   }
 }
 
@@ -181,6 +216,36 @@ export async function getListenMode(): Promise<string> {
   } catch (err) {
     console.warn('[tauriBridge] get_listen_mode failed:', err);
     return 'all';
+  }
+}
+
+/**
+ * Sets native Speech-to-Text input language: 'multi' | 'uk' | 'ru' | 'en'.
+ */
+export async function setSttLanguage(language: 'multi' | 'uk' | 'ru' | 'en' | string): Promise<string> {
+  if (!isTauriEnvironment()) {
+    return language;
+  }
+  try {
+    return await invoke<string>('set_stt_language', { language });
+  } catch (err) {
+    console.warn('[tauriBridge] set_stt_language failed:', err);
+    return language;
+  }
+}
+
+/**
+ * Gets currently active Speech-to-Text language.
+ */
+export async function getSttLanguage(): Promise<string> {
+  if (!isTauriEnvironment()) {
+    return 'multi';
+  }
+  try {
+    return await invoke<string>('get_stt_language');
+  } catch (err) {
+    console.warn('[tauriBridge] get_stt_language failed:', err);
+    return 'multi';
   }
 }
 
@@ -709,7 +774,7 @@ export interface AudioStartResult {
  */
 export async function startAudioCaptureDetailed(
   source: 'dual' | 'loopback' | 'mic',
-  devices: { loopbackDevice?: string | null; micDevice?: string | null } = {}
+  devices: { loopbackDevice?: string | null; micDevice?: string | null; sttLanguage?: string | null } = {}
 ): Promise<AudioStartResult> {
   if (!isTauriEnvironment()) return { ok: false, error: 'Нативне захоплення звуку доступне лише у десктопному застосунку' };
   try {
@@ -717,6 +782,7 @@ export async function startAudioCaptureDetailed(
       source,
       loopbackDevice: devices.loopbackDevice || null,
       micDevice: devices.micDevice || null,
+      sttLanguage: devices.sttLanguage || null,
       force: true,
     });
     return { ok };
@@ -725,14 +791,21 @@ export async function startAudioCaptureDetailed(
   }
 }
 
-/** Hands provider keys (Deepgram STT etc.) to the native pipeline. */
-export async function configureCopilotKeys(keys: { deepgramKey?: string | null }): Promise<void> {
+/** Hands provider keys (Deepgram STT, Gemini LLM etc.) to the native pipeline. */
+export async function configureCopilotKeys(keys: {
+  deepgramKey?: string | null;
+  geminiKey?: string | null;
+  groqKey?: string | null;
+  openaiKey?: string | null;
+  anthropicKey?: string | null;
+}): Promise<void> {
   if (!isTauriEnvironment()) return;
   await invoke('configure_copilot_keys', {
     deepgramKey: keys.deepgramKey ?? null,
-    groqKey: null,
-    openaiKey: null,
-    anthropicKey: null,
+    geminiKey: keys.geminiKey ?? null,
+    groqKey: keys.groqKey ?? null,
+    openaiKey: keys.openaiKey ?? null,
+    anthropicKey: keys.anthropicKey ?? null,
   });
 }
 

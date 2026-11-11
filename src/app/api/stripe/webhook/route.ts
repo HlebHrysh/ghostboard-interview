@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateUserPlan, getUserByEmail, createUser, findOrCreateUser, createSession, logPayment } from '@/lib/serverDb';
+import { isProdSimulatorAllowed } from '@/lib/envGuard';
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,9 +32,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `Webhook signature verification failed: ${(err as { message?: string })?.message}` }, { status: 400 });
       }
     } else {
-      if (process.env.NODE_ENV === 'production') {
-        console.error('[Stripe Webhook] Missing signature or webhook secret in production');
-        return NextResponse.json({ error: 'Signature verification required in production' }, { status: 400 });
+      if (!isProdSimulatorAllowed()) {
+        console.error('[Stripe Webhook] Missing signature or webhook secret when simulator is disabled');
+        return NextResponse.json({ error: 'Signature verification required' }, { status: 400 });
       }
       // 2. Safe JSON parser for Local Development & Test Simulator
       try {

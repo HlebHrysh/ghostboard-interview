@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isPro = user.plan === 'pro' || user.plan === 'lifetime';
+    const isPro = user.plan === 'pro' || user.plan === 'lifetime' || user.plan === 'emergency';
     const trialQuestionsUsed = user.trialQuestionsUsed || 0;
 
     if (!isPro && trialQuestionsUsed >= 5) {
@@ -535,6 +535,12 @@ Return ONLY valid JSON matching this schema:
       fallbackHook = isEn
         ? 'From a production reliability viewpoint, fault isolation and resource cleanup are key.'
         : 'З точки зору продакшн-відмовостійкості ключовим є ізоляція помилок та очищення ресурсів.';
+    }
+
+    if (!isPro) {
+      incrementUserTrialQuestions(user.id)?.catch?.((e: unknown) =>
+        console.warn('Trial counter update failed in fallback:', e)
+      );
     }
 
     return NextResponse.json({

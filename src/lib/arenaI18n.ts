@@ -82,6 +82,20 @@ export interface ArenaI18n {
   scorecardFinalizedSuccess: string;
   scorecardFinalizeError: string;
   reportCreateError: string;
+  scorecardGenerateError?: string;
+  scorecardConnectionError?: string;
+  subHeaderLabel?: string;
+  heroBadge?: string;
+  heroTitle?: string;
+  heroSubtitle?: string;
+  modePresets?: string;
+  modeVacancy?: string;
+  candidateNameLabel?: string;
+  levelLabel?: string;
+  selectTrackHeading?: string;
+  startingArena?: string;
+  startArenaButton?: string;
+  vacancyHeading?: string;
 }
 
 export const ARENA_I18N: Record<SupportedLocale, ArenaI18n> = {

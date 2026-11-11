@@ -271,9 +271,53 @@
     };
   }
 
+  // ───────────────────────── Platform 5: Codility ─────────────────────────
+  function extractCodilityProblem() {
+    const titleEl =
+      document.querySelector('[data-testid="task-title"]') ||
+      document.querySelector('.task-title') ||
+      document.querySelector('h1[class*="task"]') ||
+      document.querySelector('h2.title') ||
+      document.querySelector('.task-name') ||
+      document.querySelector('.task-header h1');
+    const title = titleEl?.innerText?.trim() || document.title.replace(/Codility.*$/i, '').trim();
+
+    const descEl =
+      document.querySelector('[data-testid="task-description"]') ||
+      document.querySelector('.task-description') ||
+      document.querySelector('#task-description') ||
+      document.querySelector('.task-body') ||
+      document.querySelector('.task-details') ||
+      document.querySelector('.description');
+    const description = descEl?.innerText?.trim();
+    if (!description && !title) return null;
+
+    const starterCode = extractEditorCode();
+    const promptParts = [
+      `Platform: Codility`,
+      `Problem: ${title}`,
+      `URL: ${window.location.href}`,
+    ];
+    if (starterCode) {
+      promptParts.push(`\nStarter Template Code:\n\`\`\`\n${starterCode}\n\`\`\``);
+    }
+    promptParts.push(`\nTask Description & Constraints:\n${description || title}`);
+
+    return {
+      platform: 'Codility',
+      title,
+      difficulty: 'Assessment',
+      language: 'JavaScript / Python / C++',
+      url: window.location.href,
+      starterCode,
+      tag: `#Codility`,
+      fullPrompt: promptParts.join('\n'),
+    };
+  }
+
   // ───────────────────────── Global Highlight / Selection ─────────────────────────
   function extractSelectedText() {
-    const selection = window.getSelection ? window.getSelection().toString().trim() : '';
+    const selection = window.getSelection ? (window.getSelection()?.toString() || '').trim() : '';
     if (!selection || selection.length < 5) return null;
 
     const firstLine = selection.split('\n')[0].replace(/[#*`]/g, '').trim().slice(0, 60);
@@ -323,6 +367,12 @@
       if (cs) return cs;
     }
 
+    // Priority 6: Codility
+    if (host.includes('codility.com')) {
+      const cdl = extractCodilityProblem();
+      if (cdl) return cdl;
+    }
+
     // Fallback: Check if there's any code block or article on the page
     return null;
   }
@@ -332,7 +382,7 @@
 
     const problem = detectAndExtract();
     if (!problem) {
-      showToast('No problem detected. Select text with your cursor or open LeetCode / HackerRank / Codeforces / CodeSignal.', true);
+      showToast('No problem detected. Select text with your cursor or open LeetCode / HackerRank / Codeforces / CodeSignal / Codility.', true);
       return;
     }
 
@@ -392,6 +442,9 @@
         if (message.action === 'EXTRACT_AND_SOLVE' || message.action === 'EXTRACT_SELECTION') {
           triggerExtractAndSolve();
           sendResponse({ status: 'triggered' });
+        } else if (message.action === 'GET_PROBLEM_DATA') {
+          const problem = detectAndExtract();
+          sendResponse({ ok: !!problem, problem });
         }
         return true;
       });
@@ -408,6 +461,7 @@
       extractHackerRankProblem,
       extractCodeforcesProblem,
       extractCodeSignalProblem,
+      extractCodilityProblem,
       extractSelectedText,
       extractEditorCode,
       showToast,

@@ -27,6 +27,18 @@ export interface SyncQAItem {
   lineByLine?: Array<{ line: string | number; explanation: string }>;
   bugsAndFlaws?: string[];
   howToImprove?: string[];
+  pillars?: string[];
+  completedPillarIndices?: number[];
+  activePillarIndex?: number;
+  followUpTrap?: { question: string; answer: string };
+  isContinuationMerged?: boolean;
+  lineExplanations?: Record<number, string>;
+  meta?: { domain: string; level: string; language: string; raw?: string };
+  keyPillars?: string[];
+  deepDive?: string;
+  metaBadge?: string;
+  createdAt?: number;
+  status?: string;
 }
 
 export interface InterviewSyncState {
@@ -43,6 +55,7 @@ export interface InterviewSyncState {
   connectedDevices?: { desktop?: boolean; web?: boolean; phone?: boolean };
   sessionDuration: number;
   lastUpdated: number;
+  updatedAt?: number;
 }
 
 export function getItemTimestamp(q: SyncQAItem): number {
@@ -101,6 +114,7 @@ function assertLocalFallbackAllowed() {
 // ───────────────────────── State helpers ─────────────────────────
 
 function getInitialState(): InterviewSyncState {
+  const now = Date.now();
   return {
     qas: [],
     activeId: undefined,
@@ -114,7 +128,8 @@ function getInitialState(): InterviewSyncState {
     isPanic: false,
     connectedDevices: { desktop: false, web: false, phone: false },
     sessionDuration: 0,
-    lastUpdated: Date.now(),
+    lastUpdated: now,
+    updatedAt: now,
   };
 }
 
@@ -131,6 +146,44 @@ function expireZombieCapture(state: InterviewSyncState) {
   }
 }
 
+/**
+ * Merge local and remote QAs monotonically preserving longer streamed text
+ * (quickAnswer, startHook, deepDive) so that delayed Redis responses do not cause
+ * visual rollback or lost tokens.
+ */
+export function mergeQAsMonotonic(localQAs: SyncQAItem[], remoteQAs: SyncQAItem[]): SyncQAItem[] {
+  const mergedMap = new Map<string, SyncQAItem>();
+
+  // Base with remote
+  for (const q of remoteQAs) {
+    mergedMap.set(q.id, { ...q });
+  }
+
+  // Overlay local if it has longer/fresher text (e.g. actively streaming quickAnswer)
+  for (const local of localQAs) {
+    const existing = mergedMap.get(local.id);
+    if (!existing) {
+      mergedMap.set(local.id, { ...local });
+    } else {
+      const localLen =
+        (local.quickAnswer?.length || 0) +
+        (local.startHook?.length || 0) +
+        (local.deepDive?.length || 0);
+      const remoteLen =
+        (existing.quickAnswer?.length || 0) +
+        (existing.startHook?.length || 0) +
+        (existing.deepDive?.length || 0);
+      if (localLen >= remoteLen) {
+        mergedMap.set(local.id, { ...existing, ...local });
+      }
+    }
+  }
+
+  return Array.from(mergedMap.values()).sort(
+    (a, b) => getItemTimestamp(b) - getItemTimestamp(a)
+  );
+}
+
 // ───────────────────────── Pure mutators (shared by every backend) ─────────────────────────
 
 interface Mutation {
@@ -140,7 +193,9 @@ interface Mutation {
 }
 
 function touch(state: InterviewSyncState) {
-  state.lastUpdated = Date.now();
+  const now = Date.now();
+  state.lastUpdated = now;
+  state.updatedAt = now;
 }
 
 const mutations = {
@@ -388,14 +443,29 @@ async function runMutation(m: Mutation, userId?: string): Promise<InterviewSyncS
  */
 export const syncStore = {
   async getState(userId?: string): Promise<InterviewSyncState> {
-    const uid = normalizeUserId(userId);
-    // Cold-start worker sync: if worker has no local state yet, hydrate from Redis once
-    if (isRedisSyncConfigured() && !globalForSync.__userInterviewSyncStates?.has(uid)) {
+    if (isRedisSyncConfigured()) {
       try {
         const remote = await loadRedisState(userId);
-        if (remote && remote.qas && remote.qas.length > 0) {
-          const local = resolveLocalState(userId);
+        const local = resolveLocalState(userId);
+
+        // Monotonic timestamp guard: don't let slower out-of-order Redis overwrite fresh in-memory tokens
+        const localTs = local.updatedAt || local.lastUpdated || 0;
+        const remoteTs = remote.updatedAt || remote.lastUpdated || 0;
+
+        if (remote && remoteTs >= localTs) {
+          // Merge QAs preserving any locally streaming text length
+          remote.qas = mergeQAsMonotonic(local.qas, remote.qas);
+          // Update local memory cache with merged result
           Object.assign(local, remote);
+          expireZombieCapture(local);
+          return local;
+        } else if (local) {
+          expireZombieCapture(local);
+          return local;
+        }
+        if (remote) {
+          expireZombieCapture(remote);
+          return remote;
         }
       } catch {}
     }
@@ -405,6 +475,28 @@ export const syncStore = {
   },
   addOrUpdateQA: (qa: SyncQAItem, activeId?: string, userId?: string) =>
     runMutation(mutations.addOrUpdateQA(qa, activeId), userId),
+  upsertQA: (userIdOrQA: string | Partial<SyncQAItem>, maybeQA?: Partial<SyncQAItem>) => {
+    let userId: string | undefined;
+    let partialItem: Partial<SyncQAItem>;
+    if (typeof userIdOrQA === 'string') {
+      userId = userIdOrQA;
+      partialItem = maybeQA || {};
+    } else {
+      partialItem = userIdOrQA;
+      userId = undefined;
+    }
+    const qaItem: SyncQAItem = {
+      id: partialItem.id || `qa_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      question: partialItem.question || 'Interview Question',
+      startHook: partialItem.startHook || partialItem.quickAnswer || '',
+      quickAnswer: partialItem.quickAnswer || '',
+      hints: partialItem.hints || [],
+      ...partialItem,
+      timestamp: partialItem.timestamp || Date.now(),
+      createdAt: partialItem.createdAt || Date.now(),
+    };
+    return syncStore.addOrUpdateQA(qaItem, qaItem.id, userId);
+  },
   setActiveId: (activeId: string, userId?: string) => runMutation(mutations.setActiveId(activeId), userId),
   setFrozen: (isFrozen: boolean, userId?: string) => runMutation(mutations.setFrozen(isFrozen), userId),
   setPanic: (isPanic: boolean, userId?: string) => runMutation(mutations.setPanic(isPanic), userId),
@@ -440,6 +532,28 @@ export const interviewSyncStore = {
   },
   addOrUpdateQA: (qa: SyncQAItem, activeId?: string, userId?: string) =>
     applyLocal(mutations.addOrUpdateQA(qa, activeId), userId),
+  upsertQA: (userIdOrQA: string | Partial<SyncQAItem>, maybeQA?: Partial<SyncQAItem>) => {
+    let userId: string | undefined;
+    let partialItem: Partial<SyncQAItem>;
+    if (typeof userIdOrQA === 'string') {
+      userId = userIdOrQA;
+      partialItem = maybeQA || {};
+    } else {
+      partialItem = userIdOrQA;
+      userId = undefined;
+    }
+    const qaItem: SyncQAItem = {
+      id: partialItem.id || `qa_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      question: partialItem.question || 'Interview Question',
+      startHook: partialItem.startHook || partialItem.quickAnswer || '',
+      quickAnswer: partialItem.quickAnswer || '',
+      hints: partialItem.hints || [],
+      ...partialItem,
+      timestamp: partialItem.timestamp || Date.now(),
+      createdAt: partialItem.createdAt || Date.now(),
+    };
+    return interviewSyncStore.addOrUpdateQA(qaItem, qaItem.id, userId);
+  },
   setActiveId: (activeId: string, userId?: string) => applyLocal(mutations.setActiveId(activeId), userId),
   setFrozen: (isFrozen: boolean, userId?: string) => applyLocal(mutations.setFrozen(isFrozen), userId),
   setPanic: (isPanic: boolean, userId?: string) => applyLocal(mutations.setPanic(isPanic), userId),

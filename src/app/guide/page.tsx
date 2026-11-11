@@ -31,6 +31,7 @@ import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer
 import { useLocale } from '@/contexts/LocaleContext';
 import { getGuideTranslations } from '@/lib/guideI18n';
 import { ReadingSpine } from '@/components/singularity/ReadingSpine';
+import { PreFlightDiagnosticWidget } from './PreFlightDiagnosticWidget';
 
 type MainSection = 'audio' | 'stealth' | 'psychology';
 type AudioOsTab = 'browser' | 'windows' | 'macos' | 'linux';
@@ -91,6 +92,11 @@ export default function GuidePage() {
               {g.heroDesc}
             </p>
           </div>
+
+          {/* ═══════════════════════════════════════════════════════════════════════
+              TASK 3: 10-SECOND PRE-CALL CHECK & LIVE DIAGNOSTICS WIDGET
+          ═══════════════════════════════════════════════════════════════════════ */}
+          <PreFlightDiagnosticWidget locale={locale} />
 
           {/* ═══════════════════════════════════════════════════════════════════════
               TASK 3.1: PRE-FLIGHT CHECKLIST AT THE VERY TOP

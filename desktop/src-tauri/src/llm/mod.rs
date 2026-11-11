@@ -6,10 +6,11 @@ use crate::ipc::events::HudEvent;
 use crate::ipc::HudChannelState;
 use crate::llm::client::{LlmConfig, LlmProviderType, LlmStreamOutcome, SpeculativeLlmClient};
 use crate::llm::eot::{EotDetector, EotTrigger};
-use crate::llm::prompt::{build_system_prompt_with_options, build_user_prompt};
+use crate::llm::prompt::build_system_prompt_with_options;
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -19,13 +20,15 @@ use tokio_util::sync::CancellationToken;
 pub struct LlmOrchestrator {
     eot_detector: Arc<Mutex<EotDetector>>,
     llm_client: Arc<SpeculativeLlmClient>,
-    active_cancellation: Arc<Mutex<Option<CancellationToken>>>,
+    active_cancellation: Arc<Mutex<Option<(u64, CancellationToken)>>>,
+    generation: Arc<AtomicU64>,
     config: Arc<Mutex<LlmConfig>>,
     candidate_profile: Arc<Mutex<Option<String>>>,
     concise_mode: Arc<Mutex<bool>>,
     output_language: Arc<Mutex<Option<String>>>,
     helper_language: Arc<Mutex<Option<String>>>,
     modifier: Arc<Mutex<Option<String>>>,
+    recent_turns: Arc<Mutex<Vec<crate::llm::prompt::FollowUpContextTurn>>>,
 }
 
 impl Default for LlmOrchestrator {
@@ -36,9 +39,10 @@ impl Default for LlmOrchestrator {
 
 impl LlmOrchestrator {
     pub fn new() -> Self {
+        crate::load_env_files();
         // Detect available API keys in environment: GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
         let (provider, api_key, model) = if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-            (LlmProviderType::Gemini, k, "gemini-3.8-flash".to_string())
+            (LlmProviderType::Gemini, k, "gemini-3.5-flash".to_string())
         } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Groq, k, "llama-3.3-70b-versatile".to_string())
         } else if let Some(k) = std::env::var("OPENAI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -46,13 +50,14 @@ impl LlmOrchestrator {
         } else if let Some(k) = std::env::var("ANTHROPIC_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Anthropic, k, "claude-3-5-haiku-20241022".to_string())
         } else {
-            (LlmProviderType::Gemini, String::new(), "gemini-3.8-flash".to_string())
+            (LlmProviderType::Gemini, String::new(), "gemini-3.5-flash".to_string())
         };
 
         Self {
             eot_detector: Arc::new(Mutex::new(EotDetector::default())),
             llm_client: Arc::new(SpeculativeLlmClient::new()),
             active_cancellation: Arc::new(Mutex::new(None)),
+            generation: Arc::new(AtomicU64::new(0)),
             config: Arc::new(Mutex::new(LlmConfig {
                 provider,
                 api_key,
@@ -64,6 +69,7 @@ impl LlmOrchestrator {
             output_language: Arc::new(Mutex::new(None)),
             helper_language: Arc::new(Mutex::new(None)),
             modifier: Arc::new(Mutex::new(None)),
+            recent_turns: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -115,13 +121,25 @@ impl LlmOrchestrator {
         eot.evaluate_eot(vad_pause_boundary, timestamp_ms)
     }
 
+    /// Returns aggregated 90-second sliding conversation context.
+    pub async fn get_sliding_context(&self) -> String {
+        let eot = self.eot_detector.lock().await;
+        eot.get_sliding_context()
+    }
+
     /// Cancels any in-flight speculative LLM generation immediately.
     /// Called when the interlocutor resumes speaking within 1.5s of question detection.
     pub async fn abort_in_flight(&self) {
         let mut token_lock = self.active_cancellation.lock().await;
-        if let Some(token) = token_lock.take() {
+        if let Some((_, token)) = token_lock.take() {
             token.cancel();
         }
+    }
+
+    /// Clears the rolling 2-turn follow-up context history.
+    pub async fn clear_history(&self) {
+        let mut turns = self.recent_turns.lock().await;
+        turns.clear();
     }
 
     /// Spawns a speculative streaming generation task for the detected question,
@@ -131,8 +149,17 @@ impl LlmOrchestrator {
         trigger: EotTrigger,
         hud_channel: HudChannelState,
     ) {
-        // 1. Abort any previous generation task still running
-        self.abort_in_flight().await;
+        // 1. Create a new CancellationToken for this speculative stream and atomically cancel any prior task
+        let cancel_token = CancellationToken::new();
+        let gen = {
+            let mut active = self.active_cancellation.lock().await;
+            if let Some((_, old_token)) = active.take() {
+                old_token.cancel();
+            }
+            let next_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            *active = Some((next_gen, cancel_token.clone()));
+            next_gen
+        };
 
         // 2. Broadcast questionDetected event to HUD
         hud_channel.broadcast(HudEvent::QuestionDetected {
@@ -141,17 +168,27 @@ impl LlmOrchestrator {
             timestamp_ms: trigger.timestamp_ms,
         });
 
-        // 3. Create a new CancellationToken for this speculative stream
-        let cancel_token = CancellationToken::new();
-        {
-            let mut active = self.active_cancellation.lock().await;
-            *active = Some(cancel_token.clone());
-        }
-
-        let config = {
+        let mut config = {
             let conf_lock = self.config.lock().await;
             conf_lock.clone()
         };
+
+        if config.api_key.trim().is_empty() {
+            crate::load_env_files();
+            if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                config.provider = LlmProviderType::Gemini;
+                config.api_key = k;
+                config.model = "gemini-3.5-flash".to_string();
+                let mut conf_lock = self.config.lock().await;
+                *conf_lock = config.clone();
+            } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                config.provider = LlmProviderType::Groq;
+                config.api_key = k;
+                config.model = "llama-3.3-70b-versatile".to_string();
+                let mut conf_lock = self.config.lock().await;
+                *conf_lock = config.clone();
+            }
+        }
 
         let candidate_profile = {
             let p_lock = self.candidate_profile.lock().await;
@@ -196,7 +233,11 @@ impl LlmOrchestrator {
                 )
                 .await;
                 let mut token_lock = active_cancellation_ref.lock().await;
-                *token_lock = None;
+                if let Some((stored_gen, _)) = *token_lock {
+                    if stored_gen == gen {
+                        *token_lock = None;
+                    }
+                }
             });
             return;
         }
@@ -207,10 +248,21 @@ impl LlmOrchestrator {
             out_lang.as_deref(),
             helper_lang.as_deref(),
         );
-        let user_prompt = build_user_prompt(&trigger.question_text, Some(&trigger.context_90s));
+
+        let recent_turns = {
+            let turns = self.recent_turns.lock().await;
+            turns.clone()
+        };
+        let user_prompt = crate::llm::prompt::build_user_prompt_with_history(
+            &trigger.question_text,
+            Some(&trigger.context_90s),
+            Some(&recent_turns),
+        );
 
         let client = self.llm_client.clone();
         let q_id = trigger.question_id.clone();
+        let trigger_q = trigger.question_text.clone();
+        let recent_turns_ref = self.recent_turns.clone();
         let channel_clone = hud_channel.clone();
         let active_cancellation_ref = self.active_cancellation.clone();
 
@@ -249,14 +301,33 @@ impl LlmOrchestrator {
 
             let latency_ms = start_time.elapsed().as_millis() as u64;
 
-            // Clear active cancellation reference
+            // Clear active cancellation reference only if generation matches
             {
                 let mut token_lock = active_cancellation_ref.lock().await;
-                *token_lock = None;
+                if let Some((stored_gen, _)) = *token_lock {
+                    if stored_gen == gen {
+                        *token_lock = None;
+                    }
+                }
             }
 
             match outcome {
                 Ok(LlmStreamOutcome::Completed { full_text, .. }) => {
+                    let short_hook = full_text
+                        .lines()
+                        .find(|l| !l.trim().is_empty())
+                        .map(|s| s.trim().chars().take(160).collect::<String>());
+                    {
+                        let mut turns = recent_turns_ref.lock().await;
+                        turns.push(crate::llm::prompt::FollowUpContextTurn {
+                            question: trigger_q,
+                            short_hook,
+                        });
+                        if turns.len() > 2 {
+                            turns.remove(0);
+                        }
+                    }
+
                     channel_clone.broadcast(HudEvent::LlmDone {
                         question_id: q_id,
                         full_text,
@@ -290,6 +361,8 @@ impl LlmOrchestrator {
         modifier: Option<String>,
         output_lang: Option<String>,
         helper_lang: Option<String>,
+        candidate_profile_dto: Option<crate::llm::prompt::CandidateProfileDto>,
+        history_dto: Option<Vec<crate::llm::prompt::HistoryTurnDto>>,
         hud_channel: HudChannelState,
     ) -> Result<String, String> {
         let question = question.trim();
@@ -297,7 +370,16 @@ impl LlmOrchestrator {
             return Ok(String::new());
         }
 
-        self.abort_in_flight().await;
+        let cancel_token = CancellationToken::new();
+        let gen = {
+            let mut active = self.active_cancellation.lock().await;
+            if let Some((_, old_token)) = active.take() {
+                old_token.cancel();
+            }
+            let next_gen = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            *active = Some((next_gen, cancel_token.clone()));
+            next_gen
+        };
 
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -312,16 +394,27 @@ impl LlmOrchestrator {
             timestamp_ms: now_ms,
         });
 
-        let cancel_token = CancellationToken::new();
-        {
-            let mut active = self.active_cancellation.lock().await;
-            *active = Some(cancel_token.clone());
-        }
-
-        let config = {
+        let mut config = {
             let conf_lock = self.config.lock().await;
             conf_lock.clone()
         };
+
+        if config.api_key.trim().is_empty() {
+            crate::load_env_files();
+            if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                config.provider = LlmProviderType::Gemini;
+                config.api_key = k;
+                config.model = "gemini-3.5-flash".to_string();
+                let mut conf_lock = self.config.lock().await;
+                *conf_lock = config.clone();
+            } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
+                config.provider = LlmProviderType::Groq;
+                config.api_key = k;
+                config.model = "llama-3.3-70b-versatile".to_string();
+                let mut conf_lock = self.config.lock().await;
+                *conf_lock = config.clone();
+            }
+        }
 
         if config.api_key.trim().is_empty() {
             let err_msg = "Помилка API: GEMINI_API_KEY не знайдено у файлі .env. Вкажіть дійсний ключ Gemini у .env".to_string();
@@ -332,18 +425,60 @@ impl LlmOrchestrator {
             return Err(err_msg);
         }
 
-        let candidate_profile = {
-            let p_lock = self.candidate_profile.lock().await;
-            p_lock.clone()
+        let candidate_profile_str = match candidate_profile_dto {
+            Some(dto) => {
+                let s = dto.to_context_string();
+                if s.trim().is_empty() {
+                    let p_lock = self.candidate_profile.lock().await;
+                    p_lock.clone()
+                } else {
+                    Some(s)
+                }
+            }
+            None => {
+                let p_lock = self.candidate_profile.lock().await;
+                p_lock.clone()
+            }
         };
 
         let system_prompt = build_system_prompt_with_options(
-            candidate_profile.as_deref(),
+            candidate_profile_str.as_deref(),
             modifier.as_deref(),
             output_lang.as_deref(),
             helper_lang.as_deref(),
         );
-        let user_prompt = build_user_prompt(question, None);
+
+        let recent_turns = if let Some(history) = history_dto {
+            let mut turns = Vec::new();
+            let mut last_q: Option<String> = None;
+            for h in history {
+                if h.speaker == "interviewer" {
+                    last_q = Some(h.text);
+                } else if h.speaker == "candidate" {
+                    if let Some(q) = last_q.take() {
+                        turns.push(crate::llm::prompt::FollowUpContextTurn {
+                            question: q,
+                            short_hook: Some(h.text),
+                        });
+                    }
+                }
+            }
+            if turns.is_empty() {
+                let t_lock = self.recent_turns.lock().await;
+                t_lock.clone()
+            } else {
+                turns
+            }
+        } else {
+            let t_lock = self.recent_turns.lock().await;
+            t_lock.clone()
+        };
+
+        let user_prompt = crate::llm::prompt::build_user_prompt_with_history(
+            question,
+            None,
+            Some(&recent_turns),
+        );
 
         let start_time = Instant::now();
         let is_first = Arc::new(Mutex::new(true));
@@ -381,11 +516,30 @@ impl LlmOrchestrator {
 
         {
             let mut token_lock = self.active_cancellation.lock().await;
-            *token_lock = None;
+            if let Some((stored_gen, _)) = *token_lock {
+                if stored_gen == gen {
+                    *token_lock = None;
+                }
+            }
         }
 
         match outcome {
             Ok(LlmStreamOutcome::Completed { full_text, .. }) => {
+                let short_hook = full_text
+                    .lines()
+                    .find(|l| !l.trim().is_empty())
+                    .map(|s| s.trim().chars().take(160).collect::<String>());
+                {
+                    let mut turns = self.recent_turns.lock().await;
+                    turns.push(crate::llm::prompt::FollowUpContextTurn {
+                        question: question.to_string(),
+                        short_hook,
+                    });
+                    if turns.len() > 2 {
+                        turns.remove(0);
+                    }
+                }
+
                 hud_channel.broadcast(HudEvent::LlmDone {
                     question_id: q_id,
                     full_text: full_text.clone(),
@@ -424,10 +578,35 @@ async fn stream_from_local_nextjs_backend(
     cancel_token: CancellationToken,
 ) {
     let start_time = Instant::now();
-    let urls = [
-        "http://localhost:3000/api/ai/dual-stream",
-        "http://localhost:3001/api/ai/dual-stream",
-    ];
+    let mut urls: Vec<String> = Vec::new();
+
+    if let Ok(custom_url) = std::env::var("GHOSTBOARD_API_URL").or_else(|_| std::env::var("VITE_API_URL")) {
+        let trimmed = custom_url.trim();
+        if !trimmed.is_empty() {
+            let full_url = if trimmed.ends_with("/api/ai/dual-stream") {
+                trimmed.to_string()
+            } else {
+                format!("{}/api/ai/dual-stream", trimmed.trim_end_matches('/'))
+            };
+            urls.push(full_url);
+        }
+    }
+
+    urls.push("http://localhost:3000/api/ai/dual-stream".to_string());
+    urls.push("http://localhost:3001/api/ai/dual-stream".to_string());
+    urls.push("https://ghostboard.tech/api/ai/dual-stream".to_string());
+
+    let auth_token = std::env::var("GHOSTBOARD_AUTH_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| {
+            crate::auth::keyring::KeyringStore::new()
+                .load()
+                .ok()
+                .flatten()
+                .map(|s| s.access_token)
+                .filter(|t| !t.trim().is_empty())
+        });
 
     let client = crate::llm::client::get_shared_llm_client();
 
@@ -443,11 +622,17 @@ async fn stream_from_local_nextjs_backend(
         if cancel_token.is_cancelled() {
             return;
         }
-        match client
-            .post(*url)
+        let mut req = client
+            .post(url)
             .header("x-ghostboard-client", "desktop-app")
             .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
+            .header("Accept", "text/event-stream");
+
+        if let Some(ref token) = auth_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+
+        match req
             .json(&payload)
             .send()
             .await
@@ -530,5 +715,75 @@ mod tests {
         let orchestrator = LlmOrchestrator::new();
         orchestrator.set_concise_mode(true).await;
         orchestrator.abort_in_flight().await;
+    }
+
+    #[tokio::test]
+    async fn test_llm_orchestrator_generational_cancellation() {
+        let orchestrator = LlmOrchestrator::new();
+        let hud = HudChannelState::new();
+
+        let trigger1 = EotTrigger {
+            question_id: "q1".to_string(),
+            question_text: "What is Rust?".to_string(),
+            context_90s: "context".to_string(),
+            timestamp_ms: 100,
+        };
+
+        orchestrator.trigger_speculative_stream(trigger1, hud.clone()).await;
+
+        let token1 = {
+            let active = orchestrator.active_cancellation.lock().await;
+            assert!(active.is_some());
+            let (gen, ref tok) = active.as_ref().unwrap();
+            assert_eq!(*gen, 1);
+            tok.clone()
+        };
+
+        // Trigger second stream
+        let trigger2 = EotTrigger {
+            question_id: "q2".to_string(),
+            question_text: "What is Tokio?".to_string(),
+            context_90s: "context".to_string(),
+            timestamp_ms: 200,
+        };
+        orchestrator.trigger_speculative_stream(trigger2, hud.clone()).await;
+
+        // Verify token1 was cancelled
+        assert!(token1.is_cancelled());
+
+        let token2 = {
+            let active = orchestrator.active_cancellation.lock().await;
+            assert!(active.is_some());
+            let (gen, ref tok) = active.as_ref().unwrap();
+            assert_eq!(*gen, 2);
+            tok.clone()
+        };
+        assert!(!token2.is_cancelled());
+
+        // Simulate delayed generation 1 cleanup attempt: should NOT clear gen 2
+        {
+            let mut active = orchestrator.active_cancellation.lock().await;
+            if let Some((stored_gen, _)) = *active {
+                if stored_gen == 1 {
+                    *active = None;
+                }
+            }
+        }
+
+        // Active token should still be gen 2
+        {
+            let active = orchestrator.active_cancellation.lock().await;
+            assert!(active.is_some());
+            let (gen, _) = active.as_ref().unwrap();
+            assert_eq!(*gen, 2);
+        }
+
+        // Abort in flight cancels token2
+        orchestrator.abort_in_flight().await;
+        assert!(token2.is_cancelled());
+        {
+            let active = orchestrator.active_cancellation.lock().await;
+            assert!(active.is_none());
+        }
     }
 }

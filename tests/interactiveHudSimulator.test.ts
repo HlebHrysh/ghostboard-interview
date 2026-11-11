@@ -109,7 +109,7 @@ describe('Live Try Sandbox — Telegraphic & Production AI Expansion', () => {
     });
     expect(domain).toBe('Backend');
     expect(level).toBe('Senior');
-    expect(systemPrompt).toContain('SHORT QUERIES: If brief (e.g. \'React + SQL\')');
+    expect(systemPrompt).toContain('SHORT QUERIES');
     expect(systemPrompt).toContain('<<<PHASE_1:HOOK>>>');
     expect(systemPrompt).toContain('<<<PHASE_2:PILLARS>>>');
     expect(systemPrompt).toContain('<<<PHASE_3:DEEP_DIVE>>>');

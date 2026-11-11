@@ -43,7 +43,7 @@ impl Default for AudioEngineConfig {
 }
 
 /// Consolidated tick output from the AudioEngine processing loop.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AudioEngineTickResult {
     /// 16kHz mono linear 16-bit PCM bytes (ready for Deepgram STT WebSocket).
     pub pcm16_bytes: Vec<u8>,
@@ -109,8 +109,24 @@ impl AudioEngine {
         }
     }
 
-    pub fn is_running(&self) -> bool {
+    /// Returns whether the audio engine is actively enabled by the application.
+    pub fn is_active(&self) -> bool {
         self.is_running
+    }
+
+    /// Returns whether all initialized audio streams are healthy and alive.
+    pub fn is_healthy(&self) -> bool {
+        if !self.is_running {
+            return false;
+        }
+        let loopback_ok = self.loopback_stream.as_ref().map(|s| s.is_alive()).unwrap_or(true);
+        let mic_ok = self.mic_stream.as_ref().map(|s| s.is_alive()).unwrap_or(true);
+        loopback_ok && mic_ok
+    }
+
+    /// Legacy helper: returns true only if engine is active and all capture streams are alive.
+    pub fn is_running(&self) -> bool {
+        self.is_running && self.is_healthy()
     }
 
     pub fn config(&self) -> &AudioEngineConfig {
@@ -127,11 +143,20 @@ impl AudioEngine {
         self.config.mic_device_name = mic.filter(|n| !n.trim().is_empty());
     }
 
+    /// Restarts audio capture by tearing down existing streams and recreating them.
+    pub fn restart(&mut self) -> Result<(), String> {
+        self.stop();
+        self.start()
+    }
+
     /// Initializes and starts real-time audio capture, ring buffer, resampler, and Silero VAD.
     /// Supports simultaneous dual capture of both native system loopback and candidate microphone.
     pub fn start(&mut self) -> Result<(), String> {
-        if self.is_running {
+        if self.is_running && self.is_healthy() {
             return Ok(());
+        }
+        if self.is_running {
+            self.stop();
         }
 
         let host = cpal::default_host();
@@ -212,48 +237,14 @@ impl AudioEngine {
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!(target: "ghostboard::audio", "Loopback stream start error: {}, falling back to default input device", e);
-                                    if let Some(def_dev) = host.default_input_device().or_else(|| host.default_output_device()) {
-                                        let pool = AudioBufferPool::new(self.config.buffer_capacity);
-                                        let (producer, consumer) = pool.split();
-                                        if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
-                                            let sample_rate = capture_stream.sample_rate();
-                                            let channels = capture_stream.channels();
-                                            if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
-                                                self.loopback_stream = Some(capture_stream);
-                                                self.loopback_consumer = Some(consumer);
-                                                self.loopback_resampler = Some(resampler);
-                                                self.loopback_vad = Some(vad);
-                                                loopback_started = true;
-                                            }
-                                        }
-                                    }
-                                    if !loopback_started {
-                                        last_error = Some(format!("Loopback stream start error: {}", e));
-                                    }
+                                    tracing::error!(target: "ghostboard::audio", "Loopback stream start error: {}", e);
+                                    last_error = Some(format!("Loopback stream start error: {}", e));
                                 }
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(target: "ghostboard::audio", "Loopback device discovery error: {}, falling back to default device", e);
-                            if let Some(def_dev) = host.default_input_device().or_else(|| host.default_output_device()) {
-                                let pool = AudioBufferPool::new(self.config.buffer_capacity);
-                                let (producer, consumer) = pool.split();
-                                if let Ok(capture_stream) = AudioCaptureStream::start(def_dev, producer) {
-                                    let sample_rate = capture_stream.sample_rate();
-                                    let channels = capture_stream.channels();
-                                    if let (Ok(resampler), Ok(vad)) = (AudioResampler::new(sample_rate, channels), SileroVad::new()) {
-                                        self.loopback_stream = Some(capture_stream);
-                                        self.loopback_consumer = Some(consumer);
-                                        self.loopback_resampler = Some(resampler);
-                                        self.loopback_vad = Some(vad);
-                                        loopback_started = true;
-                                    }
-                                }
-                            }
-                            if !loopback_started {
-                                last_error = Some(format!("Loopback device discovery error: {}", e));
-                            }
+                            tracing::error!(target: "ghostboard::audio", "Loopback device discovery error: {}", e);
+                            last_error = Some(format!("Loopback device discovery error: {}", e));
                         }
                     }
                 }
@@ -383,6 +374,13 @@ impl AudioEngine {
     /// Reads newly available audio from the ring buffers, resamples both to 16kHz mono linear PCM,
     /// computes 30ms RMS levels, and processes VAD frames.
     pub fn poll_and_process(&mut self) -> Result<AudioEngineTickResult, String> {
+        if !self.is_running {
+            return Ok(AudioEngineTickResult::default());
+        }
+        if !self.is_healthy() {
+            return Err("Audio capture stream died or PipeWire disconnected".to_string());
+        }
+
         let mut pcm16_bytes = Vec::new();
         let mut samples_16k = Vec::new();
         let mut vad_results = Vec::new();
@@ -643,5 +641,28 @@ mod tests {
         assert!(tick.interlocutor_rms > 0.0);
         assert!(tick.candidate_rms > 0.0);
         assert!(!tick.candidate_pcm16_bytes.is_empty());
+    }
+
+    #[test]
+    fn test_audio_engine_lifecycle_health_and_restart() {
+        let mut engine = AudioEngine::new(AudioEngineConfig::default());
+        assert!(!engine.is_active());
+        assert!(!engine.is_healthy());
+        assert!(!engine.is_running());
+
+        // Inactive poll returns default empty tick without error
+        let tick = engine.poll_and_process().expect("inactive poll should succeed with empty tick");
+        assert!(tick.pcm16_bytes.is_empty());
+
+        // Manually flag active
+        engine.is_running = true;
+        assert!(engine.is_active());
+        assert!(engine.is_healthy());
+        assert!(engine.is_running());
+
+        // Stop cleanly resets active state
+        engine.stop();
+        assert!(!engine.is_active());
+        assert!(!engine.is_running());
     }
 }

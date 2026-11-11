@@ -153,6 +153,90 @@
       cursor: not-allowed;
       transform: none;
     }
+    .btn-push {
+      width: 100%;
+      background: #c8f135;
+      color: #09090b;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      box-shadow: 0 0 20px rgba(200, 241, 53, 0.25);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      margin-top: 8px;
+    }
+    .btn-push:hover {
+      background: #d9fa55;
+      transform: translateY(-1px);
+    }
+    .btn-push:active {
+      transform: scale(0.98);
+    }
+    .btn-push:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .solution-preview {
+      margin-top: 14px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 10px;
+      display: none;
+      max-height: 280px;
+      overflow-y: auto;
+    }
+    .section-title {
+      font-size: 9px;
+      font-weight: 700;
+      color: #c8f135;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+      margin-top: 8px;
+    }
+    .preview-box {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 7px 9px;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #e4e4e7;
+    }
+    .preview-box.trap {
+      border-color: rgba(244, 63, 94, 0.4);
+      background: rgba(244, 63, 94, 0.08);
+      color: #fca5a5;
+    }
+    .preview-list {
+      padding-left: 16px;
+      font-size: 11px;
+      color: #d4d4d8;
+      line-height: 1.4;
+      margin-bottom: 4px;
+    }
+    .preview-list li {
+      margin-bottom: 3px;
+    }
+    .preview-code {
+      background: #000000;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      padding: 8px;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 10px;
+      color: #a7f3d0;
+      max-height: 140px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
     .hint-box {
       background: rgba(255, 255, 255, 0.02);
       border: 1px solid rgba(255, 255, 255, 0.06);
@@ -219,14 +303,32 @@
     <input type="text" id="apiUrl" value="http://localhost:3000" placeholder="http://localhost:3000">
   </div>
 
+  <button class="btn-push" id="btnPushProblem">
+    <span>🚀 1-Click Push to Live HUD</span>
+  </button>
+
   <button class="btn-solve" id="btnSolve">
     <span>⚡ Захватити поточну задачу / виділення</span>
   </button>
 
   <div class="status-msg" id="statusMsg"></div>
 
+  <div id="solutionPreview" class="solution-preview">
+    <div class="section-title">HOOK</div>
+    <div id="previewHook" class="preview-box"></div>
+
+    <div class="section-title">3 PILLARS</div>
+    <ul id="previewPillars" class="preview-list"></ul>
+
+    <div class="section-title">OPTIMAL CODE</div>
+    <pre id="previewCode" class="preview-code"></pre>
+
+    <div class="section-title">INTERVIEWER TRAP</div>
+    <div id="previewTrap" class="preview-box trap"></div>
+  </div>
+
   <div class="hint-box">
-    Хоткей: <kbd>Alt + Shift + G</kbd> на LeetCode, HackerRank, Codeforces, CodeSignal або при виділенні будь-якого тексту в браузері.
+    Хоткей: <kbd>Alt + Shift + G</kbd> на LeetCode, HackerRank, Codeforces, CodeSignal, Codility або при виділенні будь-якого тексту в браузері.
   </div>
 
   <script src="popup.js"></script>

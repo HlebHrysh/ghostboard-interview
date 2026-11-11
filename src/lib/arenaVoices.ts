@@ -8,6 +8,7 @@ export interface ArenaVoice {
   tag: string;
   accent: string;
   recommendedFor: string;
+  role?: string;
 }
 
 export const ARENA_VOICES: ArenaVoice[] = [

@@ -8,7 +8,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Origin mismatch' }, { status: 403 });
     }
 
-    const token = req.cookies.get('ghostboard_session')?.value;
+    const token =
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     const user = token ? await getSessionUser(token) : null;
 
     if (!user) {
@@ -33,7 +35,9 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const token = req.cookies.get('ghostboard_session')?.value;
+    const token =
+      req.cookies.get('ghostboard_session')?.value ||
+      req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     const user = token ? await getSessionUser(token) : null;
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

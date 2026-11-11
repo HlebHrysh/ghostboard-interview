@@ -35,6 +35,7 @@ import {
 import type { StructuredAnswerOutput } from '../lib/streamClient';
 import type { CandidateProfile } from '../lib/profileStore';
 import { parseStreamingMarkdown, renderBilingualPhrase } from './DualColumnChat';
+import { cleanStreamText } from '../lib/answerStream';
 import {
   setWindowOpacity,
   startPkceLogin,
@@ -44,6 +45,10 @@ import {
 
 export type AudioSourceOption = 'loopback' | 'mic' | 'combined' | 'mute';
 
+/**
+ * @deprecated Legacy component preserved for backwards compatibility and test suites.
+ * The production HUD under-webcam notch is now canonically implemented in `desktop/src/hud/EyelineNotch.tsx`.
+ */
 export interface EyeLineTeleprompterProps {
   mode?: 'notch' | 'chat' | 'ticker';
   activeQuestion: string;
@@ -794,11 +799,9 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                   {activeAnswer?.hook ? (
                     renderBilingualPhrase(activeAnswer.hook)
                   ) : activeAnswer?.rawText ? (
-                    renderBilingualPhrase(activeAnswer.rawText)
+                    renderBilingualPhrase(cleanStreamText(activeAnswer.rawText))
                   ) : (
-                    <span className="text-zinc-500 italic text-[13px]">
-                      Аналізую запитання та готую влучну голосову відповідь...
-                    </span>
+                    <span>Аналізую запитання...</span>
                   )}
                   {isStreaming && !activeAnswer?.pillars?.length && (
                     <span className="inline-block w-1.5 h-3 bg-amber-400 ml-1 animate-pulse align-middle" />

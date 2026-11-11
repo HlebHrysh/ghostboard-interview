@@ -154,8 +154,8 @@ describe('Task 4: Sub-250ms TTFT (Time to First Token Speed)', () => {
   });
 
   it('prioritizes fastest Flash models first in cascade rotation', () => {
-    expect(FLASH_MODELS[0]).toBe('gemini-3.8-flash');
-    expect(FLASH_MODELS[1]).toBe('gemini-3.6-flash');
+    expect(FLASH_MODELS[0]).toBe('gemini-3.5-flash');
+    expect(FLASH_MODELS[1]).toBe('gemini-3.8-flash');
     expect(FLASH_MODELS).toContain('gemini-flash-latest');
   });
 

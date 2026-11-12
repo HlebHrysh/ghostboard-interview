@@ -24,6 +24,8 @@ export type DirectorModifier =
   | 'simpler'
   | 'code'
   | 're_angle'
+  | 'under_the_hood'
+  | 'explain_line'
   | 'bridge'
   | 'more_technical'
   | 'code_example'

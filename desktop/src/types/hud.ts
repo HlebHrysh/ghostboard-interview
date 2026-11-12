@@ -125,6 +125,27 @@ export interface SttLanguageChangedPayload {
   language: 'multi' | 'uk' | 'ru' | 'en' | string;
 }
 
+export interface ScreenRadarSummary {
+  detectionId: string;
+  hammingDistance: number;
+  roiWidth: number;
+  roiHeight: number;
+  detectedAtMs: number;
+}
+
+export interface ScreenRadarReadyPayload {
+  detection_id?: string;
+  detectionId?: string;
+  hamming_distance?: number;
+  hammingDistance?: number;
+  roi_width?: number;
+  roiWidth?: number;
+  roi_height?: number;
+  roiHeight?: number;
+  detected_at_ms?: number;
+  detectedAtMs?: number;
+}
+
 export type HudEvent =
   | { type: 'vadState'; payload: VadStatePayload }
   | { type: 'sttTranscript'; payload: SttTranscriptPayload }
@@ -144,6 +165,7 @@ export type HudEvent =
   | { type: 'planUpdated'; payload: PlanUpdatedPayload }
   | { type: 'sttStatus'; payload: SttStatusPayload }
   | { type: 'updateStatus'; payload: UpdateStatusPayload }
+  | { type: 'screenRadarReady'; payload: ScreenRadarReadyPayload }
   | { type: 'error'; payload: ErrorPayload };
 
 export interface HudStreamState {
@@ -182,5 +204,6 @@ export interface HudStreamState {
   plan: string;
   deviceCode: DeviceCodePendingPayload | null;
   connectionLatencyMs: number;
+  radarReady?: ScreenRadarSummary | null;
   error: { code: string; message: string } | null;
 }

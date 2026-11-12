@@ -9,7 +9,20 @@
  */
 
 import { parseDualStreamDelimiters, type MetaTagInfo } from './streamClient';
-export { parseDualStreamDelimiters, type MetaTagInfo };
+import {
+  mergeSurgicalAnswerSlots,
+  serializeMergedSlotsToTaggedStream,
+  type PatchTargetSlot,
+  type StructuredAnswerSlots,
+} from '../../../src/lib/speculativeSlotEngine';
+export {
+  parseDualStreamDelimiters,
+  mergeSurgicalAnswerSlots,
+  serializeMergedSlotsToTaggedStream,
+  type MetaTagInfo,
+  type PatchTargetSlot,
+  type StructuredAnswerSlots,
+};
 
 export type InlineToken =
   | { type: 'text'; value: string }
@@ -239,4 +252,32 @@ export function extractCode(deepDive: string): string {
 /** Flattens inline tokens to plain text. */
 export function tokensToText(tokens: InlineToken[]): string {
   return tokens.map((t) => t.value).join('');
+}
+
+/** Converts a ParsedAnswer snapshot into StructuredAnswerSlots for surgical slot patching. */
+export function parsedAnswerToSlots(parsed: ParsedAnswer): StructuredAnswerSlots {
+  const hook = parsed.hook || (parsed.mode === 'plain' ? parsed.plain : '');
+  return {
+    meta: parsed.meta?.raw,
+    hook,
+    pillars: parsed.pillars || [],
+    deepDive: parsed.deepDive || '',
+    followUpTrap: parsed.followUpTrap,
+  };
+}
+
+/**
+ * Surgically merges a newly streamed tagged/partial chunk buffer into an existing raw answer string
+ * without wiping untouched slots (e.g. preserving Hook & Pillars when patching Deep Dive).
+ */
+export function mergeRawAnswerWithSlotPatch(
+  existingRaw: string,
+  incomingRaw: string,
+  slotMode: PatchTargetSlot
+): string {
+  if (slotMode === 'full') return incomingRaw;
+  const existingSlots = parsedAnswerToSlots(parseAnswer(existingRaw));
+  const incomingSlots = parsedAnswerToSlots(parseAnswer(incomingRaw));
+  const merged = mergeSurgicalAnswerSlots(existingSlots, incomingSlots, slotMode);
+  return serializeMergedSlotsToTaggedStream(merged);
 }

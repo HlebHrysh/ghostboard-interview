@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { TopIsland } from './TopIsland';
 import { SplitChat } from './SplitChat';
 import { EyelineNotch } from './EyelineNotch';
@@ -16,11 +17,20 @@ import {
   closeCopilotWindow,
   listenTauriEvent,
   isTauriEnvironment,
+  consumeRadarSnapshot,
+  getAccessToken,
+  stageBrowserRadarSnapshot,
 } from '../lib/tauriBridge';
+import { subscribeHudEvents, injectHudEvent } from '../lib/hudBus';
+import { detectBackendUrl } from '../lib/apiClient';
+import { formatScreenshotAnswer } from '../lib/screenshotAnswer';
 import { startListening, stopListening } from '../lib/audioSession';
 import { consumeDemoPending } from '../lib/demoInterview';
-import { viewedAnswer } from '../lib/session';
+import { nextLocalId, viewedAnswer } from '../lib/session';
 import { getRandomBridgePhrase } from '../lib/bridgePhrases';
+import type { HudEvent, ScreenRadarSummary } from '../types/hud';
+
+const RADAR_FRESH_MS = 15_000;
 
 export interface HudWindowProps {
   onReturnToOffice?: () => void;
@@ -38,13 +48,14 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
       : 'chat';
 
   const [layoutMode, setLayoutMode] = useState<'chat' | 'top_bar'>(initialMode);
+  const smartScreenshotRef = useRef<() => Promise<void>>(async () => {});
 
   // Hotkey dispatch from Rust
   const handleRustHotkey = useCallback((action: string) => {
     if (action === 'panic') {
       void panicHide();
     } else if (action === 'screenshot') {
-      void session.captureAndAnalyze();
+      void smartScreenshotRef.current();
     } else if (action === 'chat') {
       setLayoutMode('chat');
     }
@@ -57,6 +68,212 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
   });
 
   const activeAnswer = viewedAnswer(session.state);
+
+  // Zero-click Screen Delta Radar state (fresh < 15s)
+  const [radarReady, setRadarReady] = useState<ScreenRadarSummary | null>(null);
+  const [radarBusy, setRadarBusy] = useState(false);
+  const radarAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const off = subscribeHudEvents((event: HudEvent) => {
+      if (event.type === 'screenRadarReady') {
+        const p = event.payload;
+        setRadarReady({
+          detectionId: p.detectionId ?? p.detection_id ?? `radar-${Date.now()}`,
+          hammingDistance: p.hammingDistance ?? p.hamming_distance ?? 0,
+          roiWidth: p.roiWidth ?? p.roi_width ?? 0,
+          roiHeight: p.roiHeight ?? p.roi_height ?? 0,
+          detectedAtMs: p.detectedAtMs ?? p.detected_at_ms ?? Date.now(),
+        });
+      }
+    });
+    return off;
+  }, []);
+
+  // Automatically expire radar pill after 15s so stale crops never mislead
+  useEffect(() => {
+    if (!radarReady) return;
+    const remaining = RADAR_FRESH_MS - (Date.now() - radarReady.detectedAtMs);
+    if (remaining <= 0) {
+      setRadarReady(null);
+      return;
+    }
+    const timer = setTimeout(() => setRadarReady(null), remaining);
+    return () => clearTimeout(timer);
+  }, [radarReady]);
+
+  // Browser-mode fallback: detect pasted problem text or returning focus after >= 2.5s
+  useEffect(() => {
+    if (isTauriEnvironment()) return;
+    let lastBlurAt = 0;
+
+    const triggerBrowserRadar = () => {
+      const now = Date.now();
+      stageBrowserRadarSnapshot({
+        base64Png:
+          'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        roiWidth: 1280,
+        roiHeight: 720,
+      });
+      injectHudEvent({
+        type: 'screenRadarReady',
+        payload: {
+          detectionId: `browser-radar-${now}`,
+          hammingDistance: 12,
+          roiWidth: 1280,
+          roiHeight: 720,
+          detectedAtMs: now,
+        },
+      });
+    };
+
+    const onPaste = (e: ClipboardEvent) => {
+      const pasted = e.clipboardData?.getData('text') || '';
+      if (pasted.trim().length >= 40) {
+        triggerBrowserRadar();
+      }
+    };
+    const onBlur = () => {
+      lastBlurAt = Date.now();
+    };
+    const onFocus = () => {
+      if (lastBlurAt > 0 && Date.now() - lastBlurAt >= 2500) {
+        triggerBrowserRadar();
+      }
+    };
+
+    window.addEventListener('paste', onPaste);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('paste', onPaste);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      radarAbortRef.current?.abort();
+    };
+  }, []);
+
+  const analyzeZeroMsRadar = useCallback(async () => {
+    if (radarBusy || session.screenBusy) return;
+    setRadarBusy(true);
+    setRadarReady(null);
+    radarAbortRef.current?.abort();
+    const controller = new AbortController();
+    radarAbortRef.current = controller;
+
+    try {
+      const snap = await consumeRadarSnapshot();
+      if (!snap?.base64Png) {
+        setRadarBusy(false);
+        await session.captureAndAnalyze();
+        return;
+      }
+
+      const answerId = nextLocalId('screen');
+      session.dispatch({
+        type: 'ask',
+        answerId,
+        messageId: null,
+        text: '👁️ Аналіз задачі (0ms ROI)…',
+        modifier: null,
+        source: 'screen',
+        ts: Date.now(),
+      });
+
+      const profile = getStoredProfile();
+      const [baseUrl, token] = await Promise.all([detectBackendUrl(), getAccessToken()]);
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-ghostboard-client': 'desktop-app',
+      };
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const outLang =
+        settings.hintLanguage === 'auto'
+          ? 'uk'
+          : settings.hintLanguage === 'bilingual_uk' || settings.hintLanguage === 'bilingual_ru'
+          ? 'bilingual'
+          : settings.hintLanguage;
+
+      let response: Response;
+      try {
+        response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/ai/screenshot`, {
+          method: 'POST',
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            imageBase64: snap.base64Png,
+            mimeType: 'image/png',
+            locale: settings.hintLanguage === 'en' ? 'en' : 'uk',
+            outputLanguage: outLang,
+            sessionMode: 'interview',
+            candidateProfile: profile
+              ? {
+                  role: profile.role,
+                  level: profile.experienceLevel,
+                  primaryStack: profile.primaryStack || profile.techStack.join(', '),
+                  techStack: profile.techStack,
+                  customBio: profile.customBio,
+                }
+              : undefined,
+          }),
+        });
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        throw new Error(err instanceof Error ? err.message : 'Немає зв’язку з сервером для аналізу екрана');
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          response.status === 401
+            ? 'Потрібен вхід: сесія Ghostboard недійсна'
+            : `Аналіз екрана недоступний (${response.status})`
+        );
+      }
+
+      const data = (await response.json().catch(() => null)) as Parameters<typeof formatScreenshotAnswer>[0] | null;
+      const formatted = data ? formatScreenshotAnswer(data) : null;
+      if (!formatted) {
+        throw new Error('ШІ не знайшов на екрані задачі чи коду');
+      }
+
+      const words = formatted.text.split(/(\s+)/);
+      let acc = '';
+      for (let i = 0; i < words.length; i += 6) {
+        if (controller.signal.aborted) return;
+        const piece = words.slice(i, i + 6).join('');
+        acc += piece;
+        session.dispatch({ type: 'chunk', id: answerId, token: piece, ts: Date.now() });
+        await new Promise((r) => setTimeout(r, 14));
+      }
+      session.dispatch({ type: 'done', id: answerId, full: acc, ts: Date.now() });
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      session.dispatch({
+        type: 'fail',
+        message: err instanceof Error ? err.message : 'Не вдалося проаналізувати ROI-знімок',
+      });
+    } finally {
+      setRadarBusy(false);
+    }
+  }, [radarBusy, session, settings.hintLanguage]);
+
+  const isRadarFresh = Boolean(radarReady && Date.now() - radarReady.detectedAtMs < RADAR_FRESH_MS);
+
+  const handleSmartScreenshot = useCallback(async () => {
+    if (isRadarFresh) {
+      await analyzeZeroMsRadar();
+    } else {
+      await session.captureAndAnalyze();
+    }
+  }, [isRadarFresh, analyzeZeroMsRadar, session]);
+
+  smartScreenshotRef.current = handleSmartScreenshot;
 
   // Sync window size on layout mode switch
   const switchLayout = useCallback(
@@ -187,10 +404,10 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
         return;
       }
 
-      // Ctrl/Cmd + Shift + S: Screenshot OCR
+      // Ctrl/Cmd + Shift + S: Screenshot OCR (uses 0ms radar ROI if fresh < 15s)
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        void session.captureAndAnalyze();
+        void handleSmartScreenshot();
         return;
       }
 
@@ -272,35 +489,78 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePanic, handleToggleClickThrough, session, toggleLayout, handleReturnToOffice, activeAnswer, handleToggleAudio, handleTriggerBridge]);
+  }, [handlePanic, handleToggleClickThrough, session, toggleLayout, handleReturnToOffice, activeAnswer, handleToggleAudio, handleTriggerBridge, handleSmartScreenshot]);
+
+  const showInlineTopBarRadar =
+    isRadarFresh &&
+    layoutMode === 'chat' &&
+    activeAnswer?.status !== 'streaming' &&
+    !session.state.paused;
 
   return (
     <div
       data-tauri-drag-region="true"
       className="fixed inset-0 flex flex-col gb-hud-shell overflow-hidden select-none border border-white/[0.1] shadow-2xl"
     >
-      {/* Top Floating Island Header */}
-      <TopIsland
-        settings={settings}
-        updateSettings={updateSettings}
-        layoutMode={layoutMode}
-        onToggleLayout={toggleLayout}
-        isStreaming={activeAnswer?.status === 'streaming'}
-        activeAnswer={activeAnswer}
-        isPaused={session.state.paused}
-        onTogglePause={session.togglePause}
-        isClickThrough={session.clickThrough}
-        onToggleClickThrough={handleToggleClickThrough}
-        onScreenshot={session.captureAndAnalyze}
-        isScreenBusy={session.screenBusy}
-        onPanic={handlePanic}
-        onReturnToOffice={handleReturnToOffice}
-        onClose={handleClose}
-        isBridgeActive={isBridgeActive}
-        onTriggerBridge={handleTriggerBridge}
-        isAudioActive={isAudioActive}
-        onToggleAudio={handleToggleAudio}
-      />
+      {/* Top Floating Island Header + 0ms Vision Radar Instant Trigger */}
+      <div className="relative shrink-0">
+        <TopIsland
+          settings={settings}
+          updateSettings={updateSettings}
+          layoutMode={layoutMode}
+          onToggleLayout={toggleLayout}
+          isStreaming={activeAnswer?.status === 'streaming'}
+          activeAnswer={activeAnswer}
+          isPaused={session.state.paused}
+          onTogglePause={session.togglePause}
+          isClickThrough={session.clickThrough}
+          onToggleClickThrough={handleToggleClickThrough}
+          onScreenshot={handleSmartScreenshot}
+          isScreenBusy={session.screenBusy || radarBusy}
+          onPanic={handlePanic}
+          onReturnToOffice={handleReturnToOffice}
+          onClose={handleClose}
+          isBridgeActive={isBridgeActive}
+          onTriggerBridge={handleTriggerBridge}
+          isAudioActive={isAudioActive}
+          onToggleAudio={handleToggleAudio}
+        />
+
+        <AnimatePresence>
+          {isRadarFresh && (
+            <div
+              className={
+                showInlineTopBarRadar
+                  ? 'absolute top-[5px] left-[220px] right-[308px] flex justify-center pointer-events-none z-50'
+                  : 'absolute top-[42px] right-2.5 pointer-events-none z-50'
+              }
+            >
+              <motion.button
+                type="button"
+                data-tauri-drag-region="false"
+                data-testid="vision-radar-pill"
+                initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: -4 }}
+                transition={{ type: 'spring', stiffness: 350, damping: 28, mass: 0.6 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.96 }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => void analyzeZeroMsRadar()}
+                disabled={session.screenBusy || radarBusy}
+                title={`ROI ${radarReady?.roiWidth ?? 0}×${radarReady?.roiHeight ?? 0}px (Δ ${radarReady?.hammingDistance ?? 0}b) готовий у RAM — клік або Ctrl+Shift+S для 0ms аналізу`}
+                className="gb-nodrag pointer-events-auto h-7 inline-flex items-center gap-1.5 px-2.5 rounded-full bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 border border-emerald-400/50 text-emerald-200 text-[11px] font-mono font-semibold shadow-[0_0_16px_rgba(16,185,129,0.3),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition-colors disabled:opacity-50"
+              >
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+                </span>
+                <span className="truncate">👁️ Задачу розпізнано (0ms)</span>
+              </motion.button>
+            </div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Main Mode Body */}
       {layoutMode === 'chat' ? (

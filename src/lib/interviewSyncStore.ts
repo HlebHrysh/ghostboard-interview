@@ -114,7 +114,6 @@ function assertLocalFallbackAllowed() {
 // ───────────────────────── State helpers ─────────────────────────
 
 function getInitialState(): InterviewSyncState {
-  const now = Date.now();
   return {
     qas: [],
     activeId: undefined,
@@ -128,8 +127,8 @@ function getInitialState(): InterviewSyncState {
     isPanic: false,
     connectedDevices: { desktop: false, web: false, phone: false },
     sessionDuration: 0,
-    lastUpdated: now,
-    updatedAt: now,
+    lastUpdated: 0,
+    updatedAt: 0,
   };
 }
 
@@ -343,6 +342,7 @@ const globalForSync = globalThis as unknown as {
 const SYNC_FILE = '/tmp/ghostboard_interview_sync.json';
 
 function loadPersistedState(): InterviewSyncState | null {
+  if (isProduction()) return null;
   try {
     if (fs.existsSync(SYNC_FILE)) {
       const data = fs.readFileSync(SYNC_FILE, 'utf8');
@@ -370,8 +370,9 @@ function loadPersistedState(): InterviewSyncState | null {
 }
 
 function savePersistedState(state: InterviewSyncState) {
+  if (isProduction()) return;
   try {
-    fs.writeFileSync(SYNC_FILE, JSON.stringify(state), 'utf8');
+    fs.writeFileSync(SYNC_FILE, JSON.stringify(state), { encoding: 'utf8', mode: 0o600 });
   } catch {}
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { HudEvent, SpeakerRole, SttConnectionStatus, UserProfile, DeviceCodePendingPayload } from '../types/hud';
+import type { HudEvent, ScreenRadarSummary, SpeakerRole, SttConnectionStatus, UserProfile, DeviceCodePendingPayload } from '../types/hud';
 import type { AudioLevelsRef } from './useSampledLevel';
 import {
   startCopilotStream,
@@ -18,6 +18,8 @@ import {
   getListenMode as nativeGetListenMode,
   setSttLanguage as nativeSetSttLanguage,
   getSttLanguage as nativeGetSttLanguage,
+  consumeRadarSnapshot,
+  toggleVisionRadar,
 } from '../lib/tauriBridge';
 import {
   StructuredAnswerOutput,
@@ -81,6 +83,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [listenMode, setListenModeState] = useState<'all' | 'system_only'>('all');
   const [sttLanguage, setSttLanguageState] = useState<'multi' | 'uk' | 'ru' | 'en' | string>('multi');
+  const [radarReady, setRadarReady] = useState<ScreenRadarSummary | null>(null);
 
   const accumulatedTokensRef = useRef('');
   const questionStartTimeRef = useRef<number | null>(null);
@@ -339,6 +342,18 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
         break;
       }
 
+      case 'screenRadarReady': {
+        const p = event.payload;
+        setRadarReady({
+          detectionId: p.detectionId ?? p.detection_id ?? `radar-${Date.now()}`,
+          hammingDistance: p.hammingDistance ?? p.hamming_distance ?? 0,
+          roiWidth: p.roiWidth ?? p.roi_width ?? 0,
+          roiHeight: p.roiHeight ?? p.roi_height ?? 0,
+          detectedAtMs: p.detectedAtMs ?? p.detected_at_ms ?? Date.now(),
+        });
+        break;
+      }
+
       case 'error': {
         setError(event.payload);
         setIsStreaming(false);
@@ -457,6 +472,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     setIsStreaming(false);
     setTtftMs(null);
     setLatencyMs(null);
+    setRadarReady(null);
     await nativeClearSession();
   }, []);
 
@@ -502,6 +518,24 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     return res;
   }, []);
 
+  const clearRadarReady = useCallback(() => {
+    setRadarReady(null);
+  }, []);
+
+  const consumeRadar = useCallback(async () => {
+    const snap = await consumeRadarSnapshot();
+    setRadarReady(null);
+    return snap;
+  }, []);
+
+  const setVisionRadarEnabled = useCallback(async (enabled: boolean) => {
+    const res = await toggleVisionRadar(enabled);
+    if (!res) {
+      setRadarReady(null);
+    }
+    return res;
+  }, []);
+
   return {
     // Reactive State
     sttStatus,
@@ -529,6 +563,7 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     deviceCode,
     connectionLatencyMs,
     isCapturing,
+    radarReady,
 
     // Actions
     startCapture,
@@ -544,5 +579,8 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     alignWebcam,
     triggerPanicHide,
     exportDebrief,
+    clearRadarReady,
+    consumeRadar,
+    setVisionRadarEnabled,
   };
 }

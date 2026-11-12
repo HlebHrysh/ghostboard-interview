@@ -26,9 +26,11 @@ import {
   ChevronDown,
   ChevronUp,
   Layers,
+  Lock,
 } from 'lucide-react';
 
 import { useCopilotAI } from '@/hooks/useCopilotAI';
+import { evaluateSpeechIntent } from '@/lib/speechIntentGate';
 import { useAudioCapture } from '@/hooks/useAudioCapture';
 import { InterviewQAItem } from '@/types/interview';
 import { useInterviewHotkeys } from '@/hooks/useInterviewHotkeys';
@@ -203,6 +205,7 @@ interface DialogueMessageBubbleProps {
     text: string;
     timestamp: number;
     qaId?: string;
+    statusText?: string;
   };
   matchingQA: InterviewQAItem | null;
   qaNumber: number | null;
@@ -238,6 +241,12 @@ const DialogueMessageBubble = React.memo<DialogueMessageBubbleProps>(({
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
             <span>Ви</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+          </span>
+        )}
+        {item.statusText && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 animate-pulse">
+            <span className="w-1 h-1 rounded-full bg-cyan-400" />
+            <span>{item.statusText}</span>
           </span>
         )}
         <span className="text-[10px] text-zinc-500 font-mono">
@@ -407,6 +416,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     pendingNewCountRef,
     togglePillarCompletion,
     handleExplainLine,
+    speculativeHitMap,
+    patchingSlotMap,
   } = useCopilotAI({
     speechLanguageRef,
     outputLanguageRef,
@@ -425,6 +436,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     text: string;
     timestamp: number;
     qaId?: string;
+    statusText?: string;
   }>>([]);
 
   const handleLiveTranscript = useCallback((
@@ -434,15 +446,19 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     speaker: 'interviewer' | 'candidate' = 'interviewer'
   ) => {
     // 1. Pass to AI copilot logic (which strictly discards candidate speech from generating answers)
-    handleIncomingTranscript(text, isFinal, speechFinal, speaker);
+    const result = handleIncomingTranscript(text, isFinal, speechFinal, speaker);
 
     // 2. Append final utterance to verbatim dialogue history
     if (isFinal || speechFinal) {
       const clean = text.trim();
       if (clean) {
+        const statusText = result?.decision === 'WAIT_FOR_COMPLETION' ? 'Слухаю розповідь...' : undefined;
         setDialogueMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last && last.speaker === speaker && last.text.toLowerCase() === clean.toLowerCase()) {
+            if (statusText && !last.statusText) {
+              return [...prev.slice(0, -1), { ...last, statusText }];
+            }
             return prev;
           }
           return [
@@ -452,6 +468,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               speaker,
               text: clean,
               timestamp: Date.now(),
+              statusText,
             },
           ];
         });
@@ -732,6 +749,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
   const activeIndex = Math.max(0, interviewQAs.findIndex((q) => q.id === activeQAId));
   const activeQA = interviewQAs[activeIndex] || null;
+  const activePatchSlot = activeQA ? patchingSlotMap[activeQA.id] : undefined;
+  const isActiveSpeculativeHit = activeQA ? Boolean(speculativeHitMap[activeQA.id]) : false;
 
   // Extra hotkeys: font zoom, emergency bridge, modifiers (1-5), and Ctrl+K focus
   useEffect(() => {
@@ -862,6 +881,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   }, [interviewQAs]);
 
   const sampleQuestion = 'Explain optimistic vs pessimistic locking in databases and when to use each.';
+  const sampleStory = 'У нашій компанії ми розробляємо високонавантажений банкінг і зараз шукаємо senior інженера...';
 
   const handleSampleQuestionClick = useCallback(() => {
     setDialogueMessages((prev) => [
@@ -875,6 +895,11 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     ]);
     processAggregatedQuestion(sampleQuestion, true);
   }, [processAggregatedQuestion, sampleQuestion]);
+
+  const handleSampleStoryClick = useCallback(() => {
+    handleLiveTranscript(sampleStory, true, true, 'interviewer');
+    toast.info('⏳ Класифікатор зафіксував розповідь: контекст буферизовано, запит до ШІ очікує фінального запитання.', { duration: 4000 });
+  }, [handleLiveTranscript, sampleStory]);
 
   const handleCopy = useCallback(
     (text: string, id: string) => {
@@ -945,6 +970,10 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         <div className="flex items-center gap-2.5">
           <MessagesSquare className="w-4 h-4 text-zinc-400" />
           <h2 className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-300">Live Dialogue</h2>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
+            <span>Intent Gate: Active</span>
+          </span>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
           <span className="flex items-center gap-1.5" title="Interviewer level">
@@ -979,8 +1008,8 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         className="flex-1 overflow-y-auto px-4 sm:px-5 py-5 space-y-4 scroll-smooth relative"
       >
         {!hasAnything && dialogueMessages.length === 0 && (
-          <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center gap-4 px-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center">
+          <div className="h-full min-h-[290px] flex flex-col items-center justify-center text-center gap-3.5 px-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.03)]">
               <Radio className="w-6 h-6 text-zinc-300" />
             </div>
             <div>
@@ -989,7 +1018,14 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 Почніть слухати — кожна репліка інтерв&apos;юера та ваша відповідь з&apos;являться тут у реальному часі.
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2">
+
+            {/* Smart Intent Gate active indicator banner */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-950/40 border border-cyan-500/25 text-cyan-300 text-xs font-mono shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
+              <span>Smart Intent Gate: Автоматичне розрізнення питань та монологів</span>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => handleStartCaptureRequest()}
@@ -1002,7 +1038,15 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 onClick={handleSampleQuestionClick}
                 className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-zinc-300 text-xs font-mono hover:bg-white/10 transition cursor-pointer flex items-center gap-1.5"
               >
-                <Sparkles className="w-3 h-3" /> {hudT.sampleQuestionBtn}
+                <Sparkles className="w-3 h-3 text-cyan-400" /> {hudT.sampleQuestionBtn}
+              </button>
+              <button
+                type="button"
+                onClick={handleSampleStoryClick}
+                className="px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono hover:bg-amber-500/20 transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                title="Перевірити як класифікатор буферизує довгу розповідь співрозмовника"
+              >
+                <span>🧪 Тест монологу (WAIT)</span>
               </button>
             </div>
           </div>
@@ -1041,20 +1085,40 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           })}
         </AnimatePresence>
 
-        {liveTranscript && (
-          <div className="flex flex-col items-start animate-in fade-in duration-150">
-            <div className="flex items-center gap-1.5 mb-1 px-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
-                Інтерв&apos;юер (наживо...)
-              </span>
+        {liveTranscript && (() => {
+          const liveIntent = evaluateSpeechIntent(liveTranscript);
+          return (
+            <div className="flex flex-col items-start animate-in fade-in duration-150">
+              <div className="flex items-center gap-1.5 mb-1 px-1">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                  Інтерв&apos;юер (наживо...)
+                </span>
+                {liveIntent.decision === 'WAIT_FOR_COMPLETION' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-950/60 text-amber-300 border border-amber-500/30 animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-amber-400" />
+                    <span>Слухаю розповідь...</span>
+                  </span>
+                )}
+                {liveIntent.decision === 'TRIGGER_NOW' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                    <span>⚡ Питання (0ms trigger)</span>
+                  </span>
+                )}
+                {liveIntent.decision === 'IGNORE_NOISE' && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                    <span>Фільтр шуму</span>
+                  </span>
+                )}
+              </div>
+              <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tl-sm border border-dashed border-cyan-500/30 bg-cyan-950/15 text-sm italic text-zinc-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+                {highlightTech(liveTranscript)}
+                <span className="inline-block w-1.5 h-4 bg-cyan-400 ml-1.5 align-middle animate-pulse" />
+              </div>
             </div>
-            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tl-sm border border-dashed border-cyan-500/30 bg-cyan-950/15 text-sm italic text-zinc-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
-              {highlightTech(liveTranscript)}
-              <span className="inline-block w-1.5 h-4 bg-cyan-400 ml-1.5 align-middle animate-pulse" />
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {candidateLiveTranscript && (
           <div className="flex flex-col items-end animate-in fade-in duration-150">
@@ -1299,7 +1363,12 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     <span className="text-cyan-300 uppercase tracking-wider font-semibold">{activeQA.meta.language}</span>
                   </div>
                 )}
-                {activeQA.ttftMs ? (
+                {isActiveSpeculativeHit ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-mono font-bold text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]">
+                    <Zap className="w-3 h-3 text-amber-400" />
+                    ⚡ 0ms Speculative Hit
+                  </span>
+                ) : activeQA.ttftMs !== undefined ? (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-700/60 text-[11px] font-mono font-semibold text-emerald-300">
                     <Zap className="w-3 h-3 text-emerald-400" />
                     TTFT {activeQA.ttftMs}ms
@@ -1310,6 +1379,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     STREAMING...
                   </span>
                 ) : null}
+                {activePatchSlot && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-400/35 text-[11px] font-mono font-semibold text-violet-200 animate-pulse">
+                    <Sparkles className="w-3 h-3 text-violet-300" />
+                    {activePatchSlot === 'deep_dive'
+                      ? 'Patching Phase 3 · Hook & Pillars Frozen'
+                      : activePatchSlot === 'hook_and_pillars'
+                      ? 'Patching Phase 1–2 · Deep Dive Frozen'
+                      : 'Refining Answer...'}
+                  </span>
+                )}
               </div>
 
               {activeQA.nativeTranslation && (
@@ -1323,9 +1402,21 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               {mainAnswer && (
                 <div className="pl-4 py-3 border-l-4 border-l-amber-400/90 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.04] shadow-[0_4px_24px_rgba(245,158,11,0.06)] relative group">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-400" /> Фаза 1 · Голосовий старт (Hook)
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-amber-400" /> Фаза 1 · Голосовий старт (Hook)
+                      </span>
+                      {activePatchSlot === 'deep_dive' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                          <Lock className="w-2.5 h-2.5" /> Frozen
+                        </span>
+                      )}
+                      {activePatchSlot === 'hook_and_pillars' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                          Patching...
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => handleCopy(mainAnswer, 'main')}
@@ -1347,9 +1438,21 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               {/* Phase 2: PILLARS / Key Points (Spacious bullets with bold anchor keywords & voice karaoke) */}
               {activeQA.hints && activeQA.hints.length > 0 && (
                 <div className="space-y-2.5">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold flex items-center gap-1.5 px-0.5">
-                    <Layers className="w-3.5 h-3.5 text-cyan-400" /> Фаза 2 · Ключові тези (Pillars)
-                  </span>
+                  <div className="flex items-center gap-2 px-0.5">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-cyan-400" /> Фаза 2 · Ключові тези (Pillars)
+                    </span>
+                    {activePatchSlot === 'deep_dive' && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                        <Lock className="w-2.5 h-2.5" /> Frozen
+                      </span>
+                    )}
+                    {activePatchSlot === 'hook_and_pillars' && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                        Patching...
+                      </span>
+                    )}
+                  </div>
                   <ol className="space-y-2.5">
                     {activeQA.hints.map((hint, i) => {
                       const isCompleted = activeQA.completedPillarIndices?.includes(i);
@@ -1391,62 +1494,106 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               )}
 
               {/* Phase 3: DEEP DIVE & Collapsible Code Example */}
-              {activeQA.codeSnippet && activeQA.codeSnippet.trim() && (
+              {((activeQA.codeSnippet && activeQA.codeSnippet.trim()) || activePatchSlot === 'deep_dive') && (
                 <div className="rounded-2xl border border-white/[0.08] bg-[#050608] overflow-hidden">
                   <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06] flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setIsCodeExpanded((prev) => !prev)}
-                      className="flex items-center gap-2 text-xs font-mono font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
-                    >
-                      <Code2 className="w-3.5 h-3.5" />
-                      <span>Фаза 3 · Код / Реалізація</span>
-                      <span className="text-[10px] text-zinc-500 font-normal">
-                        ({activeQA.codeSnippet.trim().split('\n').length} рядків)
-                      </span>
-                      {isCodeExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
-                    </button>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => handleCopy(activeQA.codeSnippet!, 'code')}
-                        className="text-[10px] font-mono text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                        onClick={() => setIsCodeExpanded((prev) => !prev)}
+                        className="flex items-center gap-2 text-xs font-mono font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
                       >
-                        {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                        <span>{copiedId === 'code' ? 'Copied' : hudAnswer.copy}</span>
+                        <Code2 className="w-3.5 h-3.5" />
+                        <span>Фаза 3 · Код / Реалізація</span>
+                        {activeQA.codeSnippet?.trim() && (
+                          <span className="text-[10px] text-zinc-500 font-normal">
+                            ({activeQA.codeSnippet.trim().split('\n').length} рядків)
+                          </span>
+                        )}
+                        {isCodeExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                       </button>
+                      {activePatchSlot === 'deep_dive' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                          Patching slot...
+                        </span>
+                      )}
+                      {activePatchSlot === 'hook_and_pillars' && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                          <Lock className="w-2.5 h-2.5" /> Frozen
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {activeQA.codeSnippet?.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(activeQA.codeSnippet!, 'code')}
+                          className="text-[10px] font-mono text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                        >
+                          {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          <span>{copiedId === 'code' ? 'Copied' : hudAnswer.copy}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
-                  {isCodeExpanded && (
+                  {(isCodeExpanded || activePatchSlot === 'deep_dive') && (
                     <div className="p-4 text-zinc-200 font-mono overflow-x-auto leading-relaxed max-h-[380px] scrollbar-thin text-xs sm:text-sm divide-y divide-white/[0.03]">
-                      {activeQA.codeSnippet.trim().split('\n').map((lineText, idx) => {
-                        const lineExplanation = activeQA.lineExplanations?.[idx];
-                        return (
-                          <div key={idx} className="group">
-                            <div
-                              onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
-                              className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
-                              title="Клікніть для пояснення рядка (explain_line)"
-                            >
-                              <span className="shrink-0 select-none text-[11px] font-mono text-zinc-600 group-hover:text-cyan-400 w-6 text-right">
-                                {idx + 1}
-                              </span>
-                              <code className="flex-1 whitespace-pre">{lineText || ' '}</code>
-                            </div>
-                            {lineExplanation && (
-                              <div className="my-1.5 ml-9 mr-2 p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 leading-relaxed animate-in fade-in">
-                                <span className="font-mono text-[10px] text-cyan-300 font-bold mr-1.5 uppercase">⚡ Пояснення (explain_line):</span>
-                                {lineExplanation}
+                      {activeQA.codeSnippet && activeQA.codeSnippet.trim() ? (
+                        activeQA.codeSnippet.trim().split('\n').map((lineText, idx) => {
+                          const lineExplanation = activeQA.lineExplanations?.[idx];
+                          return (
+                            <div key={idx} className="group">
+                              <div
+                                onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
+                                className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
+                                title="Клікніть для пояснення рядка (explain_line)"
+                              >
+                                <span className="shrink-0 select-none text-[11px] font-mono text-zinc-600 group-hover:text-cyan-400 w-6 text-right">
+                                  {idx + 1}
+                                </span>
+                                <code className="flex-1 whitespace-pre">{lineText || ' '}</code>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                              {lineExplanation && (
+                                <div className="my-1.5 ml-9 mr-2 p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 leading-relaxed animate-in fade-in">
+                                  <span className="font-mono text-[10px] text-cyan-300 font-bold mr-1.5 uppercase">⚡ Пояснення (explain_line):</span>
+                                  {lineExplanation}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="space-y-2 py-1 animate-pulse">
+                          <div className="h-3.5 rounded bg-white/[0.06] w-3/4" />
+                          <div className="h-3.5 rounded bg-white/[0.05] w-5/6" />
+                          <div className="h-3.5 rounded bg-white/[0.04] w-2/3" />
+                        </div>
+                      )}
                       {activeQA.isStreaming && (
                         <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Emergency Fallback 1-Click Retry Action */}
+              {(activeQA.codeSnippet?.includes('Повторити запит') ||
+                activeQA.codeSnippet?.includes('Повторить запрос') ||
+                activeQA.startHook?.includes('ШІ тимчасово') ||
+                activeQA.startHook?.includes('AI connection timed out')) && (
+                <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-950/20 p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-in fade-in">
+                  <div className="flex items-center gap-2 text-xs text-amber-200">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>Мережевий запит до ШІ тимчасово затримався. Повторіть генерацію в 1 клік:</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => processAggregatedQuestion(activeQA.question, true)}
+                    className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer shadow-lg shadow-amber-500/20"
+                  >
+                    <span>🔄 Повторити запит (1 клік)</span>
+                  </button>
                 </div>
               )}
 
@@ -1493,7 +1640,12 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                     key={mod.key}
                     type="button"
                     disabled={isCopilotGenerating}
-                    onClick={() => handleRefineQA(activeQA.id, mod.key)}
+                    onClick={() => {
+                      if (mod.key === 'code' || mod.key === 'under_the_hood') {
+                        setIsCodeExpanded(true);
+                      }
+                      handleRefineQA(activeQA.id, mod.key);
+                    }}
                     title={mod.tooltip}
                     className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/20 text-zinc-200 hover:text-white transition-all disabled:opacity-40 cursor-pointer font-mono text-xs flex items-center gap-1 shadow-sm active:scale-95"
                   >

@@ -16,9 +16,12 @@ import { normalizeTechnicalSpeech } from '@/lib/techSpeechNormalizer';
 import { checkRateLimit, validateOrigin } from '@/lib/rateLimit';
 import {
   buildGhostboardSystemPrompt,
+  getMaxOutputTokensForPatchSlot,
   parseStructuredGhostboardOutput,
   mergeContinuationQuestion,
+  buildEmergencyCoachingCard,
   AiModifier,
+  PatchTargetSlot,
 } from '@/lib/aiPromptCore';
 
 export const runtime = 'nodejs';
@@ -74,10 +77,21 @@ const ALLOWED_MODIFIERS = [
   'simpler',
   'code',
   're_angle',
+  'under_the_hood',
+  'bridge',
   'more_technical',
   'code_example',
   'tradeoffs',
   'explain_line',
+] as const;
+
+const ALLOWED_PATCH_SLOTS = [
+  'full',
+  'speculative_hook',
+  'rest_after_hook',
+  'hook_and_pillars',
+  'deep_dive',
+  'trap',
 ] as const;
 
 interface RecentQuestionRecord {
@@ -91,6 +105,8 @@ const DualStreamPayloadSchema = z.object({
   previousQuestion: z.string().optional(),
   continuationFragment: z.string().optional(),
   isContinuation: z.boolean().optional(),
+  patchSlot: z.enum(ALLOWED_PATCH_SLOTS).optional().default('full'),
+  preGeneratedHook: z.string().max(1500).optional(),
   history: z
     .array(
       z.union([
@@ -246,13 +262,17 @@ export async function POST(req: NextRequest) {
       candidateProfile,
       outputLanguage,
       helperLanguage,
+      patchSlot,
+      preGeneratedHook,
     } = parseResult.data;
 
     const normalizedQuestion = normalizeTechnicalSpeech(question.trim());
 
     // Incremental Question Merge on Speaker Continuation (<2500ms or explicit)
+    // Skip cache lookup/mutation for speculative prefetches & surgical slot refinements so they never corrupt follow-up state.
     let finalQuestion = normalizedQuestion;
     let addedConstraint: string | undefined = undefined;
+    const isFullOrRestSlot = patchSlot === 'full' || patchSlot === 'rest_after_hook';
 
     const previousQ = parseResult.data.previousQuestion;
     const isContinuationExplicit = parseResult.data.isContinuation;
@@ -261,7 +281,7 @@ export async function POST(req: NextRequest) {
       const merged = mergeContinuationQuestion(previousQ, normalizedQuestion);
       finalQuestion = merged.mergedQuestion;
       addedConstraint = merged.addedConstraint;
-    } else {
+    } else if (isFullOrRestSlot) {
       const last = recentQuestionCache.get(user.id);
       if (
         last &&
@@ -273,7 +293,9 @@ export async function POST(req: NextRequest) {
         addedConstraint = merged.addedConstraint;
       }
     }
-    recentQuestionCache.set(user.id, { question: finalQuestion, timestamp: requestStartTime });
+    if (isFullOrRestSlot) {
+      recentQuestionCache.set(user.id, { question: finalQuestion, timestamp: requestStartTime });
+    }
 
     const apiKey = getCleanGeminiKey();
     const groqKey = getCleanGroqKey();
@@ -292,6 +314,8 @@ export async function POST(req: NextRequest) {
       profile: candidateProfile,
       outputLanguage,
       helperLanguage,
+      patchSlot: patchSlot as PatchTargetSlot,
+      preGeneratedHook,
     });
 
     // Prepare contents array with conversation context
@@ -344,7 +368,7 @@ export async function POST(req: NextRequest) {
       parts: [{ text: userQuestionText }],
     });
 
-    if (!isPro && user.id !== 'demo-guest-user') {
+    if (!isPro && user.id !== 'demo-guest-user' && isFullOrRestSlot) {
       incrementUserTrialQuestions(user.id).catch((err) => {
         console.warn('[dual-stream] Failed to increment trial questions:', err);
       });
@@ -366,8 +390,10 @@ export async function POST(req: NextRequest) {
           );
         };
 
-        const maxTokens =
-          directorModifier === 'shorter' || directorModifier === 'explain_line' ? 350 : 850;
+        const maxTokens = getMaxOutputTokensForPatchSlot(
+          patchSlot as PatchTargetSlot,
+          directorModifier as AiModifier
+        );
 
         const winner = await runHedgedStreamRace({
           contents,
@@ -380,9 +406,37 @@ export async function POST(req: NextRequest) {
         });
 
         if (!winner) {
-          sendEvent('error', {
-            message: 'All AI models unavailable or quota exhausted. Please retry.',
+          if (patchSlot === 'speculative_hook') {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
+          }
+          activeModelUsed = 'emergency-fallback';
+          firstTokenTimestamp = Date.now();
+          sendEvent('telemetry', {
+            type: 'TTFT',
+            ttftMs: 50,
+            model: activeModelUsed,
+            timestamp: firstTokenTimestamp,
           });
+          const emergencyCard = buildEmergencyCoachingCard(finalQuestion, outputLanguage);
+          sendEvent('meta', {
+            domain: 'General',
+            level: 'Senior',
+            language: outputLanguage,
+            raw: 'Emergency Offline Hint | General | uk',
+          });
+          sendEvent('chunk', {
+            text: emergencyCard,
+            model: activeModelUsed,
+          });
+          sendEvent('done', {
+            text: emergencyCard,
+            ttftMs: 50,
+            totalMs: Date.now() - requestStartTime,
+            model: activeModelUsed,
+          });
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
           return;
         }
@@ -426,21 +480,28 @@ export async function POST(req: NextRequest) {
         } catch (streamErr) {
           hasStreamError = true;
           console.warn(`[DualStream] Stream pump error on ${winner.model}:`, streamErr);
-          sendEvent('error', {
-            id: `ds-err-${Date.now()}`,
-            message: 'Помилка потокової генерації відповіді ШІ. Спробуйте ще раз.',
-          });
+          if (patchSlot !== 'speculative_hook') {
+            const emergencyCard = buildEmergencyCoachingCard(finalQuestion, outputLanguage);
+            sendEvent('chunk', {
+              text: emergencyCard,
+              model: 'emergency-fallback',
+            });
+            fullGeneratedText = emergencyCard;
+          }
         }
 
-        if (hasStreamError || !fullGeneratedText.trim()) {
-          if (!hasStreamError) {
-            sendEvent('error', {
-              id: `ds-empty-${Date.now()}`,
-              message: 'ШІ повернув порожню відповідь.',
-            });
+        if (!fullGeneratedText.trim()) {
+          if (patchSlot === 'speculative_hook') {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+            return;
           }
-          controller.close();
-          return;
+          const emergencyCard = buildEmergencyCoachingCard(finalQuestion, outputLanguage);
+          sendEvent('chunk', {
+            text: emergencyCard,
+            model: 'emergency-fallback',
+          });
+          fullGeneratedText = emergencyCard;
         }
 
         // Parse structured output phases
@@ -453,11 +514,22 @@ export async function POST(req: NextRequest) {
           structured.meta?.raw || `${domain} | ${level} | ${langTag}`;
 
         const finalPillars = structured.pillars;
+        const resolvedHook =
+          patchSlot === 'rest_after_hook'
+            ? structured.hook || preGeneratedHook || ''
+            : patchSlot === 'deep_dive'
+            ? ''
+            : structured.hook || fullGeneratedText.slice(0, 160);
+        const resolvedDeepDive =
+          patchSlot === 'deep_dive'
+            ? structured.deepDive || structured.hook
+            : structured.deepDive;
 
         // Final structured completion event
         sendEvent('complete', {
           id: `ds-${Date.now()}`,
           model: activeModelUsed,
+          patchSlot,
           ttftMs,
           totalDurationMs,
           rawText: fullGeneratedText,
@@ -466,9 +538,9 @@ export async function POST(req: NextRequest) {
             domain: structured.meta?.domain || domain,
             level: structured.meta?.level || level,
             language: structured.meta?.language || langTag,
-            hook: structured.hook || fullGeneratedText.slice(0, 160),
+            hook: resolvedHook,
             pillars: finalPillars,
-            deepDive: structured.deepDive,
+            deepDive: resolvedDeepDive,
             followUpTrap: structured.followUpTrap,
           },
         });

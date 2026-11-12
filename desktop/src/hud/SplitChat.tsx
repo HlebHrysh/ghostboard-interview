@@ -82,6 +82,13 @@ export const SplitChat = memo(function SplitChat({
     }
   }, [sessionState.messages.length, sessionState.interim?.text]);
 
+  // Reset scroll to top when switching viewed answer cards
+  useEffect(() => {
+    if (answerScrollRef.current && viewed?.status !== 'streaming') {
+      answerScrollRef.current.scrollTop = 0;
+    }
+  }, [viewed?.id]);
+
   // Auto-scroll right answer view when new streaming answer arrives or changes
   useEffect(() => {
     if (answerScrollRef.current && viewed?.status === 'streaming') {
@@ -135,7 +142,7 @@ export const SplitChat = memo(function SplitChat({
               <div className="h-full flex flex-col items-center justify-center text-center p-4 text-zinc-500">
                 <span className="w-2 h-2 rounded-full bg-emerald-400/80 animate-ping mb-2" />
                 <p className="text-xs font-mono">СЛУХАЮ АУДІО...</p>
-                <p className="text-[11px] mt-1 text-zinc-600">
+                <p className="text-xs mt-1 text-zinc-400">
                   Запитання інтерв'юера з'являться тут автоматично
                 </p>
               </div>
@@ -216,7 +223,7 @@ export const SplitChat = memo(function SplitChat({
             </div>
 
             {/* Timings */}
-            <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 shrink-0">
+            <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 shrink-0">
               {viewed?.ttftMs && <span>TTFT: {viewed.ttftMs}ms</span>}
               {viewed?.totalMs && <span>Total: {viewed.totalMs}ms</span>}
             </div>
@@ -224,7 +231,7 @@ export const SplitChat = memo(function SplitChat({
 
           {/* Emergency Bridge Banner */}
           {isBridgeActive && bridgePhrase && (
-            <div className="mx-3.5 mt-2.5 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 duration-200 shadow-lg shadow-amber-950/20 backdrop-blur-md z-20">
+            <div className="mx-3.5 mt-2.5 px-3 py-2 rounded-xl bg-[#19150d] border border-amber-500/40 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 duration-200 shadow-lg shadow-amber-950/20 z-20">
               <Sparkles size={14} className="text-amber-400 shrink-0 mt-0.5 animate-pulse" />
               <div className="flex-1 min-w-0">
                 <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-300 mb-0.5 flex items-center justify-between">
@@ -255,7 +262,7 @@ export const SplitChat = memo(function SplitChat({
                 data-tauri-drag-region="false"
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={() => onSelectAnswer(null)}
-                className="gb-nodrag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 text-xs font-semibold shadow-lg backdrop-blur-md transition-all active:scale-95"
+                className="gb-nodrag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a1b14] hover:bg-[#0e241b] border border-emerald-400/50 text-emerald-300 text-xs font-semibold shadow-lg transition-all active:scale-95"
               >
                 <ArrowDownCircle size={13} className="text-emerald-400 animate-bounce" />
                 <span>До останньої відповіді{queuedCount > 0 ? ` (+${queuedCount})` : ''}</span>

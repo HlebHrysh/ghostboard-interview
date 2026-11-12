@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserByEmail, createUser, createSession, setUserPassword, MIN_PASSWORD_LENGTH } from '@/lib/serverDb';
-import { validateOrigin, checkRateLimit } from '@/lib/rateLimit';
+import { validateOrigin, checkRateLimit, checkKeyRateLimit } from '@/lib/rateLimit';
 
 /**
  * POST /api/auth/register
@@ -41,6 +41,16 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+
+    // Anti-abuse: max 5 registration attempts per 15 minutes per email address
+    const emailRateLimit = await checkKeyRateLimit(cleanEmail, 5, 15 * 60 * 1000, 'auth_register_email');
+    if (!emailRateLimit.allowed) {
+      return NextResponse.json(
+        { error: 'Too many attempts for this email address', code: 'RATE_LIMITED', retryAfterSec: emailRateLimit.retryAfterSec },
+        { status: 429, headers: { 'Retry-After': String(emailRateLimit.retryAfterSec) } }
+      );
+    }
+
     if (await getUserByEmail(cleanEmail)) {
       return NextResponse.json({ error: 'Email already registered', code: 'EMAIL_TAKEN' }, { status: 409 });
     }

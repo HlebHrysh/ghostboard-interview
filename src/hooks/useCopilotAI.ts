@@ -5,6 +5,85 @@ import { normalizeTechnicalSpeech, hasTechnicalKeyword, isFillerOrNoise } from '
 import { CandidateProfile } from '@/components/CandidateProfileModal';
 import { parseStructuredGhostboardOutput, mergeContinuationQuestion } from '@/lib/aiPromptCore';
 import { matchSpokenTranscriptToPillars } from '@/lib/voiceAnchorTracker';
+import { evaluateSpeechIntent } from '@/lib/speechIntentGate';
+import {
+  PatchTargetSlot,
+  SpeculativeHookEntry,
+  StructuredAnswerSlots,
+  isSpeculativeHookValid,
+  mergeSurgicalAnswerSlots,
+  resolvePatchSlotForModifier,
+  tokenizeSignificantWords,
+} from '@/lib/speculativeSlotEngine';
+
+const SPECULATIVE_DEBOUNCE_MS = 280;
+const SPECULATIVE_CACHE_TTL_MS = 20000;
+
+async function consumeDualStreamSSE(
+  body: ReadableStream<Uint8Array>,
+  handlers: {
+    onTelemetry?: (data: { ttftMs?: number; model?: string }) => void;
+    onChunk?: (text: string) => 'stop' | void | Promise<'stop' | void>;
+    onError?: (message: string) => void;
+  }
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = 'chunk';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          currentEvent = 'chunk';
+          continue;
+        }
+
+        if (trimmed.startsWith('event:')) {
+          currentEvent = trimmed.replace(/^event:\s*/, '').trim();
+          continue;
+        }
+
+        if (trimmed.startsWith('data:')) {
+          const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
+          if (jsonStr === '[DONE]') continue;
+
+          let parsed: Record<string, unknown>;
+          try {
+            parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
+
+          if (currentEvent === 'telemetry') {
+            handlers.onTelemetry?.(parsed as { ttftMs?: number; model?: string });
+          } else if (currentEvent === 'chunk' && typeof parsed.text === 'string' && parsed.text) {
+            const action = await handlers.onChunk?.(parsed.text);
+            if (action === 'stop') {
+              try {
+                await reader.cancel();
+              } catch {}
+              return;
+            }
+          } else if (currentEvent === 'error') {
+            throw new Error(typeof parsed.message === 'string' ? parsed.message : 'Stream error');
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
 
 interface CopilotMessages {
   analyzing: (q: string) => string;
@@ -123,6 +202,10 @@ export function useCopilotAI({
   const [isCopilotGenerating, setIsCopilotGenerating] = useState(false);
   
   const pendingFragmentsRef = useRef<string[]>([]);
+  const interviewerStoryBufferRef = useRef<string>('');
+  const interviewerStoryClausesRef = useRef<Array<{ text: string; timestamp: number }>>([]);
+  const lastInterviewerChunkTimeRef = useRef<number>(0);
+  const lastAutoVoiceTriggerTimeRef = useRef<number>(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCopilotGeneratingRef = useRef<boolean>(false);
   const lastQATimestampRef = useRef<number>(0);
@@ -132,11 +215,134 @@ export function useCopilotAI({
   const sessionDurationRef = useRef<number>(sessionDuration);
   sessionDurationRef.current = sessionDuration;
 
+  const [speculativeHitMap, setSpeculativeHitMap] = useState<Record<string, boolean>>({});
+  const [patchingSlotMap, setPatchingSlotMap] = useState<Record<string, PatchTargetSlot>>({});
+  const speculativeHookCacheRef = useRef<SpeculativeHookEntry | null>(null);
+  const speculativeDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const speculativeAbortRef = useRef<AbortController | null>(null);
+  const speculativeInFlightQuestionRef = useRef<string | null>(null);
+  const refineAbortRef = useRef<AbortController | null>(null);
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
   };
+
+  const buildRecentHistory = useCallback(() => {
+    return interviewQAsRef.current
+      .slice(0, 2)
+      .reverse()
+      .flatMap((qa) => [
+        { speaker: 'interviewer' as const, text: qa.question },
+        { speaker: 'candidate' as const, text: qa.quickAnswer || qa.startHook || '' },
+      ])
+      .filter((h) => h.text.trim().length > 0);
+  }, []);
+
+  const clearSpeculativeDebounce = useCallback(() => {
+    if (speculativeDebounceRef.current) {
+      clearTimeout(speculativeDebounceRef.current);
+      speculativeDebounceRef.current = null;
+    }
+  }, []);
+
+  const abortSpeculativePrefetch = useCallback(() => {
+    clearSpeculativeDebounce();
+    if (speculativeAbortRef.current) {
+      speculativeAbortRef.current.abort();
+      speculativeAbortRef.current = null;
+    }
+    speculativeInFlightQuestionRef.current = null;
+    speculativeHookCacheRef.current = null;
+  }, [clearSpeculativeDebounce]);
+
+  const startSpeculativeHookPrefetch = useCallback(
+    async (interimQuestion: string) => {
+      const cleanQ = interimQuestion.trim();
+      if (!cleanQ || isCopilotGeneratingRef.current) return;
+
+      if (
+        speculativeInFlightQuestionRef.current &&
+        isSpeculativeHookValid(speculativeInFlightQuestionRef.current, cleanQ)
+      ) {
+        return;
+      }
+
+      const existingCache = speculativeHookCacheRef.current;
+      if (
+        existingCache &&
+        Date.now() - existingCache.createdAt < SPECULATIVE_CACHE_TTL_MS &&
+        isSpeculativeHookValid(existingCache.interimQuestion, cleanQ)
+      ) {
+        return;
+      }
+
+      if (speculativeAbortRef.current) {
+        speculativeAbortRef.current.abort();
+      }
+
+      const controller = new AbortController();
+      speculativeAbortRef.current = controller;
+      speculativeInFlightQuestionRef.current = cleanQ;
+
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      let rawHookStream = '';
+
+      try {
+        const res = await fetch('/api/ai/dual-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            question: cleanQ,
+            history: buildRecentHistory(),
+            outputLanguage: outputLanguageRef.current.startsWith('bilingual')
+              ? 'bilingual'
+              : outputLanguageRef.current,
+            helperLanguage: outputLanguageRef.current === 'bilingual_ru' ? 'ru' : 'uk',
+            candidateProfile: candidateProfileRef.current,
+            isConcise: isConciseRef.current,
+            directorModifier: 'normal',
+            patchSlot: 'speculative_hook',
+          }),
+        });
+
+        if (!res.ok || !res.body) return;
+
+        await consumeDualStreamSSE(res.body, {
+          onChunk: (chunkText) => {
+            if (controller.signal.aborted) return 'stop';
+            rawHookStream += chunkText;
+            if (rawHookStream.trim().startsWith('<<<IGNORE>>>')) {
+              speculativeHookCacheRef.current = null;
+              return 'stop';
+            }
+            const structured = parseStructuredGhostboardOutput(rawHookStream);
+            if (structured.hook.trim().length > 0) {
+              speculativeHookCacheRef.current = {
+                interimQuestion: cleanQ,
+                normalizedTokens: tokenizeSignificantWords(cleanQ),
+                rawHookStream,
+                meta: structured.meta?.raw || '',
+                hook: structured.hook,
+                createdAt: Date.now(),
+              };
+            }
+          },
+        });
+      } catch {
+        // Speculative prefetch runs silently in background; never surface errors.
+      } finally {
+        clearTimeout(timeoutId);
+        if (speculativeAbortRef.current === controller) {
+          speculativeAbortRef.current = null;
+          speculativeInFlightQuestionRef.current = null;
+        }
+      }
+    },
+    [buildRecentHistory, candidateProfileRef, isConciseRef, outputLanguageRef]
+  );
 
   const processAggregatedQuestion = async (
     overrideText?: string,
@@ -219,6 +425,8 @@ export function useCopilotAI({
     }
 
     pendingFragmentsRef.current = [];
+    interviewerStoryClausesRef.current = [];
+    interviewerStoryBufferRef.current = '';
     lastQATimestampRef.current = now;
     lastQATextRef.current = lower;
     isCopilotGeneratingRef.current = true;
@@ -236,14 +444,40 @@ export function useCopilotAI({
       : null;
 
     // Rolling 2-turn history for follow-up context resolution
-    const recentHistory = interviewQAsRef.current
-      .slice(0, 2)
-      .reverse()
-      .flatMap((qa) => [
-        { speaker: 'interviewer' as const, text: qa.question },
-        { speaker: 'candidate' as const, text: qa.quickAnswer || qa.startHook || '' },
-      ])
-      .filter((h) => h.text.trim().length > 0);
+    const recentHistory = buildRecentHistory();
+
+    // Check Speculative Hook Cache (Idea #1: 0ms TTFT Hit)
+    clearSpeculativeDebounce();
+    const cachedSpec = speculativeHookCacheRef.current;
+    const isSpecCacheFresh = cachedSpec ? now - cachedSpec.createdAt < SPECULATIVE_CACHE_TTL_MS : false;
+    const isSpeculativeHit = Boolean(
+      !isContinuationMerged &&
+        cachedSpec &&
+        isSpecCacheFresh &&
+        cachedSpec.hook.trim().length > 0 &&
+        isSpeculativeHookValid(cachedSpec.interimQuestion, targetQuestion)
+    );
+    const hitSpecEntry = isSpeculativeHit ? cachedSpec : null;
+
+    // Consume or invalidate speculative cache and cancel any stale speculative request
+    speculativeHookCacheRef.current = null;
+    if (speculativeAbortRef.current) {
+      speculativeAbortRef.current.abort();
+      speculativeAbortRef.current = null;
+    }
+    speculativeInFlightQuestionRef.current = null;
+
+    const cachedParsedMeta = hitSpecEntry
+      ? parseStructuredGhostboardOutput(hitSpecEntry.rawHookStream).meta
+      : undefined;
+    const speculativeBaseSlots: StructuredAnswerSlots | null = hitSpecEntry
+      ? {
+          meta: hitSpecEntry.meta || cachedParsedMeta?.raw,
+          hook: hitSpecEntry.hook,
+          pillars: [],
+          deepDive: '',
+        }
+      : null;
 
     const previousActiveQAId = activeQAIdRef.current;
     const qaId = `qa_${now}`;
@@ -253,17 +487,22 @@ export function useCopilotAI({
       timestamp: now,
       timecode: formatTime(sessionDurationRef.current),
       question: targetQuestion,
-      startHook: '',
-      quickAnswer: '',
+      startHook: hitSpecEntry ? hitSpecEntry.hook : '',
+      quickAnswer: hitSpecEntry ? hitSpecEntry.hook : '',
       nativeTranslation: null,
       hints: [],
+      meta: cachedParsedMeta,
       tag: '#InterviewQA',
       isStreaming: true,
-      ttftMs: undefined,
+      ttftMs: hitSpecEntry ? 0 : undefined,
       isContinuationMerged,
       completedPillarIndices: [],
       activePillarIndex: 0,
     };
+
+    if (hitSpecEntry) {
+      setSpeculativeHitMap((prev) => ({ ...prev, [qaId]: true }));
+    }
 
     setInterviewQAs((prev) => [initialQA, ...prev]);
 
@@ -288,9 +527,9 @@ export function useCopilotAI({
     });
 
     const requestStartMs = performance.now();
-    let firstTokenTime: number | null = null;
+    let firstTokenTime: number | null = hitSpecEntry ? requestStartMs : null;
     let accumulatedText = '';
-    let measuredTtft: number | undefined = undefined;
+    let measuredTtft: number | undefined = hitSpecEntry ? 0 : undefined;
 
     try {
       const res = await fetch('/api/ai/dual-stream', {
@@ -309,103 +548,91 @@ export function useCopilotAI({
           candidateProfile: candidateProfileRef.current,
           isConcise: isConciseRef.current,
           directorModifier: 'normal',
+          patchSlot: hitSpecEntry ? 'rest_after_hook' : 'full',
+          ...(hitSpecEntry ? { preGeneratedHook: hitSpecEntry.hook } : {}),
         }),
       });
 
       if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+        let ignoredByGuardrail = false;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        await consumeDualStreamSSE(res.body, {
+          onTelemetry: (parsed) => {
+            if (measuredTtft === undefined) {
+              measuredTtft = parsed.ttftMs || Math.round(performance.now() - requestStartMs);
+            }
+          },
+          onChunk: (chunkText) => {
+            accumulatedText += chunkText;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          let currentEvent = 'chunk';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            if (trimmed.startsWith('event:')) {
-              currentEvent = trimmed.replace(/^event:\s*/, '').trim();
-              continue;
+            if (!hitSpecEntry && accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
+              ignoredByGuardrail = true;
+              return 'stop';
             }
 
-            if (trimmed.startsWith('data:')) {
-              const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
-              if (jsonStr === '[DONE]') continue;
+            const structured = parseStructuredGhostboardOutput(accumulatedText);
 
-              try {
-                const parsed = JSON.parse(jsonStr);
+            if (
+              !firstTokenTime &&
+              (structured.hook.length > 0 ||
+                (!accumulatedText.startsWith('<<<') && accumulatedText.trim().length > 0))
+            ) {
+              firstTokenTime = performance.now();
+              measuredTtft = Math.round(firstTokenTime - requestStartMs);
+            }
 
-                if (currentEvent === 'telemetry') {
-                  if (!measuredTtft) {
-                    measuredTtft = parsed.ttftMs || Math.round(performance.now() - requestStartMs);
-                  }
-                } else if (currentEvent === 'chunk' && parsed.text) {
-                  accumulatedText += parsed.text;
-
-                  if (accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
-                    try {
-                      await reader.cancel();
-                    } catch {}
-                    if (toastId) toast.dismiss(toastId);
-                    setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
-                    if (activeQAIdRef.current === qaId) {
-                      setActiveQAId(previousActiveQAId);
-                      activeQAIdRef.current = previousActiveQAId;
-                    }
-                    return;
-                  }
-
-                  const structured = parseStructuredGhostboardOutput(accumulatedText);
-
-                  if (!firstTokenTime && (structured.hook.length > 0 || (!accumulatedText.startsWith('<<<') && accumulatedText.trim().length > 0))) {
-                    firstTokenTime = performance.now();
-                    measuredTtft = Math.round(firstTokenTime - requestStartMs);
-                  }
-
-                  const updatedQA: InterviewQAItem = {
-                    id: qaId,
-                    sourceMessageId,
-                    timestamp: now,
-                    timecode: formatTime(sessionDurationRef.current),
-                    question: targetQuestion,
-                    startHook: structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
-                    quickAnswer: structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
-                    hints: structured.pillars.length > 0 ? structured.pillars : (structured.hook ? [] : msg.defaultHints),
-                    pillars: structured.pillars.length > 0 ? structured.pillars : undefined,
-                    codeSnippet: structured.deepDive || undefined,
+            const mergedSlots = speculativeBaseSlots
+              ? mergeSurgicalAnswerSlots(
+                  speculativeBaseSlots,
+                  {
+                    meta: structured.meta?.raw,
+                    hook: structured.hook,
+                    pillars: structured.pillars,
+                    deepDive: structured.deepDive,
                     followUpTrap: structured.followUpTrap,
-                    isContinuationMerged,
-                    completedPillarIndices: [],
-                    activePillarIndex: 0,
-                    meta: structured.meta,
-                    tag: '#InterviewQA',
-                    ttftMs: measuredTtft,
-                    isStreaming: true,
-                  };
+                  },
+                  'rest_after_hook'
+                )
+              : null;
 
-                  setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
-                  hudBroadcastRef.current?.postMessage({
-                    type: 'NEW_QA',
-                    qa: updatedQA,
-                  });
-                } else if (currentEvent === 'error') {
-                  throw new Error(parsed.message || 'Stream error');
-                }
-              } catch (e: unknown) {
-                if ((e as Error)?.message?.includes('Stream error')) throw e;
-              }
-            }
-          }
-        }
+            const resolvedHook = mergedSlots
+              ? mergedSlots.hook
+              : structured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText);
+            const resolvedPillars = mergedSlots ? mergedSlots.pillars : structured.pillars;
+            const resolvedDeepDive = mergedSlots ? mergedSlots.deepDive : structured.deepDive;
+            const resolvedTrap = mergedSlots ? mergedSlots.followUpTrap : structured.followUpTrap;
 
-        if (accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
+            const updatedQA: InterviewQAItem = {
+              id: qaId,
+              sourceMessageId,
+              timestamp: now,
+              timecode: formatTime(sessionDurationRef.current),
+              question: targetQuestion,
+              startHook: resolvedHook,
+              quickAnswer: resolvedHook,
+              hints: resolvedPillars.length > 0 ? resolvedPillars : resolvedHook ? [] : msg.defaultHints,
+              pillars: resolvedPillars.length > 0 ? resolvedPillars : undefined,
+              codeSnippet: resolvedDeepDive || undefined,
+              deepDive: resolvedDeepDive || undefined,
+              followUpTrap: resolvedTrap,
+              isContinuationMerged,
+              completedPillarIndices: [],
+              activePillarIndex: 0,
+              meta: structured.meta || cachedParsedMeta,
+              tag: '#InterviewQA',
+              ttftMs: measuredTtft,
+              isStreaming: true,
+            };
+
+            setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
+            hudBroadcastRef.current?.postMessage({
+              type: 'NEW_QA',
+              qa: updatedQA,
+            });
+          },
+        });
+
+        if (ignoredByGuardrail || (!hitSpecEntry && accumulatedText.trim().startsWith('<<<IGNORE>>>'))) {
           if (toastId) toast.dismiss(toastId);
           setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
           if (activeQAIdRef.current === qaId) {
@@ -416,25 +643,50 @@ export function useCopilotAI({
         }
 
         const finalStructured = parseStructuredGhostboardOutput(accumulatedText);
+        const finalMerged = speculativeBaseSlots
+          ? mergeSurgicalAnswerSlots(
+              speculativeBaseSlots,
+              {
+                meta: finalStructured.meta?.raw,
+                hook: finalStructured.hook,
+                pillars: finalStructured.pillars,
+                deepDive: finalStructured.deepDive,
+                followUpTrap: finalStructured.followUpTrap,
+              },
+              'rest_after_hook'
+            )
+          : null;
+
+        const finalHook = finalMerged
+          ? finalMerged.hook
+          : finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText.slice(0, 160));
+        const finalQuickAnswer = finalMerged
+          ? finalMerged.hook
+          : finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText);
+        const finalPillars = finalMerged ? finalMerged.pillars : finalStructured.pillars;
+        const finalDeepDive = finalMerged ? finalMerged.deepDive : finalStructured.deepDive;
+        const finalTrap = finalMerged ? finalMerged.followUpTrap : finalStructured.followUpTrap;
+
         const finalQA: InterviewQAItem = {
           id: qaId,
           sourceMessageId,
           timestamp: now,
           timecode: formatTime(sessionDurationRef.current),
           question: targetQuestion,
-          startHook: finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText.slice(0, 160)),
-          quickAnswer: finalStructured.hook || (accumulatedText.startsWith('<<<') ? '' : accumulatedText),
+          startHook: finalHook,
+          quickAnswer: finalQuickAnswer,
           nativeTranslation: null,
-          hints: finalStructured.pillars.length > 0 ? finalStructured.pillars : msg.defaultHints,
-          pillars: finalStructured.pillars.length > 0 ? finalStructured.pillars : undefined,
+          hints: finalPillars.length > 0 ? finalPillars : msg.defaultHints,
+          pillars: finalPillars.length > 0 ? finalPillars : undefined,
           tag: '#InterviewQA',
-          codeSnippet: finalStructured.deepDive || undefined,
-          followUpTrap: finalStructured.followUpTrap,
+          codeSnippet: finalDeepDive || undefined,
+          deepDive: finalDeepDive || undefined,
+          followUpTrap: finalTrap,
           isContinuationMerged,
           completedPillarIndices: [],
           activePillarIndex: 0,
-          meta: finalStructured.meta,
-          ttftMs: measuredTtft || Math.round(performance.now() - requestStartMs),
+          meta: finalStructured.meta || cachedParsedMeta,
+          ttftMs: measuredTtft !== undefined ? measuredTtft : Math.round(performance.now() - requestStartMs),
           isStreaming: false,
         };
 
@@ -551,29 +803,99 @@ export function useCopilotAI({
       pendingFragmentsRef.current.push(clean);
     }
 
-    // In auto mode, trigger analysis when speaker pauses or finalizes speech
-    if (triggerModeRef.current === 'auto' && !isCopilotGeneratingRef.current) {
-      const combined = pendingFragmentsRef.current.join(' ');
-      const words = combined.split(/\s+/).filter(Boolean).length;
-      if (words >= 3) {
-        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    // Idea #1: Speculative Hook Prefetch Engine during Interim Speech
+    if (!isFinal && !speechFinal) {
+      const normalizedInterim = normalizeTechnicalSpeech(clean);
+      const interimWords = normalizedInterim.split(/\s+/).filter(Boolean);
+      if (interimWords.length >= 6 && !isCopilotGeneratingRef.current) {
+        const interimEval = evaluateSpeechIntent(
+          normalizedInterim,
+          interviewerStoryBufferRef.current,
+          200
+        );
+        if (interimEval.decision === 'TRIGGER_NOW' && interimEval.score >= 50) {
+          const candidateQuestion = interimEval.normalizedQuestion || normalizedInterim;
+          const activeInFlight = speculativeInFlightQuestionRef.current;
+          const cachedEntry = speculativeHookCacheRef.current;
+          const alreadyValidInFlight =
+            activeInFlight && isSpeculativeHookValid(activeInFlight, candidateQuestion);
+          const alreadyValidCached =
+            cachedEntry &&
+            Date.now() - cachedEntry.createdAt < SPECULATIVE_CACHE_TTL_MS &&
+            isSpeculativeHookValid(cachedEntry.interimQuestion, candidateQuestion);
 
-        // Smart Turn-Taking: check if thought is dangling mid-sentence
-        const isDanglingThought = /(?:[,–—\-\:]|\b(?:а|і|й|та|але|бо|тому що|якщо|чи|щоб|як|в|у|на|з|із|зі|про|до|через|де|коли|and|or|but|if|because|so|with|in|on|to|at|for|about|then|when|where|while))\s*$/i.test(combined.trim());
-        const hasQuestionSign = combined.includes('?');
+          if (!alreadyValidInFlight && !alreadyValidCached) {
+            clearSpeculativeDebounce();
+            speculativeDebounceRef.current = setTimeout(() => {
+              void startSpeculativeHookPrefetch(candidateQuestion);
+            }, SPECULATIVE_DEBOUNCE_MS);
+          }
+        }
+      }
+      return null;
+    }
 
-        const delay = isDanglingThought
-          ? (speechFinal ? 1200 : 1600)
-          : hasQuestionSign
-          ? (speechFinal ? 650 : 900)
-          : (speechFinal ? 750 : 1100);
+    if (isFinal || speechFinal) {
+      const now = Date.now();
+      const silenceMs = lastInterviewerChunkTimeRef.current > 0 ? Math.max(0, now - lastInterviewerChunkTimeRef.current) : 350;
+      lastInterviewerChunkTimeRef.current = now;
 
-        debounceTimerRef.current = setTimeout(() => {
-          processAggregatedQuestion();
-        }, delay);
+      // Maintain rolling 30-second context window of unspoken/untriggered interviewer clauses
+      interviewerStoryClausesRef.current = interviewerStoryClausesRef.current.filter(
+        (c) => now - c.timestamp <= 30000
+      );
+      interviewerStoryBufferRef.current = interviewerStoryClausesRef.current.map((c) => c.text).join(' ');
+
+      const evaluation = evaluateSpeechIntent(clean, interviewerStoryBufferRef.current, silenceMs);
+
+      // 1. IGNORE_NOISE: Display transcript in Left Dialogue column, but DO NOT trigger /api/ai/dual-stream
+      if (evaluation.decision === 'IGNORE_NOISE') {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        abortSpeculativePrefetch();
+        return { decision: 'IGNORE_NOISE' as const, evaluation };
+      }
+
+      // 2. WAIT_FOR_COMPLETION: Storytelling or mid-sentence pause -> Append to story buffer and wait
+      if (evaluation.decision === 'WAIT_FOR_COMPLETION') {
+        interviewerStoryClausesRef.current.push({ text: clean, timestamp: now });
+        interviewerStoryBufferRef.current = interviewerStoryClausesRef.current.map((c) => c.text).join(' ');
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        return { decision: 'WAIT_FOR_COMPLETION' as const, evaluation };
+      }
+
+      // 3. TRIGGER_NOW: Explicit question or prompt -> Immediately trigger /api/ai/dual-stream!
+      if (evaluation.decision === 'TRIGGER_NOW') {
+        const targetQuestion = evaluation.normalizedQuestion || clean;
+        interviewerStoryClausesRef.current = [];
+        interviewerStoryBufferRef.current = '';
+        pendingFragmentsRef.current = [];
+        clearSpeculativeDebounce();
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+
+        if (triggerModeRef.current === 'auto') {
+          const elapsedSinceLastAuto = now - lastAutoVoiceTriggerTimeRef.current;
+          // Minimum 2200ms cooldown for automatic voice triggers so rapid bursts never fire parallel requests
+          if (elapsedSinceLastAuto < 2200 || isCopilotGeneratingRef.current) {
+            return { decision: 'WAIT_FOR_COMPLETION' as const, evaluation };
+          }
+          lastAutoVoiceTriggerTimeRef.current = now;
+          void processAggregatedQuestion(targetQuestion, false);
+        }
+        return { decision: 'TRIGGER_NOW' as const, evaluation };
       }
     }
-  }, []);
+
+    return null;
+  }, [abortSpeculativePrefetch, clearSpeculativeDebounce, startSpeculativeHookPrefetch]);
 
   const handleManualEnterTrigger = useCallback((liveTranscript: string) => {
     const msg = getMsg(outputLanguageRef.current);
@@ -605,30 +927,11 @@ export function useCopilotAI({
     qaId: string,
     refinement: 'under_the_hood' | 'code' | 'shorter' | 're_angle' | 'simpler'
   ) => {
-    const existing = interviewQAs.find((q) => q.id === qaId);
+    const existing = interviewQAsRef.current.find((q) => q.id === qaId);
     if (!existing) return;
 
     const msg = getMsg(outputLanguageRef.current);
     const labels: Record<string, string> = msg.refineLabels;
-
-    const pendingQA: InterviewQAItem = {
-      ...existing,
-      startHook: labels[refinement] || msg.updating,
-      quickAnswer: '...',
-    };
-
-    setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? pendingQA : q)));
-    hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: pendingQA });
-
-    const restore = () => {
-      setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? existing : q)));
-      hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: existing });
-    };
-
-    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
-      question: qa.question,
-      answer: qa.quickAnswer || qa.startHook || '',
-    }));
 
     const modifierMap: Record<string, string> = {
       under_the_hood: 'more_technical',
@@ -638,16 +941,65 @@ export function useCopilotAI({
       simpler: 'simpler',
     };
     const directorModifier = modifierMap[refinement] || 'normal';
+    const slotMode = resolvePatchSlotForModifier(directorModifier);
+
+    const existingSlots: StructuredAnswerSlots = {
+      meta: existing.meta?.raw,
+      hook: existing.startHook || existing.quickAnswer || '',
+      pillars: existing.pillars || existing.hints || [],
+      deepDive: existing.codeSnippet || existing.deepDive || '',
+      followUpTrap: existing.followUpTrap,
+    };
+
+    if (refineAbortRef.current) {
+      refineAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    refineAbortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+    const isSuperseded = () => refineAbortRef.current !== controller;
+
+    // Idea #4: Surgical Slot Patching — keep existing answer frozen in state (no UI wipe or jump)
+    setPatchingSlotMap((prev) => ({ ...prev, [qaId]: slotMode }));
+    const streamingPlaceholderQA: InterviewQAItem = {
+      ...existing,
+      isStreaming: true,
+    };
+    setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? streamingPlaceholderQA : q)));
+    hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: streamingPlaceholderQA });
+    toast.loading(labels[refinement] || msg.updating, { id: 'copilot-refine' });
+
+    const clearPatching = () => {
+      setPatchingSlotMap((prev) => {
+        if (!(qaId in prev)) return prev;
+        const next = { ...prev };
+        delete next[qaId];
+        return next;
+      });
+    };
+
+    const restore = () => {
+      if (isSuperseded()) return;
+      clearPatching();
+      setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? existing : q)));
+      hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: existing });
+    };
+
+    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
+      question: qa.question,
+      answer: qa.quickAnswer || qa.startHook || '',
+    }));
 
     try {
       const res = await fetch('/api/ai/dual-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(20000),
+        signal: controller.signal,
         body: JSON.stringify({
           question: existing.question,
           history: recentHistory,
           directorModifier,
+          patchSlot: slotMode,
           outputLanguage: outputLanguageRef.current.startsWith('bilingual')
             ? 'bilingual'
             : outputLanguageRef.current,
@@ -658,66 +1010,72 @@ export function useCopilotAI({
       });
 
       if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
         let accumulatedText = '';
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        await consumeDualStreamSSE(res.body, {
+          onChunk: (chunkText) => {
+            if (isSuperseded()) return 'stop';
+            accumulatedText += chunkText;
+            const structured = parseStructuredGhostboardOutput(accumulatedText);
+            const incomingSlots: StructuredAnswerSlots = {
+              meta: structured.meta?.raw,
+              hook: structured.hook,
+              pillars: structured.pillars,
+              deepDive: structured.deepDive,
+              followUpTrap: structured.followUpTrap,
+            };
+            const merged = mergeSurgicalAnswerSlots(existingSlots, incomingSlots, slotMode);
+            const fallbackUntagged =
+              slotMode === 'full' && !accumulatedText.startsWith('<<<') ? accumulatedText : '';
+            const resolvedHook = merged.hook || fallbackUntagged;
+            const resolvedPillars =
+              merged.pillars.length > 0 ? merged.pillars : slotMode === 'full' ? existing.hints : [];
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+            const updatedQA: InterviewQAItem = {
+              ...existing,
+              startHook: resolvedHook,
+              quickAnswer: resolvedHook,
+              hints: resolvedPillars.length > 0 ? resolvedPillars : existing.hints,
+              pillars: merged.pillars.length > 0 ? merged.pillars : existing.pillars,
+              codeSnippet: merged.deepDive || undefined,
+              deepDive: merged.deepDive || undefined,
+              followUpTrap: merged.followUpTrap,
+              meta: structured.meta || existing.meta,
+              isStreaming: true,
+            };
+            setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
+            hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: updatedQA });
+          },
+        });
 
-          let currentEvent = 'chunk';
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            if (trimmed.startsWith('event:')) {
-              currentEvent = trimmed.replace(/^event:\s*/, '').trim();
-              continue;
-            }
-
-            if (trimmed.startsWith('data:')) {
-              const jsonStr = trimmed.replace(/^data:\s*/, '').trim();
-              if (jsonStr === '[DONE]') continue;
-
-              try {
-                const parsed = JSON.parse(jsonStr);
-                if (currentEvent === 'chunk' && parsed.text) {
-                  accumulatedText += parsed.text;
-                  const structured = parseStructuredGhostboardOutput(accumulatedText);
-                  const updatedQA: InterviewQAItem = {
-                    ...existing,
-                    startHook: structured.hook || accumulatedText,
-                    quickAnswer: structured.hook || accumulatedText,
-                    hints: structured.pillars.length > 0 ? structured.pillars : existing.hints,
-                    codeSnippet: structured.deepDive !== undefined ? structured.deepDive : existing.codeSnippet,
-                    meta: structured.meta || existing.meta,
-                    isStreaming: true,
-                  };
-                  setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? updatedQA : q)));
-                  hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: updatedQA });
-                }
-              } catch {}
-            }
-          }
-        }
+        if (isSuperseded()) return;
 
         const finalStructured = parseStructuredGhostboardOutput(accumulatedText);
+        const finalIncoming: StructuredAnswerSlots = {
+          meta: finalStructured.meta?.raw,
+          hook: finalStructured.hook,
+          pillars: finalStructured.pillars,
+          deepDive: finalStructured.deepDive,
+          followUpTrap: finalStructured.followUpTrap,
+        };
+        const finalMerged = mergeSurgicalAnswerSlots(existingSlots, finalIncoming, slotMode);
+        const finalUntagged =
+          slotMode === 'full' && !accumulatedText.startsWith('<<<') ? accumulatedText : '';
+
         const finalQA: InterviewQAItem = {
           ...existing,
           timestamp: Date.now(),
-          startHook: finalStructured.hook || accumulatedText.slice(0, 160),
-          quickAnswer: finalStructured.hook || accumulatedText,
-          hints: finalStructured.pillars.length > 0 ? finalStructured.pillars : existing.hints,
-          codeSnippet: finalStructured.deepDive !== undefined ? finalStructured.deepDive : existing.codeSnippet,
+          startHook: finalMerged.hook || finalUntagged.slice(0, 160),
+          quickAnswer: finalMerged.hook || finalUntagged,
+          hints: finalMerged.pillars.length > 0 ? finalMerged.pillars : existing.hints,
+          pillars: finalMerged.pillars.length > 0 ? finalMerged.pillars : existing.pillars,
+          codeSnippet: finalMerged.deepDive || undefined,
+          deepDive: finalMerged.deepDive || undefined,
+          followUpTrap: finalMerged.followUpTrap,
           meta: finalStructured.meta || existing.meta,
           isStreaming: false,
         };
+        clearPatching();
         setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? finalQA : q)));
         hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: finalQA });
         fetch('/api/ai/interview-sync', {
@@ -725,7 +1083,7 @@ export function useCopilotAI({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD_OR_UPDATE_QA', qa: finalQA, activeId: finalQA.id }),
         }).catch(() => {});
-        toast.success(msg.refined);
+        toast.success(msg.refined, { id: 'copilot-refine' });
         return;
       }
 
@@ -733,7 +1091,7 @@ export function useCopilotAI({
       const legacyRes = await fetch('/api/ai/interview-copilot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(20000),
+        signal: controller.signal,
         body: JSON.stringify({
           question: existing.question,
           existingQA: existing,
@@ -750,22 +1108,37 @@ export function useCopilotAI({
         }),
       });
 
+      if (isSuperseded()) return;
+
       const data = legacyRes.ok ? await legacyRes.json().catch(() => null) : null;
       if (data && data.quickAnswer) {
+        const legacyMerged = mergeSurgicalAnswerSlots(
+          existingSlots,
+          {
+            hook: data.startHook || data.quickAnswer || '',
+            pillars: Array.isArray(data.hints) ? data.hints : [],
+            deepDive: data.codeSnippet || '',
+            followUpTrap: existing.followUpTrap,
+          },
+          slotMode
+        );
         const finalQA: InterviewQAItem = {
           ...existing,
           timestamp: Date.now(),
           question: data.question || existing.question,
-          startHook: data.startHook || data.quickAnswer,
-          quickAnswer: data.quickAnswer,
-          hints: data.hints && data.hints.length > 0 ? data.hints : existing.hints,
-          codeSnippet: data.codeSnippet !== undefined ? data.codeSnippet : existing.codeSnippet,
+          startHook: legacyMerged.hook,
+          quickAnswer: legacyMerged.hook,
+          hints: legacyMerged.pillars.length > 0 ? legacyMerged.pillars : existing.hints,
+          pillars: legacyMerged.pillars.length > 0 ? legacyMerged.pillars : existing.pillars,
+          codeSnippet: legacyMerged.deepDive || undefined,
+          deepDive: legacyMerged.deepDive || undefined,
           deliveryTip: data.deliveryTip || existing.deliveryTip,
           tag: data.tag || existing.tag,
           confidenceScore: data.confidenceScore ?? existing.confidenceScore,
           docReference: data.docReference || existing.docReference,
           isStreaming: false,
         };
+        clearPatching();
         setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? finalQA : q)));
         hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: finalQA });
         fetch('/api/ai/interview-sync', {
@@ -773,15 +1146,21 @@ export function useCopilotAI({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'ADD_OR_UPDATE_QA', qa: finalQA, activeId: finalQA.id }),
         }).catch(() => {});
-        toast.success(msg.refined);
+        toast.success(msg.refined, { id: 'copilot-refine' });
       } else {
         restore();
-        toast.error(msg.refineFailed);
+        toast.error(msg.refineFailed, { id: 'copilot-refine' });
       }
     } catch (err) {
+      if (isSuperseded()) return;
       console.error('Failed to refine answer:', err);
       restore();
-      toast.error(msg.refineFailed);
+      toast.error(msg.refineFailed, { id: 'copilot-refine' });
+    } finally {
+      clearTimeout(timeoutId);
+      if (refineAbortRef.current === controller) {
+        refineAbortRef.current = null;
+      }
     }
   };
 
@@ -902,6 +1281,7 @@ export function useCopilotAI({
     isCopilotGenerating,
     isCopilotGeneratingRef,
     pendingFragmentsRef,
+    interviewerStoryBufferRef,
     debounceTimerRef,
     processAggregatedQuestion,
     handleManualEnterTrigger,
@@ -912,5 +1292,8 @@ export function useCopilotAI({
     pendingNewCountRef,
     togglePillarCompletion,
     handleExplainLine,
+    speculativeHitMap,
+    patchingSlotMap,
+    speculativeHookCacheRef,
   };
 }

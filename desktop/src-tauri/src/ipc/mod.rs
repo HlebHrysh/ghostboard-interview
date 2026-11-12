@@ -4,6 +4,20 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use crate::ipc::events::HudEvent;
 
+/// Screen Radar HUD event envelope matching `HudEvent` tagging (`type` + `payload`).
+#[derive(Clone, serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+#[serde(tag = "type", content = "payload")]
+pub enum RadarHudEvent {
+    #[serde(rename = "screenRadarReady")]
+    ScreenRadarReady {
+        detection_id: String,
+        hamming_distance: u32,
+        roi_width: u32,
+        roi_height: u32,
+        detected_at_ms: u64,
+    },
+}
+
 /// Global thread-safe dispatcher storing subscribed frontend IPC channels.
 #[derive(Clone, Default)]
 pub struct HudChannelState {
@@ -60,6 +74,30 @@ impl HudChannelState {
         }
     }
 
+    /// Emits a `screenRadarReady` event across all webviews via `screen-radar-ready`.
+    pub fn broadcast_screen_radar(
+        &self,
+        detection_id: String,
+        hamming_distance: u32,
+        roi_width: u32,
+        roi_height: u32,
+        detected_at_ms: u64,
+    ) {
+        let event = RadarHudEvent::ScreenRadarReady {
+            detection_id,
+            hamming_distance,
+            roi_width,
+            roi_height,
+            detected_at_ms,
+        };
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                use tauri::Emitter;
+                let _ = app.emit("screen-radar-ready", &event);
+            }
+        }
+    }
+
     /// Number of active channels connected.
     pub fn active_channel_count(&self) -> usize {
         let list = self.channels.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -106,5 +144,24 @@ mod tests {
         assert_eq!(state.active_channel_count(), 0);
         state.clear_for("hud");
         assert_eq!(state.active_channel_count(), 0);
+    }
+
+    #[test]
+    fn test_screen_radar_ready_serde_roundtrip() {
+        let event = RadarHudEvent::ScreenRadarReady {
+            detection_id: "radar-42".to_string(),
+            hamming_distance: 14,
+            roi_width: 1024,
+            roi_height: 640,
+            detected_at_ms: 1729180000000,
+        };
+        let json = serde_json::to_string(&event).expect("serialize screenRadarReady");
+        assert!(json.contains(r#""type":"screenRadarReady""#));
+        assert!(json.contains(r#""detection_id":"radar-42""#));
+        assert!(json.contains(r#""hamming_distance":14"#));
+
+        let deserialized: RadarHudEvent =
+            serde_json::from_str(&json).expect("deserialize screenRadarReady");
+        assert_eq!(event, deserialized);
     }
 }

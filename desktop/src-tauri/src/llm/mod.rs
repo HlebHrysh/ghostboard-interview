@@ -222,16 +222,30 @@ impl LlmOrchestrator {
             let active_cancellation_ref = self.active_cancellation.clone();
 
             tokio::spawn(async move {
-                stream_from_local_nextjs_backend(
+                if let Err(e) = stream_from_local_nextjs_backend(
                     q_text,
                     m_val,
-                    ol_val,
+                    ol_val.clone(),
                     hl_val,
-                    q_id,
-                    channel_clone,
+                    q_id.clone(),
+                    channel_clone.clone(),
                     cancel_clone,
                 )
-                .await;
+                .await
+                {
+                    tracing::warn!(target: "ghostboard::llm", error = %e, "Local Next.js stream failed, emitting Emergency Coaching Card");
+                    let emergency_card = crate::llm::prompt::build_emergency_coaching_card(ol_val.as_deref());
+                    channel_clone.broadcast(HudEvent::LlmChunk {
+                        question_id: q_id.clone(),
+                        token: emergency_card.clone(),
+                        is_first: true,
+                    });
+                    channel_clone.broadcast(HudEvent::LlmDone {
+                        question_id: q_id,
+                        full_text: emergency_card,
+                        latency_ms: 0,
+                    });
+                }
                 let mut token_lock = active_cancellation_ref.lock().await;
                 if let Some((stored_gen, _)) = *token_lock {
                     if stored_gen == gen {
@@ -278,7 +292,7 @@ impl LlmOrchestrator {
                     &config,
                     &system_prompt,
                     &user_prompt,
-                    cancel_token,
+                    cancel_token.clone(),
                     move |token| {
                         let mut first_lock = is_first_cb.try_lock();
                         let first_val = match first_lock.as_mut() {
@@ -337,17 +351,32 @@ impl LlmOrchestrator {
                 Ok(LlmStreamOutcome::Cancelled) => {
                     // Instantly aborted; no LlmDone event needed
                 }
-                Ok(LlmStreamOutcome::Failed(err)) => {
-                    channel_clone.broadcast(HudEvent::Error {
-                        code: "LLM_STREAM_FAILED".to_string(),
-                        message: err,
-                    });
-                }
-                Err(e) => {
-                    channel_clone.broadcast(HudEvent::Error {
-                        code: "LLM_REQUEST_ERROR".to_string(),
-                        message: e,
-                    });
+                Ok(LlmStreamOutcome::Failed(err)) | Err(err) => {
+                    tracing::warn!(target: "ghostboard::llm", error = %err, "Native LLM stream failed, attempting local Next.js failover");
+                    if let Err(e) = stream_from_local_nextjs_backend(
+                        trigger_q,
+                        modifier,
+                        out_lang.clone(),
+                        helper_lang,
+                        q_id.clone(),
+                        channel_clone.clone(),
+                        cancel_token,
+                    )
+                    .await
+                    {
+                        tracing::warn!(target: "ghostboard::llm", error = %e, "Local Next.js failover failed, emitting Emergency Coaching Card");
+                        let emergency_card = crate::llm::prompt::build_emergency_coaching_card(out_lang.as_deref());
+                        channel_clone.broadcast(HudEvent::LlmChunk {
+                            question_id: q_id.clone(),
+                            token: emergency_card.clone(),
+                            is_first: true,
+                        });
+                        channel_clone.broadcast(HudEvent::LlmDone {
+                            question_id: q_id,
+                            full_text: emergency_card,
+                            latency_ms,
+                        });
+                    }
                 }
             }
         });
@@ -417,12 +446,33 @@ impl LlmOrchestrator {
         }
 
         if config.api_key.trim().is_empty() {
-            let err_msg = "Помилка API: GEMINI_API_KEY не знайдено у файлі .env. Вкажіть дійсний ключ Gemini у .env".to_string();
-            hud_channel.broadcast(HudEvent::Error {
-                code: "GEMINI_API_KEY_MISSING".to_string(),
-                message: err_msg.clone(),
-            });
-            return Err(err_msg);
+            match stream_from_local_nextjs_backend(
+                question.to_string(),
+                modifier.clone(),
+                output_lang.clone(),
+                helper_lang.clone(),
+                q_id.clone(),
+                hud_channel.clone(),
+                cancel_token.clone(),
+            )
+            .await
+            {
+                Ok(full_text) => return Ok(full_text),
+                Err(_) => {
+                    let emergency_card = crate::llm::prompt::build_emergency_coaching_card(output_lang.as_deref());
+                    hud_channel.broadcast(HudEvent::LlmChunk {
+                        question_id: q_id.clone(),
+                        token: emergency_card.clone(),
+                        is_first: true,
+                    });
+                    hud_channel.broadcast(HudEvent::LlmDone {
+                        question_id: q_id,
+                        full_text: emergency_card.clone(),
+                        latency_ms: 0,
+                    });
+                    return Ok(emergency_card);
+                }
+            }
         }
 
         let candidate_profile_str = match candidate_profile_dto {
@@ -491,7 +541,7 @@ impl LlmOrchestrator {
                 &config,
                 &system_prompt,
                 &user_prompt,
-                cancel_token,
+                cancel_token.clone(),
                 move |token| {
                     let mut first_lock = is_first_cb.try_lock();
                     let first_val = match first_lock.as_mut() {
@@ -550,19 +600,35 @@ impl LlmOrchestrator {
             Ok(LlmStreamOutcome::Cancelled) => {
                 Ok(String::new())
             }
-            Ok(LlmStreamOutcome::Failed(err)) => {
-                hud_channel.broadcast(HudEvent::Error {
-                    code: "LLM_STREAM_FAILED".to_string(),
-                    message: err.clone(),
-                });
-                Err(err)
-            }
-            Err(e) => {
-                hud_channel.broadcast(HudEvent::Error {
-                    code: "LLM_REQUEST_ERROR".to_string(),
-                    message: e.clone(),
-                });
-                Err(e)
+            Ok(LlmStreamOutcome::Failed(err)) | Err(err) => {
+                tracing::warn!(target: "ghostboard::llm", error = %err, "Native stream_answer_direct failed, failing over to local Next.js");
+                match stream_from_local_nextjs_backend(
+                    question.to_string(),
+                    modifier,
+                    output_lang.clone(),
+                    helper_lang,
+                    q_id.clone(),
+                    hud_channel.clone(),
+                    cancel_token,
+                )
+                .await
+                {
+                    Ok(txt) => Ok(txt),
+                    Err(_) => {
+                        let emergency_card = crate::llm::prompt::build_emergency_coaching_card(output_lang.as_deref());
+                        hud_channel.broadcast(HudEvent::LlmChunk {
+                            question_id: q_id.clone(),
+                            token: emergency_card.clone(),
+                            is_first: true,
+                        });
+                        hud_channel.broadcast(HudEvent::LlmDone {
+                            question_id: q_id,
+                            full_text: emergency_card.clone(),
+                            latency_ms,
+                        });
+                        Ok(emergency_card)
+                    }
+                }
             }
         }
     }
@@ -576,7 +642,7 @@ async fn stream_from_local_nextjs_backend(
     q_id: String,
     hud_channel: HudChannelState,
     cancel_token: CancellationToken,
-) {
+) -> Result<String, String> {
     let start_time = Instant::now();
     let mut urls: Vec<String> = Vec::new();
 
@@ -620,7 +686,7 @@ async fn stream_from_local_nextjs_backend(
     let mut response_opt = None;
     for url in &urls {
         if cancel_token.is_cancelled() {
-            return;
+            return Err("Cancelled".to_string());
         }
         let mut req = client
             .post(url)
@@ -648,11 +714,7 @@ async fn stream_from_local_nextjs_backend(
     let response = match response_opt {
         Some(r) => r,
         None => {
-            hud_channel.broadcast(HudEvent::Error {
-                code: "LLM_API_KEY_MISSING".to_string(),
-                message: "Помилка API: перевірте GEMINI_API_KEY у файлі .env (ключ відсутній у Rust, а локальний Next.js бэкенд недоступний)".to_string(),
-            });
-            return;
+            return Err("Local backend offline".to_string());
         }
     };
 
@@ -663,7 +725,7 @@ async fn stream_from_local_nextjs_backend(
     loop {
         tokio::select! {
             _ = cancel_token.cancelled() => {
-                return;
+                return Err("Cancelled".to_string());
             }
             event_res = stream.next() => {
                 match event_res {
@@ -698,12 +760,17 @@ async fn stream_from_local_nextjs_backend(
         }
     }
 
+    if full_text.trim().is_empty() {
+        return Err("Local backend returned empty response".to_string());
+    }
+
     let latency_ms = start_time.elapsed().as_millis() as u64;
     hud_channel.broadcast(HudEvent::LlmDone {
         question_id: q_id,
-        full_text,
+        full_text: full_text.clone(),
         latency_ms,
     });
+    Ok(full_text)
 }
 
 #[cfg(test)]

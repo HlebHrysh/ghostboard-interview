@@ -255,10 +255,10 @@ impl EotDetector {
                 merged_question, added_constraint
             )
         } else {
-            let q_text = candidate_text.to_string();
-            self.last_triggered_question = q_text.clone();
+            let focused = extract_focused_question(candidate_text, &self.get_sliding_context());
+            self.last_triggered_question = focused.clone();
             self.last_trigger_timestamp_ms = current_time_ms;
-            q_text
+            focused
         };
 
         let context_90s = self.get_sliding_context();
@@ -321,50 +321,200 @@ fn has_word_or_prefix(text: &str, pattern: &str) -> bool {
     false
 }
 
+/// Checks whether the text ends on an unfinished dangling preposition, conjunction, or incomplete clause.
+pub fn is_dangling_ending(text: &str) -> bool {
+    let clean = text.trim().to_lowercase();
+    let trimmed = clean.trim_end_matches(|c: char| c == '.' || c == ',' || c == '…' || c == '-' || c.is_whitespace());
+
+    const DANGLING_ENDINGS: &[&str] = &[
+        "і", "та", "або", "але", "тому", "тому що", "бо", "якщо", "коли", "щоб",
+        "який", "яка", "яке", "які", "про", "для", "на", "в", "у", "з", "із",
+        "це все-таки", "основна", "наприклад", "тобто",
+        "and", "or", "but", "because", "if", "when", "that", "which", "with",
+        "for", "to", "in", "on", "of", "such as",
+        "и", "или", "но", "потому что", "если", "когда", "чтобы", "который", "которая"
+    ];
+
+    for &ending in DANGLING_ENDINGS {
+        if trimmed == ending || trimmed.ends_with(&format!(" {}", ending)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Checks whether an utterance is pure first-person company storytelling or meeting overview banter.
+pub fn is_first_person_storytelling(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    const STORY_PATTERNS: &[&str] = &[
+        "у нашій компанії", "в нашій команді", "ми в компанії", "ми зараз робимо",
+        "наш продукт", "наш клієнт", "я працюю в", "сьогодні ми поговоримо",
+        "план нашої співбесіди", "давайте я розповім про нас",
+        "in our company", "our team builds", "we are currently working on",
+        "let me tell you about our", "today we will cover",
+        "в нашей компании", "мы в команде", "сейчас я расскажу о нас"
+    ];
+    STORY_PATTERNS.iter().any(|&p| lower.contains(p))
+}
+
+/// Checks whether the utterance starts with an interrogative or imperative prompt keyword.
+pub fn has_question_opener(text: &str) -> bool {
+    const OPENERS: &[&str] = &[
+        "як", "чому", "навіщо", "що таке", "що буде", "у чому різниця", "в чому різниця",
+        "яка різниця", "як працює", "як би ти", "як би ви", "розкажи", "розкажіть",
+        "поясни", "поясніть", "назви", "назвіть", "опиши", "опишіть", "порівняй",
+        "спроектуй", "напиши",
+        "how", "why", "what is", "what are", "what happens", "what's the difference",
+        "explain", "describe", "tell me", "walk me through", "compare", "design",
+        "implement", "when would you", "can you", "could you",
+        "как", "почему", "зачем", "что такое", "что будет", "в чем разница",
+        "расскажи", "расскажите", "объясни", "объясните"
+    ];
+    OPENERS.iter().any(|&p| has_word_or_prefix(text, p))
+}
+
+/// Checks whether an interrogative clause occurs anywhere in the utterance.
+pub fn has_question_anywhere(text: &str) -> bool {
+    const ANYWHERE: &[&str] = &[
+        "як ти вважаєш", "як ви вважаєте", "чи використовував", "чи працював",
+        "чи знаєш", "що думаєш про", "what do you think", "have you used",
+        "have you worked with", "do you know", "how do you handle", "how does",
+        "как ты думаешь", "работал ли ты", "использовал ли"
+    ];
+    let lower = text.to_lowercase();
+    ANYWHERE.iter().any(|&p| lower.contains(p))
+}
+
+/// Checks for technical topic keywords in the utterance.
+pub fn has_tech_keyword(text: &str) -> bool {
+    const TECH: &[&str] = &[
+        "react", "next.js", "nextjs", "node.js", "nodejs", "typescript", "javascript",
+        "python", "rust", "go", "golang", "java", "c++", "sql", "postgres", "postgresql",
+        "mysql", "mongodb", "redis", "kafka", "rabbitmq", "docker", "kubernetes", "k8s",
+        "aws", "gcp", "azure", "ci/cd", "git", "linux", "rest", "graphql", "grpc",
+        "websocket", "http", "tcp", "udp", "dns", "tls", "jwt", "oauth", "cors",
+        "csrf", "xss", "ssr", "csr", "isr", "dom", "virtual dom", "event loop",
+        "promise", "async", "thread", "process", "mutex", "deadlock", "garbage collect",
+        "memory leak", "index", "b-tree", "acid", "cap", "sharding", "replication",
+        "partition", "load balanc", "rate limit", "cache", "microservice", "monolith",
+        "solid", "oop", "fp", "big o", "hash map", "binary tree", "gil", "mro",
+        "індекс", "потік", "процес", "пам'ят", "кеш", "транзакц", "база даних",
+        "архітектур", "алгоритм", "складність"
+    ];
+    let lower = text.to_lowercase();
+    TECH.iter().any(|&p| has_word_or_prefix(&lower, p))
+}
+
+/// Checks whether the text is a pure greeting or microphone audio test noise.
+pub fn is_greeting_or_noise(text: &str) -> bool {
+    let clean = text.trim().to_lowercase();
+    let trimmed = clean.trim_matches(|c: char| c == '!' || c == '.' || c == ',' || c == '?' || c.is_whitespace());
+    const NOISE_WORDS: &[&str] = &[
+        "привіт", "добрий день", "доброго дня", "вітаю", "алло", "раз два", "як мене чути",
+        "чи добре чути", "зараз розшарю", "секунду", "угу", "ага", "так-так", "окей", "добре",
+        "дякую", "hello", "hi there", "can you hear me", "let me share", "one second",
+        "uh huh", "yeah", "okay", "thanks", "здравствуйте", "привет", "как слышно"
+    ];
+    NOISE_WORDS.contains(&trimmed)
+}
+
+/// Extracts the actual question from an utterance preceded by storytelling context.
+pub fn extract_focused_question(latest_chunk: &str, rolling_context: &str) -> String {
+    let latest_clean = latest_chunk.trim();
+    if latest_clean.is_empty() {
+        return String::new();
+    }
+
+    let combined = format!("{} {}", rolling_context.trim(), latest_clean)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for c in combined.chars() {
+        current.push(c);
+        if c == '.' || c == '?' || c == '!' {
+            let trimmed = current.trim().to_string();
+            if !trimmed.is_empty() {
+                sentences.push(trimmed);
+            }
+            current.clear();
+        }
+    }
+    let remaining = current.trim().to_string();
+    if !remaining.is_empty() {
+        sentences.push(remaining);
+    }
+
+    if sentences.len() <= 2 {
+        return latest_clean.to_string();
+    }
+
+    let n = sentences.len();
+    let min_idx = n.saturating_sub(3);
+    for i in (min_idx..n).rev() {
+        let s = &sentences[i];
+        if s.contains('?') || has_question_opener(s) || has_question_anywhere(s) {
+            let prefix = if i > 0 { &sentences[i - 1] } else { "" };
+            let question_part = sentences[i..].join(" ");
+            return if !prefix.is_empty() {
+                format!("{} {}", prefix, question_part)
+            } else {
+                question_part
+            };
+        }
+    }
+
+    latest_clean.to_string()
+}
+
 /// Evaluates whether a piece of text satisfies interview question heuristics:
-/// 1. Contains at least `MIN_QUESTION_WORD_COUNT` words (filters out conversational affirmations like "okay?", "cool?").
-/// 2. Ends in `?` OR contains known interrogative keywords in English, Ukrainian, or Russian.
+/// 1. Filters out noise, greetings, or short affirmations.
+/// 2. Penalizes dangling endings (і, та, але, тому що, and, but, etc.) unless ? is present.
+/// 3. Penalizes pure first-person company storytelling unless question opener or ? is present.
+/// 4. Accurately scores interrogative openers, questions anywhere, and tech topics.
 pub fn is_question_heuristic(text: &str) -> bool {
     let clean = text.trim();
     let words: Vec<&str> = clean.split_whitespace().collect();
-    if words.len() < MIN_QUESTION_WORD_COUNT {
+    let word_count = words.len();
+    if word_count < MIN_QUESTION_WORD_COUNT {
         return false;
     }
 
-    if clean.ends_with('?') {
+    if is_greeting_or_noise(clean) && !clean.contains('?') {
+        return false;
+    }
+
+    let ends_with_qm = clean.ends_with('?');
+    let has_qm = clean.contains('?') && !clean.ends_with('.');
+    let has_opener = has_question_opener(clean);
+    let has_anywhere = has_question_anywhere(clean);
+    let has_tech = has_tech_keyword(clean);
+    let is_story = is_first_person_storytelling(clean);
+    let ends_with_dangling = is_dangling_ending(clean);
+
+    let mut score: i32 = 0;
+    if ends_with_qm { score += 55; }
+    else if has_qm { score += 30; }
+    if has_opener { score += 50; }
+    if has_anywhere { score += 45; }
+    if has_tech { score += 25; }
+    if word_count >= 4 && word_count <= 45 { score += 10; }
+
+    if ends_with_dangling && !ends_with_qm { score -= 45; }
+    if is_story && !ends_with_qm && !has_opener && !has_anywhere { score -= 50; }
+    if word_count < 2 && !has_tech { score -= 40; }
+
+    if score >= 45
+        || (ends_with_qm && word_count >= 2)
+        || (has_opener && word_count >= 3 && !ends_with_dangling)
+        || (has_tech && (has_opener || has_anywhere || ends_with_qm))
+    {
         return true;
     }
 
-    // English interrogatives
-    const EN_PREFIXES: &[&str] = &[
-        "what", "how", "why", "where", "when", "can you", "could you", "explain",
-        "describe", "difference between", "tell me", "what is", "how does", "is it possible",
-    ];
-
-    // Ukrainian interrogatives
-    const UK_PREFIXES: &[&str] = &[
-        "як", "що", "чому", "де", "коли", "чи", "поясни", "розкажи",
-        "опиши", "в чому різниця", "яка різниця", "навіщо", "чи можна",
-    ];
-
-    // Russian interrogatives
-    const RU_PREFIXES: &[&str] = &[
-        "как", "что", "почему", "где", "когда", "зачем", "объясни", "расскажи",
-        "опиши", "в чем разница", "какая разница", "можно ли",
-    ];
-
-    // European multilingual interrogatives (PL, DE, ES, FR)
-    const EU_PREFIXES: &[&str] = &[
-        "jak", "dlaczego", "czy", "wyjaśnij", "opowiedz", "jaka jest",
-        "wie", "warum", "kannst du", "erkläre", "beschreibe", "unterschied",
-        "cómo", "por qué", "puedes", "explica", "diferencia",
-        "comment", "pourquoi", "peux-tu", "explique", "différence",
-    ];
-
-    EN_PREFIXES.iter().any(|&p| has_word_or_prefix(clean, p))
-        || UK_PREFIXES.iter().any(|&p| has_word_or_prefix(clean, p))
-        || RU_PREFIXES.iter().any(|&p| has_word_or_prefix(clean, p))
-        || EU_PREFIXES.iter().any(|&p| has_word_or_prefix(clean, p))
+    false
 }
 
 #[cfg(test)]
@@ -502,4 +652,19 @@ mod tests {
         assert!(trig.question_text.contains("How would you design a rate limiter, assuming 50 geo-distributed regions?"));
         assert!(trig.question_text.contains("[CONTINUATION REFINEMENT: Keep the opening natural, and specifically address the newly added constraint: \"assuming 50 geo-distributed regions\"]"));
     }
+
+    #[test]
+    fn test_question_vs_storytelling_and_dangling() {
+        // Storytelling without question:
+        assert!(!is_question_heuristic("У нашій компанії ми розробляємо фінансовий продукт і команда складається з 15 інженерів"));
+        // Dangling ending without question:
+        assert!(!is_question_heuristic("І основна частина нашого вебінару це все-таки буде"));
+        // Real question:
+        assert!(is_question_heuristic("Як працюють індекси в PostgreSQL і коли B-Tree деградує?"));
+        // Story followed by question extracts focused question:
+        let story = "У нашій компанії ми розробляємо фінансовий продукт. Команда складається з 15 інженерів. Як влаштований MRO в Python?";
+        let focused = extract_focused_question(story, "");
+        assert!(focused.contains("Як влаштований MRO в Python?"));
+    }
 }
+

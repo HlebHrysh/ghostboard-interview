@@ -250,6 +250,7 @@ async fn send_gemini_request(
     api_key: &str,
     system_prompt: &str,
     user_prompt: &str,
+    include_thinking: bool,
     cancellation_token: &CancellationToken,
 ) -> Result<reqwest::Response, String> {
     let url = format!(
@@ -261,15 +262,16 @@ async fn send_gemini_request(
     if let Ok(hv) = HeaderValue::from_str(api_key.trim()) {
         headers.insert("x-goog-api-key", hv);
     }
-    let body_with_thinking = build_gemini_request_body(system_prompt, user_prompt, model, true);
+    let body_with_thinking = build_gemini_request_body(system_prompt, user_prompt, model, include_thinking);
 
     let req_future = client.post(&url).headers(headers.clone()).json(&body_with_thinking).send();
     let resp = tokio::select! {
         _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
-        res = tokio::time::timeout(Duration::from_millis(8000), req_future) => match res {
+        res = tokio::time::timeout(Duration::from_millis(12000), req_future) => match res {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => return Err(e.without_url().to_string()),
-            Err(_) => return Err(format!("Model {} timed out after 8000ms", model)),
+            // On timeout, return error immediately - NEVER cooldown on timeout!
+            Err(_) => return Err(format!("Model {} timed out after 12000ms", model)),
         }
     };
 
@@ -281,13 +283,13 @@ async fn send_gemini_request(
 
     if status.as_u16() == 400 {
         let err_text = resp.text().await.unwrap_or_default();
-        if err_text.contains("thinkingConfig") || err_text.contains("INVALID_ARGUMENT") {
+        if (err_text.contains("thinkingConfig") || err_text.contains("INVALID_ARGUMENT")) && include_thinking {
             tracing::info!(target: "ghostboard::llm", model = %model, "Retrying Gemini without thinkingConfig on HTTP 400");
             let body_without_thinking = build_gemini_request_body(system_prompt, user_prompt, model, false);
             let retry_req = client.post(&url).headers(headers).json(&body_without_thinking).send();
             let retry_res = tokio::select! {
                 _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
-                res = tokio::time::timeout(Duration::from_millis(8000), retry_req) => res
+                res = tokio::time::timeout(Duration::from_millis(12000), retry_req) => res
             };
             if let Ok(Ok(retry_resp)) = retry_res {
                 if retry_resp.status().is_success() {
@@ -298,10 +300,10 @@ async fn send_gemini_request(
         }
         return Err(format!("Model {} HTTP 400: {}", model, err_text));
     } else if status.as_u16() == 429 || status.as_u16() == 503 {
-        mark_model_cooldown(model, Duration::from_secs(15));
+        mark_model_cooldown(model, Duration::from_secs(8));
         return Err(format!("Model {} HTTP {}", model, status));
     } else if status.as_u16() == 404 {
-        mark_model_cooldown(model, Duration::from_secs(30));
+        mark_model_cooldown(model, Duration::from_secs(120));
         return Err(format!("Model {} HTTP 404 Not Found", model));
     } else {
         let err_text = resp.text().await.unwrap_or_default();
@@ -337,10 +339,10 @@ async fn send_groq_request(
     let groq_future = client.post(groq_url).headers(groq_headers).json(&groq_body).send();
     let resp = tokio::select! {
         _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
-        res = tokio::time::timeout(Duration::from_millis(4000), groq_future) => match res {
+        res = tokio::time::timeout(Duration::from_millis(12000), groq_future) => match res {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => return Err(e.without_url().to_string()),
-            Err(_) => return Err("Groq timed out after 4000ms".to_string()),
+            Err(_) => return Err("Groq timed out after 12000ms".to_string()),
         }
     };
 
@@ -388,28 +390,46 @@ impl SpeculativeLlmClient {
                 return Ok(LlmStreamOutcome::Cancelled);
             }
 
-            let mut gemini_models: Vec<&str> = Vec::new();
+            let mut gemini_models: Vec<String> = Vec::new();
             if !config.model.trim().is_empty() && config.model.starts_with("gemini") {
-                let m = config.model.as_str();
-                // Exclude legacy deprecated models known to return HTTP 404
-                if m != "gemini-2.5-flash" && m != "gemini-2.0-flash" && m != "gemini-2.5-flash-lite" {
-                    gemini_models.push(m);
-                }
+                let m = config.model.trim();
+                gemini_models.push(m.to_string());
             }
-            // Put real, active, low-latency production models at the top of the cascade
-            for candidate in &["gemini-3.5-flash", "gemini-3.8-flash", "gemini-flash-latest"] {
-                if !gemini_models.contains(candidate) {
-                    gemini_models.push(candidate);
+            for candidate in &["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"] {
+                if !gemini_models.iter().any(|m| m == candidate) {
+                    gemini_models.push(candidate.to_string());
                 }
             }
 
             // Never-Dead Cooldown Bypass: if every model is on cooldown, automatically clear cooldown state
-            let all_cooling = gemini_models.iter().all(|m| is_model_cooling_down(m));
-            if all_cooling {
+            let mut available_models: Vec<String> = gemini_models
+                .iter()
+                .filter(|m| !is_model_cooling_down(m))
+                .cloned()
+                .collect();
+
+            if available_models.is_empty() {
                 tracing::warn!(target: "ghostboard::llm", "All models on cooldown, clearing cooldown state (Never-Dead Cooldown Bypass)");
                 clear_all_model_cooldowns();
+                available_models = gemini_models.clone();
             }
 
+            enum ContenderMsg {
+                Success {
+                    provider: LlmProviderType,
+                    model: String,
+                    response: reqwest::Response,
+                },
+                Failed {
+                    model: String,
+                    error: String,
+                },
+            }
+
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<ContenderMsg>(16);
+            let race_cancel = cancellation_token.child_token();
+            let mut active_contenders: usize = 0;
+            let mut gemini_index: usize = 0;
             let mut final_response: Option<reqwest::Response> = None;
             let mut last_error = String::new();
 
@@ -418,113 +438,142 @@ impl SpeculativeLlmClient {
                 .map(|k| k.trim().to_string())
                 .filter(|k| !k.is_empty());
 
-            // SPECULATIVE HEDGED RACE: If GROQ_API_KEY is available, race primary Gemini model against Groq Llama 3.3 70B
-            let primary_model = gemini_models.iter().find(|m| !is_model_cooling_down(m)).map(|s| s.to_string());
-            if let (Some(pm), Some(g_key)) = (primary_model, groq_key_opt.clone()) {
-                tracing::info!(target: "ghostboard::llm", gemini = %pm, "Starting Speculative Hedged Race (Gemini vs Groq Llama 3.3 70B)");
-                let client_g = self.client.clone();
-                let client_q = self.client.clone();
-                let cancel_g = cancellation_token.clone();
-                let cancel_q = cancellation_token.clone();
-                let pm_owned = pm.clone();
-                let gemini_key_owned = config.api_key.clone();
-                let groq_key_owned = g_key.clone();
-                let sys_gem = system_prompt.to_string();
-                let usr_gem = user_prompt.to_string();
-                let sys_groq = system_prompt.to_string();
-                let usr_groq = user_prompt.to_string();
+            // 1. If Groq is available, start it in parallel at t=0ms
+            if let Some(ref g_key) = groq_key_opt {
+                let client = self.client.clone();
+                let tx_c = tx.clone();
+                let cancel_c = race_cancel.clone();
+                let g_key_c = g_key.clone();
+                let sys_c = system_prompt.to_string();
+                let usr_c = user_prompt.to_string();
+                active_contenders += 1;
+                tokio::spawn(async move {
+                    match send_groq_request(&client, &g_key_c, &sys_c, &usr_c, &cancel_c).await {
+                        Ok(resp) => {
+                            let _ = tx_c.send(ContenderMsg::Success {
+                                provider: LlmProviderType::Groq,
+                                model: "llama-3.3-70b-versatile".to_string(),
+                                response: resp,
+                            }).await;
+                        }
+                        Err(e) => {
+                            let _ = tx_c.send(ContenderMsg::Failed {
+                                model: "llama-3.3-70b-versatile".to_string(),
+                                error: e,
+                            }).await;
+                        }
+                    }
+                });
+            }
 
-                let mut gemini_task = tokio::spawn(async move {
-                    send_gemini_request(&client_g, &pm_owned, &gemini_key_owned, &sys_gem, &usr_gem, &cancel_g).await
+            // Helper to spawn a Gemini contender
+            let spawn_gemini_contender = |model: String, tx_sender: tokio::sync::mpsc::Sender<ContenderMsg>, cancel: CancellationToken| {
+                let client = self.client.clone();
+                let key = config.api_key.clone();
+                let sys = system_prompt.to_string();
+                let usr = user_prompt.to_string();
+                let model_clone = model.clone();
+                tokio::spawn(async move {
+                    match send_gemini_request(&client, &model_clone, &key, &sys, &usr, true, &cancel).await {
+                        Ok(resp) => {
+                            let _ = tx_sender.send(ContenderMsg::Success {
+                                provider: LlmProviderType::Gemini,
+                                model: model_clone,
+                                response: resp,
+                            }).await;
+                        }
+                        Err(e) => {
+                            let _ = tx_sender.send(ContenderMsg::Failed {
+                                model: model_clone,
+                                error: e,
+                            }).await;
+                        }
+                    }
                 });
-                let mut groq_task = tokio::spawn(async move {
-                    send_groq_request(&client_q, &groq_key_owned, &sys_groq, &usr_groq, &cancel_q).await
-                });
+            };
+
+            // 2. Launch primary Gemini model at t=0ms
+            if gemini_index < available_models.len() {
+                let m = available_models[gemini_index].clone();
+                gemini_index += 1;
+                active_contenders += 1;
+                tracing::info!(target: "ghostboard::llm", model = %m, "Starting primary Gemini model in hedged race");
+                spawn_gemini_contender(m, tx.clone(), race_cancel.clone());
+            }
+
+            // 3. Staggered Hedged Race loop: 1800ms timer launches backup #2 in parallel if no first byte/success,
+            // or immediately launches next model on 404/429/503/error.
+            let mut next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
+
+            while active_contenders > 0 || gemini_index < available_models.len() {
+                let hedge_sleep = if gemini_index < available_models.len() {
+                    tokio::time::sleep_until(next_hedge_deadline)
+                } else {
+                    tokio::time::sleep(Duration::from_secs(3600))
+                };
 
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
-                        gemini_task.abort();
-                        groq_task.abort();
+                        race_cancel.cancel();
                         return Ok(LlmStreamOutcome::Cancelled);
                     }
-                    gem_res = &mut gemini_task => {
-                        match gem_res {
-                            Ok(Ok(resp)) => {
-                                tracing::info!(target: "ghostboard::llm", model = %pm, "Hedged race won by Gemini");
-                                groq_task.abort();
-                                final_response = Some(resp);
+                    _ = hedge_sleep => {
+                        if gemini_index < available_models.len() {
+                            let next_m = available_models[gemini_index].clone();
+                            gemini_index += 1;
+                            active_contenders += 1;
+                            tracing::info!(target: "ghostboard::llm", model = %next_m, "1800ms hedge timer fired, launching backup contender in parallel");
+                            spawn_gemini_contender(next_m, tx.clone(), race_cancel.clone());
+                            next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
+                        }
+                    }
+                    msg = rx.recv() => {
+                        match msg {
+                            Some(ContenderMsg::Success { provider, model, response: r }) => {
+                                tracing::info!(target: "ghostboard::llm", model = %model, "Hedged race won by contender");
+                                race_cancel.cancel();
+                                final_response = Some(r);
+                                active_provider = provider;
+                                break;
                             }
-                            Ok(Err(e)) => {
-                                tracing::warn!(target: "ghostboard::llm", model = %pm, error = %e, "Hedged Gemini contender failed, awaiting Groq or next fallback");
+                            Some(ContenderMsg::Failed { model, error: e }) => {
+                                tracing::warn!(target: "ghostboard::llm", model = %model, error = %e, "Hedged contender failed");
                                 last_error = e;
-                                if let Ok(Ok(resp)) = groq_task.await {
-                                    tracing::info!(target: "ghostboard::llm", "Hedged race won by Groq (after Gemini failure)");
-                                    active_provider = LlmProviderType::Groq;
-                                    final_response = Some(resp);
+                                if active_contenders > 0 {
+                                    active_contenders -= 1;
+                                }
+                                // On early error (e.g. 404/429/503), launch next backup contender immediately
+                                if gemini_index < available_models.len() {
+                                    let next_m = available_models[gemini_index].clone();
+                                    gemini_index += 1;
+                                    active_contenders += 1;
+                                    tracing::info!(target: "ghostboard::llm", model = %next_m, "Early contender failure, launching next candidate immediately");
+                                    spawn_gemini_contender(next_m, tx.clone(), race_cancel.clone());
+                                    next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
                                 }
                             }
-                            Err(_) => {
-                                if let Ok(Ok(resp)) = groq_task.await {
-                                    active_provider = LlmProviderType::Groq;
-                                    final_response = Some(resp);
-                                }
-                            }
-                        }
-                    }
-                    groq_res = &mut groq_task => {
-                        match groq_res {
-                            Ok(Ok(resp)) => {
-                                tracing::info!(target: "ghostboard::llm", "Hedged race won by Groq Llama 3.3 70B");
-                                gemini_task.abort();
-                                active_provider = LlmProviderType::Groq;
-                                final_response = Some(resp);
-                            }
-                            Ok(Err(e)) => {
-                                tracing::warn!(target: "ghostboard::llm", error = %e, "Hedged Groq contender failed, awaiting Gemini");
-                                if let Ok(Ok(resp)) = gemini_task.await {
-                                    tracing::info!(target: "ghostboard::llm", model = %pm, "Hedged race won by Gemini (after Groq failure)");
-                                    final_response = Some(resp);
-                                }
-                            }
-                            Err(_) => {
-                                if let Ok(Ok(resp)) = gemini_task.await {
-                                    final_response = Some(resp);
-                                }
-                            }
+                            None => break,
                         }
                     }
                 }
             }
 
-            // Fallback: if race did not produce a response, continue cascading through remaining Gemini models
+            // 4. Never-Dead Cooldown Breaker: if all models are on cooldown or failed,
+            // call clear_all_model_cooldowns() and execute 1 direct retry on primary model with simplified payload (include_thinking: false)
             if final_response.is_none() {
-                for model in &gemini_models {
-                    if cancellation_token.is_cancelled() {
-                        return Ok(LlmStreamOutcome::Cancelled);
-                    }
-                    if is_model_cooling_down(model) {
-                        continue;
-                    }
-                    match send_gemini_request(&self.client, model, &config.api_key, system_prompt, user_prompt, &cancellation_token).await {
-                        Ok(resp) => {
-                            final_response = Some(resp);
-                            active_provider = LlmProviderType::Gemini;
-                            break;
-                        }
-                        Err(e) => {
-                            last_error = e;
-                        }
-                    }
+                if cancellation_token.is_cancelled() {
+                    return Ok(LlmStreamOutcome::Cancelled);
                 }
-            }
-
-            // Final fallback to Groq if all Gemini models failed and not yet used
-            if final_response.is_none() {
-                if let Some(ref g_key) = groq_key_opt {
-                    tracing::info!(target: "ghostboard::llm", "Gemini cascade exhausted, falling back to Groq llama-3.3-70b-versatile");
-                    if let Ok(groq_resp) = send_groq_request(&self.client, g_key, system_prompt, user_prompt, &cancellation_token).await {
-                        active_provider = LlmProviderType::Groq;
-                        final_response = Some(groq_resp);
+                tracing::warn!(target: "ghostboard::llm", "All candidates exhausted, triggering Never-Dead Cooldown Breaker on primary model");
+                clear_all_model_cooldowns();
+                let primary = gemini_models.first().cloned().unwrap_or_else(|| "gemini-3.8-flash".to_string());
+                match send_gemini_request(&self.client, &primary, &config.api_key, system_prompt, user_prompt, false, &cancellation_token).await {
+                    Ok(resp) => {
+                        active_provider = LlmProviderType::Gemini;
+                        final_response = Some(resp);
+                    }
+                    Err(e) => {
+                        last_error = e;
                     }
                 }
             }
@@ -628,7 +677,7 @@ impl SpeculativeLlmClient {
                 _ = cancellation_token.cancelled() => {
                     return Ok(LlmStreamOutcome::Cancelled);
                 }
-                resp_res = tokio::time::timeout(Duration::from_millis(4000), request.send()) => {
+                resp_res = tokio::time::timeout(Duration::from_millis(12000), request.send()) => {
                     match resp_res {
                         Ok(inner) => inner.map_err(|e| format!("HTTP request failed: {}", e.without_url()))?,
                         Err(_) => return Err("HTTP request timed out waiting for response".to_string()),
@@ -656,7 +705,7 @@ impl SpeculativeLlmClient {
 
             let chunk_opt = tokio::select! {
                 _ = cancellation_token.cancelled() => return Ok(LlmStreamOutcome::Cancelled),
-                res = tokio::time::timeout(Duration::from_secs(6), response.chunk()) => {
+                res = tokio::time::timeout(Duration::from_secs(12), response.chunk()) => {
                     match res {
                         Ok(Ok(c)) => c,
                         Ok(Err(e)) => {
@@ -664,8 +713,8 @@ impl SpeculativeLlmClient {
                             return Err(format!("SSE chunk error: {}", e));
                         }
                         Err(_) => {
-                            tracing::warn!(target: "ghostboard::llm", "SSE stream timed out (6s idle without chunk)");
-                            return Err("SSE stream interrupted: 6s idle timeout".to_string());
+                            tracing::warn!(target: "ghostboard::llm", "SSE stream timed out (12s idle without chunk)");
+                            return Err("SSE stream interrupted: 12s idle timeout".to_string());
                         }
                     }
                 }

@@ -9,6 +9,10 @@
  * 5. On-the-fly fast modifiers (shorter, simpler, code, re_angle, more_technical, etc.)
  */
 
+import type { PatchTargetSlot } from './speculativeSlotEngine';
+
+export type { PatchTargetSlot };
+
 export type AiDomain =
   | 'Backend'
   | 'Frontend'
@@ -31,6 +35,8 @@ export type AiModifier =
   | 'simpler'
   | 'code'
   | 're_angle'
+  | 'under_the_hood'
+  | 'bridge'
   | 'more_technical'
   | 'code_example'
   | 'tradeoffs'
@@ -319,9 +325,16 @@ export function buildModifierInstruction(modifier: AiModifier = 'normal'): strin
 - Focus on real-world compromises: Latency vs Throughput, Consistency vs Availability, Memory vs CPU.
 - Propose an alternative architectural approach used in modern production systems.`;
 
+    case 'under_the_hood':
     case 'more_technical':
-      return `MODIFIER: LOW-LEVEL INTERNALS & KERNEL MECHANICS.
-- Focus on OS memory layout, kernel primitives (epoll/kqueue), virtual address spaces, cache lines, or concurrency atomics.`;
+      return `MODIFIER: LOW-LEVEL INTERNALS & KERNEL MECHANICS (UNDER THE HOOD).
+- Focus on OS memory layout, kernel primitives (epoll/kqueue), virtual address spaces, cache lines, or concurrency atomics.
+- Unpack what happens beneath the runtime/compiler abstraction.`;
+
+    case 'bridge':
+      return `MODIFIER: DIPLOMATIC BRIDGE & TRANSITION.
+- Provide a smooth, senior conversational pivot from the previous topic into this core question.
+- Connect previous architectural context seamlessly before delivering the crisp answer.`;
 
     case 'explain_line':
       return `MODIFIER: MICRO-EXPLAINER (EXPLAIN LINE).
@@ -337,6 +350,123 @@ export function buildModifierInstruction(modifier: AiModifier = 'normal'): strin
 }
 
 /**
+ * Resolves the tightest maxOutputTokens budget per patchSlot to minimize LLM latency & token cost.
+ */
+export function getMaxOutputTokensForPatchSlot(
+  patchSlot: PatchTargetSlot = 'full',
+  modifier: AiModifier = 'normal'
+): number {
+  switch (patchSlot) {
+    case 'speculative_hook':
+      return 95;
+    case 'deep_dive':
+      return 380;
+    case 'hook_and_pillars':
+      return 260;
+    case 'trap':
+      return 180;
+    case 'rest_after_hook':
+      return modifier === 'shorter' || modifier === 'explain_line' ? 320 : 850;
+    case 'full':
+    default:
+      return modifier === 'shorter' || modifier === 'explain_line' ? 350 : 850;
+  }
+}
+
+function buildPhaseSequenceDirective(
+  domain: AiDomain,
+  level: AiSeniority,
+  langTag: string,
+  patchSlot: PatchTargetSlot,
+  preGeneratedHook?: string
+): string {
+  switch (patchSlot) {
+    case 'speculative_hook':
+      return `MANDATORY SPECULATIVE HOOK MODE (STOP IMMEDIATELY AFTER PHASE 1):
+Output ONLY <<<META: ...>>> and <<<PHASE_1:HOOK>>> (1–2 natural spoken sentences, max 35 words) and stop immediately with <<<END>>>. Do NOT output PHASE_2, PHASE_3, or PHASE_4!
+<<<META: ${domain} | ${level} | ${langTag}>>>
+<<<PHASE_1:HOOK>>>
+[Gear 1 — Instant Spoken Hook: 1–2 natural, confident sentences (max 35 words). Directly answers core mechanic.]
+<<<END>>>`;
+
+    case 'rest_after_hook': {
+      const hookPreview = (preGeneratedHook || '').trim();
+      return `MANDATORY CONTINUATION AFTER PRE-DISPLAYED HOOK:
+<<<PHASE_1:HOOK>>> is ALREADY shown to the candidate: "${hookPreview}"
+DO NOT repeat <<<META>>> or <<<PHASE_1:HOOK>>>! Start IMMEDIATELY at <<<PHASE_2:PILLARS>>> followed by <<<PHASE_3:DEEP_DIVE>>> and <<<PHASE_4:TRAP>>>:
+
+<<<PHASE_2:PILLARS>>>
+[Gear 2 — Technical Pillars: 3 bullets (18–28 words). Each starts with a **Bold Technical Anchor**:]
+• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
+• **KeyAnchor**: [Pillar 2 anchor]
+• **KeyAnchor**: [Pillar 3 anchor]
+
+<<<PHASE_3:DEEP_DIVE>>>
+[Gear 3 — Production Code / Case: 8–16 lines of clean idiomatic code OR architecture case (💡 Key nuance).]
+
+<<<PHASE_4:TRAP>>>
+Q: [1 short sentence: the sharpest follow-up trap question a Senior/Staff interviewer will ask next based on your answer above]
+A: [1–2 punchy sentences: the exact killer counter-answer with a concrete metric or mechanism]
+
+<<<END>>>`;
+    }
+
+    case 'deep_dive':
+      return `MANDATORY SURGICAL SLOT PATCH (PHASE 3 ONLY):
+<<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> are ALREADY frozen on screen.
+Output ONLY <<<PHASE_3:DEEP_DIVE>>> with a clean, production-grade code snippet and complexity analysis, then <<<END>>>. Do NOT output META, PHASE_1, PHASE_2, or PHASE_4!
+<<<PHASE_3:DEEP_DIVE>>>
+[Clean, production-grade code snippet (8–18 lines, idiomatic, no fluff comments) and exact Time & Space Complexity analysis, or concrete low-level mechanics.]
+<<<END>>>`;
+
+    case 'hook_and_pillars':
+      return `MANDATORY SURGICAL SLOT PATCH (PHASE 1 & PHASE 2 ONLY):
+<<<PHASE_3:DEEP_DIVE>>> is ALREADY frozen on screen and untouched.
+Output ONLY a tighter, simpler <<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> followed by <<<END>>>. Do NOT output PHASE_3 or PHASE_4!
+<<<META: ${domain} | ${level} | ${langTag}>>>
+<<<PHASE_1:HOOK>>>
+[1–2 crisp, simpler spoken sentences (15–25 words). Directly answers core mechanic.]
+
+<<<PHASE_2:PILLARS>>>
+• **KeyAnchor**: [Short spoken point, 6–10 words]
+• **KeyAnchor**: [Short spoken point, 6–10 words]
+• **KeyAnchor**: [Short spoken point, 6–10 words]
+
+<<<END>>>`;
+
+    case 'trap':
+      return `MANDATORY SURGICAL SLOT PATCH (PHASE 4 ONLY):
+Output ONLY <<<PHASE_4:TRAP>>> followed by <<<END>>>.
+<<<PHASE_4:TRAP>>>
+Q: [1 short sentence: the sharpest follow-up trap question]
+A: [1–2 punchy sentences: the exact killer counter-answer with a concrete metric or mechanism]
+<<<END>>>`;
+
+    case 'full':
+    default:
+      return `MANDATORY 4-PHASE SEQUENCE (START IMMEDIATELY WITH LINE 1):
+<<<META: ${domain} | ${level} | ${langTag}>>>
+<<<PHASE_1:HOOK>>>
+[Gear 1 — Instant Spoken Hook: 1–2 natural, confident sentences (20–35 words). Directly answers core mechanic.]
+
+<<<PHASE_2:PILLARS>>>
+[Gear 2 — Technical Pillars: 3 bullets (18–28 words). Each starts with a **Bold Technical Anchor**:]
+• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
+• **KeyAnchor**: [Pillar 2 anchor]
+• **KeyAnchor**: [Pillar 3 anchor]
+
+<<<PHASE_3:DEEP_DIVE>>>
+[Gear 3 — Production Code / Case: 8–16 lines of clean idiomatic code OR architecture case (💡 Key nuance).]
+
+<<<PHASE_4:TRAP>>>
+Q: [1 short sentence: the sharpest follow-up trap question a Senior/Staff interviewer will ask next based on your answer above]
+A: [1–2 punchy sentences: the exact killer counter-answer with a concrete metric or mechanism]
+
+<<<END>>>`;
+  }
+}
+
+/**
  * Builds the high-speed, zero-fluff system prompt for Ghostboard real-time teleprompter.
  * Optimized for Sub-250ms TTFT (low token prefill overhead, zero conversational filler).
  */
@@ -346,13 +476,23 @@ export function buildGhostboardSystemPrompt(options: {
   profile?: CandidateContext;
   outputLanguage?: string;
   helperLanguage?: string;
+  patchSlot?: PatchTargetSlot;
+  preGeneratedHook?: string;
 }): {
   systemPrompt: string;
   domain: AiDomain;
   level: AiSeniority;
   langTag: string;
 } {
-  const { question, modifier = 'normal', profile, outputLanguage = 'auto', helperLanguage = 'uk' } = options;
+  const {
+    question,
+    modifier = 'normal',
+    profile,
+    outputLanguage = 'auto',
+    helperLanguage = 'uk',
+    patchSlot = 'full',
+    preGeneratedHook,
+  } = options;
 
   const { domain, level } = inferDomainAndRole(question, profile);
   const { instruction: langInstruction, targetLangCode } = buildLanguageInstruction(
@@ -379,6 +519,14 @@ ${cvPieces.join('\n')}
       : `PRACTITIONER STANCE:
 Answer with the lived authority of an active ${level} ${domain} practitioner with battle-tested production experience.`;
 
+  const phaseDirective = buildPhaseSequenceDirective(
+    domain,
+    level,
+    langTag,
+    patchSlot,
+    preGeneratedHook
+  );
+
   const systemPrompt = `Ghostboard: teleprompter AI (<450 tokens).
 CONTEXT: Domain: ${domain} | Level: ${level}
 ${cvContextString}
@@ -396,25 +544,7 @@ ANTI-WIKIPEDIA & LIVE SPOKEN SPEECH RULES (UNRESTRICTED OMNI-RESPONDER):
 SPEECH GUARDRAIL:
 If dangling audio or background chatter, output: <<<IGNORE>>>
 
-MANDATORY 4-PHASE SEQUENCE (START IMMEDIATELY WITH LINE 1):
-<<<META: ${domain} | ${level} | ${langTag}>>>
-<<<PHASE_1:HOOK>>>
-[Gear 1 — Instant Spoken Hook: 1–2 natural, confident sentences (20–35 words). Directly answers core mechanic.]
-
-<<<PHASE_2:PILLARS>>>
-[Gear 2 — Technical Pillars: 3 bullets (18–28 words). Each starts with a **Bold Technical Anchor**:]
-• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
-• **KeyAnchor**: [Pillar 2 anchor]
-• **KeyAnchor**: [Pillar 3 anchor]
-
-<<<PHASE_3:DEEP_DIVE>>>
-[Gear 3 — Production Code / Case: 8–16 lines of clean idiomatic code OR architecture case (💡 Key nuance).]
-
-<<<PHASE_4:TRAP>>>
-Q: [1 short sentence: the sharpest follow-up trap question a Senior/Staff interviewer will ask next based on your answer above]
-A: [1–2 punchy sentences: the exact killer counter-answer with a concrete metric or mechanism]
-
-<<<END>>>`;
+${phaseDirective}`;
 
   return {
     systemPrompt,
@@ -423,6 +553,8 @@ A: [1–2 punchy sentences: the exact killer counter-answer with a concrete metr
     langTag,
   };
 }
+
+export const buildEyelinePrompterSystemPrompt = buildGhostboardSystemPrompt;
 
 export interface FollowUpContextTurn {
   question: string;
@@ -675,4 +807,52 @@ export function parseStructuredGhostboardOutput(raw: string): {
 
   return { meta, hook, pillars, deepDive, followUpTrap };
 }
+
+/**
+ * Builds an Emergency Instant Structured Coaching Card in standard 4-phase format.
+ * Rendered when all network models are unavailable so the candidate always has a calm,
+ * structured framework to speak from with a 1-click retry button.
+ */
+export function buildEmergencyCoachingCard(question = '', language = 'en'): string {
+  const isUk = language.startsWith('uk') || language.startsWith('bilingual');
+  const isRu = language.startsWith('ru');
+
+  if (isUk) {
+    return `<<<META: System Architecture | Senior | uk>>>
+<<<PHASE_1:HOOK>>>
+Почніть відповідь упевнено за структурою STAR/CAR: дайте чітке визначення або тезу та опишіть практичний бізнес-контекст. (ШІ тимчасово не відповів, натисніть кнопку для миттєвого повтору).
+<<<PHASE_2:PILLARS>>>
+• **Архітектура та компоненти**: Окресліть призначення технології, ключові компоненти та потік даних.
+• **Механізми під капотом**: Поясніть роботу з пам'яттю, конкурентністю, кешуванням, транзакціями чи мережею.
+• **Trade-offs та Best Practices**: Наведіть плюси, мінуси, обмеження та альтернативні підходи.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторити запит (1 клік)]
+<<<END>>>`;
+  }
+
+  if (isRu) {
+    return `<<<META: System Architecture | Senior | ru>>>
+<<<PHASE_1:HOOK>>>
+Начните ответ уверенно по структуре STAR/CAR: дайте чёткое определение или тезис и опишите практический бизнес-контекст. (ИИ временно задержал ответ, нажмите кнопку для быстрого повтора).
+<<<PHASE_2:PILLARS>>>
+• **Архитектура и компоненты**: Обозначьте назначение технологии, ключевые компоненты и поток данных.
+• **Механизмы под капотом**: Объясните работу с памятью, конкурентностью, кэшированием или транзакциями.
+• **Trade-offs и Best Practices**: Приведите плюсы, минусы, ограничения и альтернативные подходы.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторить запрос (1 клик)]
+<<<END>>>`;
+  }
+
+  return `<<<META: System Architecture | Senior | en>>>
+<<<PHASE_1:HOOK>>>
+Answer confidently using the STAR/CAR framework: state your core thesis and practical business context upfront. (AI connection timed out, click below to retry instantly).
+<<<PHASE_2:PILLARS>>>
+• **Core Architecture & Flow**: Define key system entities, data flow, and core responsibilities.
+• **Under the Hood Mechanics**: Explain memory management, concurrency models, caching, or transaction guarantees.
+• **Trade-offs & Production Scale**: Discuss bottlenecks, failure recovery, and architectural alternatives.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторити запит (1 клік)]
+<<<END>>>`;
+}
+
 

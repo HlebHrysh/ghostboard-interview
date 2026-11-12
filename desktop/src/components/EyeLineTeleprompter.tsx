@@ -410,6 +410,15 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
             </div>
           </button>
 
+          {/* Smart Intent Gate Active Status Pill */}
+          <div
+            className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 text-[10px] font-mono shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+            title="Question vs. Monologue Gate: 0.1ms Intent Classifier активний"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
+            <span>Intent Gate</span>
+          </div>
+
           {/* STT Status Badge (Reconnecting / Failed Alert) */}
           {sttStatus?.status === 'reconnecting' && (
             <div
@@ -858,6 +867,23 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Emergency Fallback 1-Click Retry Action */}
+              {(activeAnswer?.rawText?.includes('Повторити запит') ||
+                activeAnswer?.deepDive?.includes('Повторити запит') ||
+                activeAnswer?.hook?.includes('Повторити запит')) && onTriggerAnswer && (
+                <div className="mt-2.5 flex items-center justify-between gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200">
+                  <span className="font-sans">
+                    ШІ тимчасово не відповів через ліміти мережі. Натисніть кнопку для миттєвого повтору:
+                  </span>
+                  <button
+                    onClick={() => onTriggerAnswer(activeQuestion || undefined)}
+                    className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold text-[11px] flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95 shrink-0"
+                  >
+                    <span>🔄 Повторити запит (1 клік)</span>
+                  </button>
                 </div>
               )}
             </div>

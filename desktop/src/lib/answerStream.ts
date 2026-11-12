@@ -8,11 +8,28 @@
  */
 
 import { detectBackendUrl } from './apiClient';
+import { parseAnswer, parsedAnswerToSlots } from './answerParser';
 import { getAccessToken, streamAiAnswer, isTauriEnvironment, listenTauriEvent, clearSession } from './tauriBridge';
 import { normalizeTechnicalSpeech } from './techSpeechNormalizer';
+import { buildEmergencyCoachingCard } from '../../../src/lib/aiPromptCore';
+import {
+  mergeSurgicalAnswerSlots,
+  resolvePatchSlotForModifier,
+  serializeMergedSlotsToTaggedStream,
+  type PatchTargetSlot,
+  type StructuredAnswerSlots,
+} from '../../../src/lib/speculativeSlotEngine';
 import type { AnswerLength, AnswerSpeed, HintLanguage } from './desktopSettings';
 import type { CandidateProfile } from './profileStore';
 import type { HudEvent } from '../types/hud';
+
+export {
+  mergeSurgicalAnswerSlots,
+  resolvePatchSlotForModifier,
+  serializeMergedSlotsToTaggedStream,
+  type PatchTargetSlot,
+  type StructuredAnswerSlots,
+};
 
 export type DirectorModifier =
   | 'normal'
@@ -37,12 +54,22 @@ export interface AnswerRequest {
   customInstructions?: string;
   profile?: CandidateProfile | null;
   history?: Array<{ speaker: 'interviewer' | 'candidate'; text: string }>;
+  /** Optional surgical slot patch mode (Idea #1 / Idea #4). */
+  patchSlot?: PatchTargetSlot;
+  /** Pre-generated Phase 1 hook text when continuing with `rest_after_hook`. */
+  preGeneratedHook?: string;
+  /** Existing tagged answer text to preserve untouched slots when patching. */
+  existingRaw?: string;
+  /** Existing structured slots snapshot to preserve untouched slots when patching. */
+  existingSlots?: StructuredAnswerSlots;
 }
 
 export interface AnswerStreamHandlers {
   /** Called for every text delta, with the already cleaned full text so far. */
   onToken: (delta: string, cleanedText: string) => void;
   onFirstToken?: (ttftMs: number) => void;
+  /** Called when a surgical partial patch is merged onto existing slots. */
+  onSlotMerge?: (mergedTagged: string, mergedSlots: StructuredAnswerSlots) => void;
   onDone: (info: { text: string; ttftMs: number | null; totalMs: number; model: string | null }) => void;
   onError: (message: string) => void;
 }
@@ -90,15 +117,23 @@ export function buildAnswerPayload(req: AnswerRequest): {
   };
   outputLanguage: string;
   helperLanguage?: string;
+  patchSlot?: PatchTargetSlot;
+  preGeneratedHook?: string;
 } {
   const cleanQuestion = normalizeTechnicalSpeech(req.question.trim());
   const lang = resolveLanguage(req.language, cleanQuestion);
   const helperLanguage = req.language === 'bilingual_ru' ? 'ru' : 'uk';
+  const directorModifier = resolveModifier(req);
+  const resolvedPatchSlot: PatchTargetSlot | undefined =
+    req.patchSlot ??
+    (req.existingRaw || req.existingSlots
+      ? resolvePatchSlotForModifier(directorModifier)
+      : undefined);
 
   return {
     question: cleanQuestion.slice(0, MAX_QUESTION_CHARS),
     history: (req.history ?? []).slice(-4).map((h) => ({ speaker: h.speaker, text: h.text.slice(0, 400) })),
-    directorModifier: resolveModifier(req),
+    directorModifier,
     candidateProfile: req.profile
       ? {
           role: req.profile.role,
@@ -110,6 +145,40 @@ export function buildAnswerPayload(req: AnswerRequest): {
       : undefined,
     outputLanguage: lang,
     helperLanguage,
+    ...(resolvedPatchSlot ? { patchSlot: resolvedPatchSlot } : {}),
+    ...(req.preGeneratedHook ? { preGeneratedHook: req.preGeneratedHook } : {}),
+  };
+}
+
+/**
+ * Merges a newly streamed partial slot buffer with an existing slots snapshot
+ * so HUD display text and parsed slots stay synchronized without wiping frozen phases.
+ */
+export function applySlotMergeToBuffer(
+  rawAccumulated: string,
+  slotMode?: PatchTargetSlot,
+  existingSlots?: StructuredAnswerSlots | null
+): {
+  rawTagged: string;
+  cleanedText: string;
+  mergedSlots: StructuredAnswerSlots | null;
+} {
+  if (!existingSlots || !slotMode || slotMode === 'full' || slotMode === 'speculative_hook') {
+    return {
+      rawTagged: rawAccumulated,
+      cleanedText: cleanStreamText(rawAccumulated),
+      mergedSlots: null,
+    };
+  }
+
+  const incomingSlots = parsedAnswerToSlots(parseAnswer(rawAccumulated));
+  const mergedSlots = mergeSurgicalAnswerSlots(existingSlots, incomingSlots, slotMode);
+  const mergedTagged = serializeMergedSlotsToTaggedStream(mergedSlots);
+
+  return {
+    rawTagged: mergedTagged,
+    cleanedText: cleanStreamText(mergedTagged),
+    mergedSlots,
   };
 }
 
@@ -153,6 +222,19 @@ function describeHttpError(status: number, body: string): string {
 export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers): AnswerStreamHandle {
   const controller = new AbortController();
   const startedAt = performance.now();
+  const payload = buildAnswerPayload(req);
+  const slotMode: PatchTargetSlot | undefined = payload.patchSlot;
+  const baseSlots: StructuredAnswerSlots | null =
+    req.existingSlots ?? (req.existingRaw ? parsedAnswerToSlots(parseAnswer(req.existingRaw)) : null);
+
+  const emitProgress = (delta: string, rawSoFar: string): string => {
+    const merged = applySlotMergeToBuffer(rawSoFar, slotMode, baseSlots);
+    handlers.onToken(delta, merged.cleanedText);
+    if (merged.mergedSlots) {
+      handlers.onSlotMerge?.(merged.rawTagged, merged.mergedSlots);
+    }
+    return merged.cleanedText;
+  };
 
   // 1. IN TAURI DESKTOP: Direct Rust SSE stream to Gemini/Groq/OpenAI (no Next.js server dependency!)
   if (isTauriEnvironment()) {
@@ -187,7 +269,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
             handlers.onFirstToken?.(ttftMs);
           }
           accumulated += token;
-          handlers.onToken(token, cleanStreamText(accumulated));
+          emitProgress(token, accumulated);
         }
       } else if (event.type === 'llmDone' || event.type === 'aiDone') {
         const p = event.payload as { full_text?: string; text?: string; question_id?: string; questionId?: string };
@@ -198,16 +280,22 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
         const full = p.full_text || p.text;
         if (full) {
           accumulated = full;
-          handlers.onToken('', cleanStreamText(accumulated));
+          emitProgress('', accumulated);
         }
       } else if (event.type === 'error') {
-        const err = event.payload.message || 'Помилка потоку ШІ';
         completed = true;
-        handlers.onError(err);
+        unlisten();
+        const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(payload.question, payload.outputLanguage));
+        handlers.onToken('', fallbackCard);
+        handlers.onDone({
+          text: fallbackCard,
+          ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+          totalMs: Math.round(performance.now() - startedAt),
+          model: 'Ghostboard Emergency Fallback',
+        });
       }
     });
 
-    const payload = buildAnswerPayload(req);
     void streamAiAnswer(payload.question, {
       outputLanguage: payload.outputLanguage,
       helperLanguage: payload.helperLanguage,
@@ -223,13 +311,20 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
         completed = true;
         unlisten();
 
-        const finalText = cleanStreamText(fullText || accumulated);
-        if (!finalText.trim()) {
-          handlers.onError('ШІ повернув порожню відповідь. Перевірте дійсність GEMINI_API_KEY у файлі .env');
+        const rawFinal = fullText || accumulated;
+        if (!cleanStreamText(rawFinal).trim()) {
+          const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(payload.question, payload.outputLanguage));
+          handlers.onToken('', fallbackCard);
+          handlers.onDone({
+            text: fallbackCard,
+            ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+            totalMs: Math.round(performance.now() - startedAt),
+            model: 'Ghostboard Emergency Fallback',
+          });
           return;
         }
 
-        handlers.onToken('', finalText);
+        const finalText = emitProgress('', rawFinal);
 
         handlers.onDone({
           text: finalText,
@@ -238,16 +333,67 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           model: 'Gemini 3.8 Flash / Groq',
         });
       })
-      .catch((err: unknown) => {
+      .catch(async () => {
         if (completed || controller.signal.aborted) {
           unlisten();
           return;
         }
+
+        // Automatic failover to local Next.js dual-stream backend
+        try {
+          const [baseUrl, token] = await Promise.all([detectBackendUrl(), getAccessToken()]);
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+            'x-ghostboard-client': 'desktop-app',
+          };
+          if (token) headers.Authorization = `Bearer ${token}`;
+
+          const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/ai/dual-stream`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+          });
+
+          if (response.ok && response.body) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let fallbackAcc = '';
+            while (true) {
+              const { value, done } = await reader.read();
+              if (value) {
+                const chunk = decoder.decode(value, { stream: !done });
+                fallbackAcc += chunk;
+                emitProgress(chunk, fallbackAcc);
+              }
+              if (done) break;
+            }
+            if (fallbackAcc.trim()) {
+              completed = true;
+              unlisten();
+              const finalFallbackText = applySlotMergeToBuffer(fallbackAcc, slotMode, baseSlots).cleanedText;
+              handlers.onDone({
+                text: finalFallbackText,
+                ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+                totalMs: Math.round(performance.now() - startedAt),
+                model: 'Next.js Fallback',
+              });
+              return;
+            }
+          }
+        } catch {}
+
         completed = true;
         unlisten();
-
-        const msg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
-        handlers.onError(msg || 'Невідома помилка нативного ШІ');
+        const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(payload.question, payload.outputLanguage));
+        handlers.onToken('', fallbackCard);
+        handlers.onDone({
+          text: fallbackCard,
+          ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+          totalMs: Math.round(performance.now() - startedAt),
+          model: 'Ghostboard Emergency Fallback',
+        });
       });
 
     return {
@@ -277,7 +423,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
       const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/api/ai/dual-stream`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(buildAnswerPayload(req)),
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -303,7 +449,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           handlers.onFirstToken?.(ttftMs);
         }
         accumulated += token;
-        handlers.onToken(token, cleanStreamText(accumulated));
+        emitProgress(token, accumulated);
       };
 
       const dispatch = () => {
@@ -386,28 +532,37 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
       }
       reader.cancel().catch(() => {});
 
-      if (streamError) {
-        handlers.onError(streamError);
+      if (streamError || !accumulated.trim()) {
+        const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(req.question, resolveLanguage(req.language, req.question)));
+        handlers.onToken('', fallbackCard);
+        handlers.onDone({
+          text: fallbackCard,
+          ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+          totalMs: Math.round(performance.now() - startedAt),
+          model: 'Ghostboard Emergency Fallback',
+        });
         return;
       }
-      if (!accumulated.trim()) {
-        handlers.onError('ШІ повернув порожню відповідь. Спробуйте ще раз.');
-        return;
+      const finalMerged = applySlotMergeToBuffer(accumulated, slotMode, baseSlots);
+      if (finalMerged.mergedSlots) {
+        handlers.onSlotMerge?.(finalMerged.rawTagged, finalMerged.mergedSlots);
       }
       handlers.onDone({
-        text: cleanStreamText(accumulated),
+        text: finalMerged.cleanedText,
         ttftMs,
         totalMs: Math.round(performance.now() - startedAt),
         model,
       });
-    } catch (err) {
+    } catch {
       if (controller.signal.aborted) return;
-      const msg = err instanceof Error ? err.message : String(err);
-      handlers.onError(
-        /failed to fetch|networkerror|load failed/i.test(msg)
-          ? 'Немає зв’язку з сервером Ghostboard. Перевірте інтернет і налаштування API у .env.'
-          : msg
-      );
+      const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(req.question, resolveLanguage(req.language, req.question)));
+      handlers.onToken('', fallbackCard);
+      handlers.onDone({
+        text: fallbackCard,
+        ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+        totalMs: Math.round(performance.now() - startedAt),
+        model: 'Ghostboard Emergency Fallback',
+      });
     }
   })();
 

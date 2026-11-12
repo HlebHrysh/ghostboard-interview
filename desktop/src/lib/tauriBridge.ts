@@ -69,9 +69,15 @@ export function startCopilotStream(onEvent: (event: HudEvent) => void): () => vo
       onEvent(event);
     });
 
+    const unlistenRadar = listenTauriEvent<HudEvent>('screen-radar-ready', (event) => {
+      if (!active) return;
+      onEvent(event);
+    });
+
     return () => {
       active = false;
       unlistenGlobal();
+      unlistenRadar();
       invoke('stop_hud_stream').catch(() => {});
     };
   } catch (err) {
@@ -620,6 +626,82 @@ export async function captureScreen(): Promise<{
   }
 }
 
+export interface RadarSnapshotResult {
+  base64Png: string;
+  roiWidth: number;
+  roiHeight: number;
+}
+
+let browserVisionRadarEnabled = true;
+let stagedBrowserRadarSnapshot: RadarSnapshotResult | null = null;
+
+/**
+ * Stages a mock ROI snapshot in browser/test mode so 0ms radar consumption can be exercised
+ * without a native Tauri backend.
+ */
+export function stageBrowserRadarSnapshot(snapshot: RadarSnapshotResult | null): void {
+  stagedBrowserRadarSnapshot = snapshot;
+}
+
+/**
+ * Consumes the pre-cropped ROI PNG cached in Rust RAM in 0ms (or falls back to native capture).
+ * In browser mode, returns a staged snapshot or lightweight fallback when radar is enabled.
+ */
+export async function consumeRadarSnapshot(): Promise<RadarSnapshotResult | null> {
+  if (!isTauriEnvironment()) {
+    if (stagedBrowserRadarSnapshot) {
+      const snap = stagedBrowserRadarSnapshot;
+      stagedBrowserRadarSnapshot = null;
+      return snap;
+    }
+    if (!browserVisionRadarEnabled) return null;
+    return {
+      base64Png:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      roiWidth: 1280,
+      roiHeight: 720,
+    };
+  }
+  try {
+    const raw = await invoke<{
+      base64_png?: string;
+      base64Png?: string;
+      roi_width?: number;
+      roiWidth?: number;
+      roi_height?: number;
+      roiHeight?: number;
+    } | null>('consume_radar_snapshot');
+    if (!raw) return null;
+    const base64Png = raw.base64Png || raw.base64_png || '';
+    if (!base64Png) return null;
+    return {
+      base64Png,
+      roiWidth: raw.roiWidth ?? raw.roi_width ?? 0,
+      roiHeight: raw.roiHeight ?? raw.roi_height ?? 0,
+    };
+  } catch (err) {
+    console.warn('[tauriBridge] consume_radar_snapshot error:', err);
+    return null;
+  }
+}
+
+/**
+ * Enables or disables the background perceptual dHash screen radar watcher.
+ */
+export async function toggleVisionRadar(enabled: boolean): Promise<boolean> {
+  if (!isTauriEnvironment()) {
+    browserVisionRadarEnabled = enabled;
+    if (!enabled) stagedBrowserRadarSnapshot = null;
+    return enabled;
+  }
+  try {
+    return await invoke<boolean>('toggle_vision_radar', { enabled });
+  } catch (err) {
+    console.warn('[tauriBridge] toggle_vision_radar error:', err);
+    return false;
+  }
+}
+
 /**
  * Checks for application updates via native Tauri v2 updater.
  * Gracefully falls back to { available: false } in non-Tauri browser environments.
@@ -860,6 +942,8 @@ export function setupWindowCompatibilityShim(): void {
     clearSession: () => clearSession(),
     exportMarkdown: (content: string, filename?: string) => exportMarkdown(content, filename),
     captureScreen: () => captureScreen(),
+    consumeRadarSnapshot: () => consumeRadarSnapshot(),
+    toggleVisionRadar: (enabled: boolean) => toggleVisionRadar(enabled),
     startAudioCapture: (source?: string) => startAudioCapture(source),
     stopAudioCapture: () => stopAudioCapture(),
     startPkceLogin: (baseUrl?: string) => startPkceLogin(baseUrl),

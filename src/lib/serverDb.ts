@@ -391,6 +391,10 @@ export async function updateUserPlan(userId: string, plan: string): Promise<void
     }
   }
 
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.plan = plan;
@@ -419,6 +423,10 @@ export async function updateUser(
       failDbInProduction(dbErr);
       // Fallback
     }
+  }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
   }
 
   const memUser = memUsersById.get(userId);
@@ -509,6 +517,10 @@ export async function deleteUser(userId: string): Promise<boolean> {
       failDbInProduction(dbErr);
       // Fallback
     }
+  }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
   }
 
   const user = memUsersById.get(userId);
@@ -775,6 +787,10 @@ export async function makeSessionPublic(historyId: string, slug: string): Promis
     }
   }
 
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const mem = memHistoryById.get(historyId);
   if (mem) {
     mem.isPublic = true;
@@ -837,6 +853,10 @@ export async function deleteSavedSession(sessionId: string): Promise<boolean> {
       failDbInProduction(dbErr);
       // Fallback
     }
+  }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
   }
 
   const session = memHistoryById.get(sessionId);
@@ -969,6 +989,9 @@ export async function updateUserCandidateProfile(
       });
     }
   }
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.candidateProfile = candidateProfile as Prisma.JsonValue;
@@ -1014,6 +1037,11 @@ export async function incrementUserTrialQuestions(userId: string): Promise<numbe
       failDbInProduction(dbErr);
     }
   }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.trialQuestionsUsed = (memUser.trialQuestionsUsed || 0) + 1;
@@ -1034,6 +1062,11 @@ export async function updateUserResumeContext(userId: string, context: string): 
       failDbInProduction(dbErr);
     }
   }
+
+  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
+    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+  }
+
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.resumeContext = context;

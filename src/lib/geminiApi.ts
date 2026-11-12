@@ -8,12 +8,16 @@ const log = logger.child({ component: 'geminiApi' });
 export const FLASH_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.8-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
 
 export const PRO_MODELS = [
   'gemini-3.5-flash',
   'gemini-3.8-flash',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
 
@@ -28,10 +32,12 @@ interface ModelHealth {
 const modelHealthMap = new Map<string, ModelHealth>();
 let preferredFastModel: string | null = null;
 
-export const MODEL_DEMOTION_TTL_MS = 3 * 60 * 1000; // 3-minute demotion on timeout/503
+export const MODEL_DEMOTION_TTL_MS = 60 * 1000; // 1-minute demotion on repeated errors
 
-// In-memory Circuit Breaker: marks a model dead for 15 seconds on repeated 429/503
-export const CIRCUIT_BREAKER_TTL_MS = 15_000;
+// In-memory Circuit Breaker: short 8s cooldown on 429/503 and 120s on 404
+export const CIRCUIT_BREAKER_429_503_TTL_MS = 8_000;
+export const CIRCUIT_BREAKER_404_TTL_MS = 120_000;
+export const CIRCUIT_BREAKER_TTL_MS = 8_000;
 const circuitBreakerMap = new Map<string, number>();
 
 export function isModelCircuitBroken(model: string): boolean {
@@ -41,7 +47,12 @@ export function isModelCircuitBroken(model: string): boolean {
 
 export function tripModelCircuitBreaker(model: string, ttlMs: number = CIRCUIT_BREAKER_TTL_MS): void {
   circuitBreakerMap.set(model, Date.now() + ttlMs);
-  recordModelFailure(model);
+  modelHealthMap.set(model, {
+    demotedUntil: Date.now() + ttlMs,
+  });
+  if (preferredFastModel === model) {
+    preferredFastModel = null;
+  }
 }
 
 export function resetModelCircuitBreaker(): void {
@@ -613,7 +624,7 @@ export async function runHedgedStreamRace(
     }
   };
 
-  const startGeminiContender = async (model: string) => {
+  const startGeminiContender = async (model: string, simplified = false) => {
     if (!apiKey || winnerDeclared) return;
     const ac = new AbortController();
     activeControllers.set(model, ac);
@@ -628,7 +639,7 @@ export async function runHedgedStreamRace(
         ...(options.generationConfig || {}),
       };
 
-      if (!modelsRejectingThinking.has(model) && !model.includes('flash-lite')) {
+      if (!simplified && !modelsRejectingThinking.has(model) && !model.includes('flash-lite')) {
         genConfig.thinkingConfig = { thinkingBudget: 0 };
       }
 
@@ -641,8 +652,12 @@ export async function runHedgedStreamRace(
       });
 
       if (!res.ok) {
-        if (res.status === 503 || res.status === 429 || res.status === 404) {
-          tripModelCircuitBreaker(model);
+        if (res.status === 503 || res.status === 429) {
+          tripModelCircuitBreaker(model, CIRCUIT_BREAKER_429_503_TTL_MS);
+          return;
+        }
+        if (res.status === 404) {
+          tripModelCircuitBreaker(model, CIRCUIT_BREAKER_404_TTL_MS);
           return;
         }
         const errBody = await res.text().catch(() => '');
@@ -666,7 +681,11 @@ export async function runHedgedStreamRace(
       }
 
       if (!res.ok || !res.body) {
-        recordModelFailure(model);
+        if (res.status === 429 || res.status === 503) {
+          tripModelCircuitBreaker(model, CIRCUIT_BREAKER_429_503_TTL_MS);
+        } else if (res.status === 404) {
+          tripModelCircuitBreaker(model, CIRCUIT_BREAKER_404_TTL_MS);
+        }
         return;
       }
 
@@ -715,7 +734,10 @@ export async function runHedgedStreamRace(
         }
       }
     } catch {
-      recordModelFailure(model);
+      // Never put a model on cooldown for a single timeout
+      if (preferredFastModel === model) {
+        preferredFastModel = null;
+      }
     } finally {
       activeControllers.delete(model);
       activeContendersCount--;
@@ -752,10 +774,11 @@ export async function runHedgedStreamRace(
           }
         };
         onContenderFinished = finishListener;
+        // 1800ms First-Byte Hedge instead of 8s dead wait
         timer = setTimeout(() => {
           cleanup();
           resolve();
-        }, 600);
+        }, 1800);
 
         const cleanup = () => {
           if (timer) clearTimeout(timer);
@@ -770,7 +793,14 @@ export async function runHedgedStreamRace(
     }
 
     if (!winnerDeclared && activeContendersCount === 0) {
-      resolveWinner(null);
+      // Never-Dead Cooldown Breaker: if all models are on cooldown or fail on the first pass,
+      // immediately clear all cooldowns and execute one direct retry on primary model with simplified payload
+      resetModelHealth();
+      const primaryModel = FLASH_MODELS[0] || 'gemini-3.8-flash';
+      await startGeminiContender(primaryModel, true);
+      if (!winnerDeclared && activeContendersCount === 0) {
+        resolveWinner(null);
+      }
     }
   };
 

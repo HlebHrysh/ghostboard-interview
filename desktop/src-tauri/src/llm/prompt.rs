@@ -86,14 +86,74 @@ MODIFIER: MICRO-EXPLAINER (EXPLAIN LINE).
 - Skip long preambles, provide immediate spoken clarity.
 "#;
 
-/// Builds system prompt with comprehensive modifier and multilingual support.
-pub fn build_system_prompt_with_options(
+/// Resolves max output tokens per patch slot to minimize TTFT & generation cost.
+pub fn max_tokens_for_patch_slot(patch_slot: Option<&str>, modifier: Option<&str>) -> u32 {
+    let mod_val = modifier.unwrap_or("normal");
+    match patch_slot.unwrap_or("full") {
+        "speculative_hook" => 95,
+        "deep_dive" => 380,
+        "hook_and_pillars" => 260,
+        "trap" => 180,
+        "rest_after_hook" => {
+            if mod_val == "shorter" || mod_val == "explain_line" {
+                320
+            } else {
+                850
+            }
+        }
+        _ => {
+            if mod_val == "shorter" || mod_val == "explain_line" {
+                350
+            } else {
+                850
+            }
+        }
+    }
+}
+
+/// Builds system prompt with comprehensive modifier, multilingual, and surgical patchSlot support.
+pub fn build_system_prompt_with_patch_slot(
     candidate_profile: Option<&str>,
     modifier: Option<&str>,
     output_language: Option<&str>,
     helper_language: Option<&str>,
+    patch_slot: Option<&str>,
+    pre_generated_hook: Option<&str>,
 ) -> String {
     let mut prompt = String::from(BASE_SYSTEM_PROMPT);
+
+    // Apply surgical patchSlot override directive when targeting a subset of phases
+    match patch_slot.unwrap_or("full") {
+        "speculative_hook" => {
+            prompt.push_str("\nMANDATORY SPECULATIVE HOOK MODE (STOP IMMEDIATELY AFTER PHASE 1):\n");
+            prompt.push_str("- Output ONLY <<<META: {Domain} | {Level} | {Language}>>> and <<<PHASE_1:HOOK>>> (1-2 natural spoken sentences, max 35 words) followed by <<<END>>>.\n");
+            prompt.push_str("- Do NOT output <<<PHASE_2:PILLARS>>>, <<<PHASE_3:DEEP_DIVE>>>, or <<<PHASE_4:TRAP>>>.\n");
+        }
+        "rest_after_hook" => {
+            let hook_preview = pre_generated_hook.unwrap_or("").trim();
+            prompt.push_str("\nMANDATORY CONTINUATION AFTER PRE-DISPLAYED HOOK:\n");
+            prompt.push_str(&format!(
+                "- <<<PHASE_1:HOOK>>> is ALREADY shown to the candidate: \"{}\"\n",
+                hook_preview
+            ));
+            prompt.push_str("- DO NOT repeat <<<META>>> or <<<PHASE_1:HOOK>>>! Start IMMEDIATELY at <<<PHASE_2:PILLARS>>> followed by <<<PHASE_3:DEEP_DIVE>>> and <<<PHASE_4:TRAP>>>.\n");
+        }
+        "deep_dive" => {
+            prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 3 ONLY):\n");
+            prompt.push_str("- <<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> are ALREADY frozen on screen.\n");
+            prompt.push_str("- Output ONLY <<<PHASE_3:DEEP_DIVE>>> with a clean, production-grade code snippet and complexity analysis, then <<<END>>>. Do NOT output META, PHASE_1, PHASE_2, or PHASE_4.\n");
+        }
+        "hook_and_pillars" => {
+            prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 1 & PHASE 2 ONLY):\n");
+            prompt.push_str("- <<<PHASE_3:DEEP_DIVE>>> is ALREADY frozen on screen and untouched.\n");
+            prompt.push_str("- Output ONLY a tighter, simpler <<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> followed by <<<END>>>. Do NOT output PHASE_3 or PHASE_4.\n");
+        }
+        "trap" => {
+            prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 4 ONLY):\n");
+            prompt.push_str("- Output ONLY <<<PHASE_4:TRAP>>> followed by <<<END>>>.\n");
+        }
+        _ => {}
+    }
 
     // Apply modifier extension
     match modifier.unwrap_or("normal") {
@@ -136,6 +196,23 @@ pub fn build_system_prompt_with_options(
     }
 
     prompt
+}
+
+/// Builds system prompt with comprehensive modifier and multilingual support.
+pub fn build_system_prompt_with_options(
+    candidate_profile: Option<&str>,
+    modifier: Option<&str>,
+    output_language: Option<&str>,
+    helper_language: Option<&str>,
+) -> String {
+    build_system_prompt_with_patch_slot(
+        candidate_profile,
+        modifier,
+        output_language,
+        helper_language,
+        None,
+        None,
+    )
 }
 
 /// Builds the system prompt tailored with optional candidate profile and concise mode flag.
@@ -264,6 +341,50 @@ pub fn build_user_prompt(question: &str, recent_context: Option<&str>) -> String
     build_user_prompt_with_history(question, recent_context, None)
 }
 
+/// Builds an Emergency Instant Structured Coaching Card in standard 4-phase format.
+/// Rendered when all network models are unavailable so the candidate always has a calm,
+/// structured framework to speak from with a 1-click retry button.
+pub fn build_emergency_coaching_card(language: Option<&str>) -> String {
+    let lang = language.unwrap_or("en");
+    let is_uk = lang.starts_with("uk") || lang.starts_with("bilingual");
+    let is_ru = lang.starts_with("ru");
+
+    if is_uk {
+        r#"<<<META: System Architecture | Senior | uk>>>
+<<<PHASE_1:HOOK>>>
+Почніть відповідь упевнено за структурою STAR/CAR: дайте чітке визначення або тезу та опишіть практичний бізнес-контекст. (ШІ тимчасово не відповів, натисніть кнопку для миттєвого повтору).
+<<<PHASE_2:PILLARS>>>
+• **Архітектура та компоненти**: Окресліть призначення технології, ключові компоненти та потік даних.
+• **Механізми під капотом**: Поясніть роботу з пам'яттю, конкурентністю, кешуванням, транзакціями чи мережею.
+• **Trade-offs та Best Practices**: Наведіть плюси, мінуси, обмеження та альтернативні підходи.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторити запит (1 клік)]
+<<<END>>>"#.to_string()
+    } else if is_ru {
+        r#"<<<META: System Architecture | Senior | ru>>>
+<<<PHASE_1:HOOK>>>
+Начните ответ уверенно по структуре STAR/CAR: дайте чёткое определение или тезис и опишите практический бизнес-контекст. (ИИ временно задержал ответ, нажмите кнопку для быстрого повтора).
+<<<PHASE_2:PILLARS>>>
+• **Архитектура и компоненты**: Обозначьте назначение технологии, ключевые компоненты и поток данных.
+• **Механизмы под капотом**: Объясните работу с памятью, конкурентностью, кэшированием или транзакциями.
+• **Trade-offs и Best Practices**: Приведите плюсы, минусы, ограничения и альтернативные подходы.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторить запрос (1 клик)]
+<<<END>>>"#.to_string()
+    } else {
+        r#"<<<META: System Architecture | Senior | en>>>
+<<<PHASE_1:HOOK>>>
+Answer confidently using the STAR/CAR framework: state your core thesis and practical business context upfront. (AI connection timed out, click below to retry instantly).
+<<<PHASE_2:PILLARS>>>
+• **Core Architecture & Flow**: Define key system entities, data flow, and core responsibilities.
+• **Under the Hood Mechanics**: Explain memory management, concurrency models, caching, or transaction guarantees.
+• **Trade-offs & Production Scale**: Discuss bottlenecks, failure recovery, and architectural alternatives.
+<<<PHASE_3:DEEP_DIVE>>>
+// [🔄 Повторити запит (1 клік)]
+<<<END>>>"#.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,5 +447,69 @@ mod tests {
             Some("assuming 50 regions"),
         );
         assert!(continuation_prompt.contains("[CONTINUATION REFINEMENT: Keep the opening natural, and specifically address the newly added constraint: \"assuming 50 regions\"]"));
+    }
+
+    #[test]
+    fn test_emergency_coaching_card() {
+        let card_uk = build_emergency_coaching_card(Some("uk"));
+        assert!(card_uk.contains("<<<PHASE_1:HOOK>>>"));
+        assert!(card_uk.contains("Почніть відповідь упевнено за структурою STAR/CAR"));
+        assert!(card_uk.contains("[🔄 Повторити запит (1 клік)]"));
+
+        let card_en = build_emergency_coaching_card(Some("en"));
+        assert!(card_en.contains("Answer confidently using the STAR/CAR framework"));
+        assert!(card_en.contains("[🔄 Повторити запит (1 клік)]"));
+    }
+
+    #[test]
+    fn test_patch_slot_prompts_and_token_budgets() {
+        let spec = build_system_prompt_with_patch_slot(
+            None,
+            Some("normal"),
+            Some("en"),
+            None,
+            Some("speculative_hook"),
+            None,
+        );
+        assert!(spec.contains("MANDATORY SPECULATIVE HOOK MODE"));
+        assert!(spec.contains("max 35 words"));
+
+        let rest = build_system_prompt_with_patch_slot(
+            None,
+            Some("normal"),
+            Some("en"),
+            None,
+            Some("rest_after_hook"),
+            Some("In production I use token bucket with Redis Lua scripts."),
+        );
+        assert!(rest.contains("MANDATORY CONTINUATION AFTER PRE-DISPLAYED HOOK"));
+        assert!(rest.contains("In production I use token bucket with Redis Lua scripts."));
+        assert!(rest.contains("Start IMMEDIATELY at <<<PHASE_2:PILLARS>>>"));
+
+        let deep = build_system_prompt_with_patch_slot(
+            None,
+            Some("code"),
+            Some("en"),
+            None,
+            Some("deep_dive"),
+            None,
+        );
+        assert!(deep.contains("MANDATORY SURGICAL SLOT PATCH (PHASE 3 ONLY)"));
+        assert!(deep.contains("Output ONLY <<<PHASE_3:DEEP_DIVE>>>"));
+
+        let hp = build_system_prompt_with_patch_slot(
+            None,
+            Some("shorter"),
+            Some("en"),
+            None,
+            Some("hook_and_pillars"),
+            None,
+        );
+        assert!(hp.contains("MANDATORY SURGICAL SLOT PATCH (PHASE 1 & PHASE 2 ONLY)"));
+
+        assert_eq!(max_tokens_for_patch_slot(Some("speculative_hook"), None), 95);
+        assert_eq!(max_tokens_for_patch_slot(Some("deep_dive"), Some("code")), 380);
+        assert_eq!(max_tokens_for_patch_slot(Some("hook_and_pillars"), Some("shorter")), 260);
+        assert_eq!(max_tokens_for_patch_slot(Some("full"), None), 850);
     }
 }

@@ -129,7 +129,7 @@ const CodeBlock = memo(function CodeBlock({
                   className="group flex items-start gap-2.5 px-1 py-0.5 -mx-1 rounded cursor-pointer hover:bg-white/[0.06] transition-colors"
                   title="Клікніть для 2-реченнєвого пояснення рядка (explain_line)"
                 >
-                  <span className="w-5 text-right font-mono text-[10px] text-zinc-600 group-hover:text-cyan-400 select-none shrink-0 pt-0.5">
+                  <span className="w-5 text-right font-mono text-xs text-zinc-400 group-hover:text-cyan-300 select-none shrink-0 pt-0.5">
                     {i + 1}
                   </span>
                   <div className="flex-1 min-w-0">

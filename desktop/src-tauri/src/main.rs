@@ -7,6 +7,7 @@ pub mod ipc;
 pub mod llm;
 pub mod stt;
 pub mod updater;
+pub mod vision_radar;
 pub mod window;
 
 use std::sync::Arc;
@@ -113,6 +114,139 @@ async fn capture_screen() -> Result<crate::window::ScreenCaptureResult, String> 
     })
     .await
     .map_err(|e| format!("Screen capture failed: {}", e))
+}
+
+/// Enables or disables the background perceptual dHash screen radar watcher.
+#[tauri::command]
+fn toggle_vision_radar(
+    enabled: bool,
+    state: tauri::State<'_, Arc<vision_radar::VisionRadarState>>,
+) -> Result<bool, String> {
+    Ok(state.set_enabled(enabled))
+}
+
+/// Returns the pre-cropped ROI PNG from RAM in 0ms if staged by the radar,
+/// or falls back to a native screen capture if none is cached yet.
+#[tauri::command]
+async fn consume_radar_snapshot(
+    state: tauri::State<'_, Arc<vision_radar::VisionRadarState>>,
+) -> Result<Option<vision_radar::RadarDetectionPayload>, String> {
+    if let Some(cached) = state.take_latest() {
+        return Ok(Some(cached));
+    }
+
+    let cap = tauri::async_runtime::spawn_blocking(|| {
+        crate::window::screenshot::capture_screen_native()
+    })
+    .await
+    .map_err(|e| format!("Screen capture fallback failed: {}", e))?;
+
+    Ok(Some(vision_radar::RadarDetectionPayload {
+        detection_id: format!("fallback-{}", vision_radar::now_epoch_ms()),
+        hamming_distance: 0,
+        roi_x: 0,
+        roi_y: 0,
+        roi_width: cap.width,
+        roi_height: cap.height,
+        base64_png: format!("data:image/png;base64,{}", cap.base64_png),
+        detected_at_ms: vision_radar::now_epoch_ms(),
+    }))
+}
+
+fn spawn_vision_radar_watcher(
+    app_handle: tauri::AppHandle,
+    vision_radar: Arc<vision_radar::VisionRadarState>,
+    hud_state: HudChannelState,
+) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(2500));
+        let mut last_stable_hash: Option<u64> = None;
+        let mut last_stable_img: Option<image::DynamicImage> = None;
+        let mut prev_tick_hash: Option<u64> = None;
+
+        loop {
+            interval.tick().await;
+
+            let hud_active = app_handle
+                .get_webview_window(crate::window::hud::HUD_LABEL)
+                .is_some()
+                || hud_state.active_channel_count() > 0;
+
+            if !hud_active || !vision_radar.is_enabled() {
+                if !hud_active {
+                    last_stable_hash = None;
+                    last_stable_img = None;
+                    prev_tick_hash = None;
+                }
+                continue;
+            }
+
+            let frame_opt = tokio::task::spawn_blocking(vision_radar::capture_primary_frame)
+                .await
+                .ok()
+                .flatten();
+
+            let Some(img) = frame_opt else {
+                continue;
+            };
+
+            let dhash = vision_radar::compute_dhash_64(&img);
+
+            let Some(stable_hash) = last_stable_hash else {
+                last_stable_hash = Some(dhash);
+                last_stable_img = Some(img);
+                prev_tick_hash = Some(dhash);
+                continue;
+            };
+
+            let dist_from_stable = vision_radar::hamming_distance(stable_hash, dhash);
+            let dist_from_prev = prev_tick_hash
+                .map(|p| vision_radar::hamming_distance(p, dhash))
+                .unwrap_or(u32::MAX);
+
+            if dist_from_stable >= 8 && dist_from_prev <= 3 {
+                let prev_ref = last_stable_img.clone();
+                let curr_clone = img.clone();
+                let roi_res = tokio::task::spawn_blocking(move || {
+                    vision_radar::extract_changed_roi_base64(prev_ref.as_ref(), &curr_clone)
+                })
+                .await;
+
+                if let Ok(Ok((rx, ry, rw, rh, b64))) = roi_res {
+                    let detected_at_ms = vision_radar::now_epoch_ms();
+                    let detection_id = format!("radar-{}", detected_at_ms);
+                    let payload = vision_radar::RadarDetectionPayload {
+                        detection_id: detection_id.clone(),
+                        hamming_distance: dist_from_stable,
+                        roi_x: rx,
+                        roi_y: ry,
+                        roi_width: rw,
+                        roi_height: rh,
+                        base64_png: b64,
+                        detected_at_ms,
+                    };
+                    vision_radar.set_latest(payload);
+                    hud_state.broadcast_screen_radar(
+                        detection_id,
+                        dist_from_stable,
+                        rw,
+                        rh,
+                        detected_at_ms,
+                    );
+                    tracing::info!(
+                        target: "ghostboard::vision_radar",
+                        hamming = dist_from_stable,
+                        roi = ?(rx, ry, rw, rh),
+                        "Staged 0ms ROI screen delta"
+                    );
+                    last_stable_hash = Some(dhash);
+                    last_stable_img = Some(img);
+                }
+            }
+
+            prev_tick_hash = Some(dhash);
+        }
+    });
 }
 
 /// Lists all audio devices available on the host system.
@@ -910,11 +1044,9 @@ pub fn spawn_copilot_pipeline(
                 };
 
                 let word_count = current_eval_text.split_whitespace().count();
-                let is_question = token.speech_final
-                    || current_eval_text.ends_with('?')
-                    || crate::llm::eot::is_question_heuristic(&current_eval_text);
+                let is_question = crate::llm::eot::is_question_heuristic(&current_eval_text);
 
-                if is_question && word_count >= 3 && !is_recent_duplicate(&tr.recent_triggers, &current_eval_text) {
+                if is_question && word_count >= 2 && !is_recent_duplicate(&tr.recent_triggers, &current_eval_text) {
                     trigger_candidate = Some(current_eval_text);
                 }
             }
@@ -923,12 +1055,13 @@ pub fn spawn_copilot_pipeline(
                 let eot_result = llm_for_stt.evaluate_eot(token.speech_final, token.timestamp_ms).await;
                 let trigger = match eot_result {
                     Some(t) => Some(t),
-                    None if token.speech_final || candidate_text.ends_with('?') => {
+                    None if (token.speech_final || candidate_text.ends_with('?')) && crate::llm::eot::is_question_heuristic(&candidate_text) => {
                         let now_ms = token.timestamp_ms;
                         let context_90s = llm_for_stt.get_sliding_context().await;
+                        let focused = crate::llm::eot::extract_focused_question(&candidate_text, &context_90s);
                         Some(crate::llm::eot::EotTrigger {
                             question_id: format!("q-stt-{}", now_ms),
-                            question_text: candidate_text.clone(),
+                            question_text: focused,
                             context_90s,
                             timestamp_ms: now_ms,
                         })
@@ -1497,6 +1630,7 @@ fn main() {
     let llm_orchestrator = Arc::new(LlmOrchestrator::new());
     let audio_state = crate::audio::GlobalAudioState::default();
     let auth_manager = Arc::new(AuthManager::new());
+    let vision_radar = vision_radar::VisionRadarState::new();
 
     tauri::Builder::default()
         .plugin(
@@ -1582,6 +1716,7 @@ fn main() {
         .manage(stt_orchestrator.clone())
         .manage(llm_orchestrator.clone())
         .manage(auth_manager.clone())
+        .manage(vision_radar.clone())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -1631,6 +1766,7 @@ fn main() {
             let stt_orchestrator = stt_orchestrator.clone();
             let llm_orchestrator = llm_orchestrator.clone();
             let auth_manager = auth_manager.clone();
+            let vision_radar = vision_radar.clone();
 
             move |app| {
                 // The main window is the regular "Ghostboard Office" app window. Stealth, alignment and
@@ -1868,11 +2004,14 @@ fn main() {
                 // Spawn the real-time background audio & copilot pipeline
                 spawn_copilot_pipeline(
                     audio_state,
-                    hud_state,
+                    hud_state.clone(),
                     stt_orchestrator,
                     llm_orchestrator,
                     transcript_rx,
                 );
+
+                // Spawn the lightweight 2.5s perceptual dHash screen delta radar watcher
+                spawn_vision_radar_watcher(app.handle().clone(), vision_radar, hud_state);
 
                 Ok(())
             }
@@ -1934,6 +2073,8 @@ fn main() {
             get_access_token,
             save_tokens,
             capture_screen,
+            toggle_vision_radar,
+            consume_radar_snapshot,
             open_browser,
             logout,
             crate::updater::check_for_updates,

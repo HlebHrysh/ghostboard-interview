@@ -67,15 +67,50 @@ describe('Question vs Monologue Classifier & AI Resilience Suite', () => {
       expect(result.recommendedWaitMs).toBe(0);
     });
 
-    it('ignores greetings, webinar chatter and mic noise', () => {
+    it('ignores greetings, webinar chatter and mic noise with <<<IGNORE>>> guardrail token', () => {
       const greeting = 'Привіт усім, як чути?';
       const result = evaluateSpeechIntent(greeting, 100, '');
       expect(result.decision).toBe('IGNORE_NOISE');
+      expect(result.guardrailToken).toBe('<<<IGNORE>>>');
       expect(result.recommendedWaitMs).toBe(2000);
+
+      const webinar = 'Вітаю всіх на нашому вебінарі, пишіть плюсики в чат';
+      const webinarResult = evaluateSpeechIntent(webinar, 100, '');
+      expect(webinarResult.decision).toBe('IGNORE_NOISE');
+      expect(webinarResult.guardrailToken).toBe('<<<IGNORE>>>');
 
       const noise = 'uh huh';
       const resultNoise = evaluateSpeechIntent(noise, 100, '');
       expect(resultNoise.decision).toBe('IGNORE_NOISE');
+      expect(resultNoise.guardrailToken).toBe('<<<IGNORE>>>');
+    });
+
+    it('buffers technical questions ending on dangling conjunctions/prepositions and deduplicates STT loops', async () => {
+      const { deduplicateSttTranscript, accumulateUtteranceSegments } = await import(
+        '../src/lib/speechIntentGate'
+      );
+
+      const danglingTech = 'Explain how PostgreSQL handles MVCC when';
+      const danglingEval = evaluateSpeechIntent(danglingTech, 250, '');
+      expect(danglingEval.decision).toBe('WAIT_FOR_COMPLETION');
+      expect(danglingEval.reason).toBe('dangling_clause');
+
+      // Once the second segment arrives, accumulateUtteranceSegments joins and deduplicates
+      const combined = accumulateUtteranceSegments(
+        [danglingTech],
+        'when two transactions update the same row'
+      );
+      expect(combined).toBe(
+        'Explain how PostgreSQL handles MVCC when two transactions update the same row'
+      );
+      const completedEval = evaluateSpeechIntent(combined, 250, '');
+      expect(completedEval.decision).toBe('TRIGGER_NOW');
+      expect(completedEval.recommendedWaitMs).toBe(0);
+
+      // Deduplicates repeated STT loops
+      expect(
+        deduplicateSttTranscript('how does how does PostgreSQL handle handle MVCC?')
+      ).toBe('how does PostgreSQL handle MVCC?');
     });
   });
 

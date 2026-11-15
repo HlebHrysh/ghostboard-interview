@@ -192,7 +192,8 @@ interface Mutation {
 }
 
 function touch(state: InterviewSyncState) {
-  const now = Date.now();
+  const prev = Math.max(state.lastUpdated || 0, state.updatedAt || 0);
+  const now = Math.max(Date.now(), prev + 1);
   state.lastUpdated = now;
   state.updatedAt = now;
 }
@@ -422,11 +423,31 @@ async function saveRedisState(state: InterviewSyncState, userId?: string) {
 }
 
 async function applyRedis(m: Mutation, userId?: string): Promise<InterviewSyncState> {
+  const local = resolveLocalState(userId);
+  try {
+    const remote = await loadRedisState(userId);
+    const localTs = Math.max(local.updatedAt || 0, local.lastUpdated || 0);
+    const remoteTs = Math.max(remote.updatedAt || 0, remote.lastUpdated || 0);
+    // Multi-instance consistency: if Redis has newer state from another instance, merge before mutating
+    if (remoteTs > localTs) {
+      remote.qas = mergeQAsMonotonic(local.qas, remote.qas);
+      Object.assign(local, remote);
+    }
+  } catch {
+    // Proceed with local state if pre-read fails
+  }
   const state = applyLocal(m, userId);
   try {
     await saveRedisState(state, userId);
   } catch (err: unknown) {
     log.error('Failed to apply Redis mutation', { userId }, err);
+    if (isProduction()) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new EnvConfigError(
+        `[interviewSyncStore] Failed to persist state to Redis in production: ${msg}`,
+        { cause: err }
+      );
+    }
   }
   return state;
 }
@@ -468,7 +489,16 @@ export const syncStore = {
           expireZombieCapture(remote);
           return remote;
         }
-      } catch {}
+      } catch (err: unknown) {
+        log.error('Failed to read Redis sync state', { userId }, err);
+        if (isProduction()) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new EnvConfigError(
+            `[interviewSyncStore] Failed to read state from Redis in production: ${msg}`,
+            { cause: err }
+          );
+        }
+      }
     }
     const state = resolveLocalState(userId);
     expireZombieCapture(state);

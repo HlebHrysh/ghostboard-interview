@@ -222,13 +222,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Valid email is required' }, { status: 400 });
     }
 
-    const { createUser, getUserByEmail } = await import('@/lib/serverDb');
+    const { createUser, getUserByEmail, isValidAppRole, updateUserRole } = await import('@/lib/serverDb');
     const existing = await getUserByEmail(email);
     if (existing) {
       return NextResponse.json({ error: 'User with this email already exists' }, { status: 409 });
     }
 
-    const user = await createUser(email, name, plan, role);
+    const createdUser = await createUser(email, name, plan);
+    const user =
+      isValidAppRole(role) && role !== 'user'
+        ? (await updateUserRole(createdUser.id, role)) || createdUser
+        : createdUser;
+    if (user.role !== 'user') {
+      const { logger } = await import('@/lib/logger');
+      logger.child({ component: 'admin-rbac' }).info('User created with elevated RBAC role', {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      });
+    }
     return NextResponse.json({ success: true, user }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json({ error: (err as { message?: string })?.message || 'Failed to create user' }, { status: 500 });

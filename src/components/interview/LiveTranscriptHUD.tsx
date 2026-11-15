@@ -46,17 +46,17 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
   return (
     <div className="fixed bottom-[calc(76px+env(safe-area-inset-bottom,0px))] inset-x-0 z-30 pointer-events-none flex justify-center px-3 sm:px-4 transition-all select-none">
       <div
-        className={`pointer-events-auto w-full max-w-[680px] rounded-xl p-3 border backdrop-blur-2xl transition-all shadow-[0_12px_32px_rgba(0,0,0,0.7)] bg-[#0D0D10]/95 ${
+        className={`pointer-events-auto w-full max-w-[680px] rounded-xl p-3 border   transition-all shadow-[0_12px_32px_rgba(0,0,0,0.7)] bg-[#111113] ${
           isCopilotGenerating
             ? 'border-white/20'
             : isFrozen
-            ? 'border-cyan-500/30'
+            ? 'border-white/[0.12]'
             : liveTranscript
             ? 'border-white/15'
             : 'border-white/[0.08]'
         }`}
       >
-        <div className="flex items-center justify-between gap-2 text-[10px] font-mono mb-1.5 text-zinc-400">
+        <div className="flex items-center justify-between gap-2 text-xs font-mono mb-1.5 text-zinc-400">
           {/* Left: Ear status */}
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5">
@@ -65,7 +65,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
                   isCopilotGenerating
                     ? 'bg-white animate-pulse'
                     : isFrozen
-                    ? 'bg-cyan-400'
+                    ? 'bg-white'
                     : 'bg-white'
                 }`}
               />
@@ -73,7 +73,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
                 {isCopilotGenerating ? (
                   <span>{hud.aiGenerating}...</span>
                 ) : isFrozen ? (
-                  <span className="text-cyan-300">{hud.frozenHeader}</span>
+                  <span className="text-zinc-200">{hud.frozenHeader}</span>
                 ) : (
                   <span>Interviewer Speech</span>
                 )}
@@ -91,14 +91,14 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
               <button
                 type="button"
                 onClick={onRepickTabAudio}
-                className="text-[10px] font-mono text-amber-300 hover:underline cursor-pointer flex items-center gap-1"
+                className="text-xs font-mono text-zinc-200 hover:underline cursor-pointer flex items-center gap-1"
               >
                 <span>⚠️ {locale === 'ua' ? 'Вкладка без звуку' : 'No tab audio'}</span>
               </button>
             )}
 
             {isClearSpeech && (
-              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-zinc-400">
+              <span className="hidden sm:inline-flex items-center gap-1 text-xs text-zinc-400">
                 <ShieldCheck className="w-3 h-3 text-white" />
                 <span>Audio Clean</span>
               </span>
@@ -126,7 +126,7 @@ export const LiveTranscriptHUD: React.FC<LiveTranscriptHUDProps> = ({
             <button
               type="button"
               onClick={onAnswerNow}
-              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-[11px] font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
+              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white font-mono text-xs font-bold transition-all flex items-center gap-1 shrink-0 cursor-pointer shadow-sm"
               title={hud.answerNowBtn}
             >
               <span>Answer</span>

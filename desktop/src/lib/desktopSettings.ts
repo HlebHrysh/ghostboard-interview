@@ -26,6 +26,7 @@ export type HintLanguage =
 
 /** Strict 3-way audio isolation: interviewer loopback only / interviewer + mic / mic only. */
 export type ListenMode = 'interviewer' | 'dual' | 'mic';
+export type AiModelCascade = 'hedged_race' | 'gemini_flash' | 'groq_llama';
 
 export interface DesktopSettings {
   copilotMode: CopilotMode;
@@ -38,6 +39,7 @@ export interface DesktopSettings {
   sttLanguage: 'multi' | 'uk' | 'ru' | 'en';
 
   // AI
+  aiModelCascade: AiModelCascade;
   answerSpeed: AnswerSpeed;
   answerLength: AnswerLength;
   hintLanguage: HintLanguage;
@@ -63,6 +65,7 @@ export const DEFAULT_SETTINGS: DesktopSettings = {
   micDevice: null,
   splitChannels: false,
   sttLanguage: 'multi',
+  aiModelCascade: 'hedged_race',
   answerSpeed: 'fast',
   answerLength: 'detailed',
   hintLanguage: 'auto',
@@ -92,6 +95,7 @@ export function sanitizeSettings(input: Partial<DesktopSettings> | null | undefi
     micDevice: str(src.micDevice),
     splitChannels: listenMode === 'dual',
     sttLanguage: pick(src.sttLanguage, ['multi', 'uk', 'ru', 'en'] as const, DEFAULT_SETTINGS.sttLanguage),
+    aiModelCascade: pick(src.aiModelCascade, ['hedged_race', 'gemini_flash', 'groq_llama'] as const, DEFAULT_SETTINGS.aiModelCascade),
     answerSpeed: pick(src.answerSpeed, ['fast', 'deep'] as const, DEFAULT_SETTINGS.answerSpeed),
     answerLength: pick(src.answerLength, ['short', 'detailed', 'code'] as const, DEFAULT_SETTINGS.answerLength),
     hintLanguage: pick(

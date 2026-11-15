@@ -53,22 +53,22 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <Eye className="w-3.5 h-3.5 text-white shrink-0" />
           {activeQA?.meta ? (
-            <span className="text-[10px] font-mono text-zinc-300 font-semibold truncate max-w-[200px]">
+            <span className="text-xs font-mono text-zinc-300 font-semibold truncate max-w-[200px]">
               {activeQA.meta.domain} • {activeQA.meta.level} • {activeQA.meta.language}
             </span>
           ) : (
-            <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-400 font-bold truncate">
+            <span className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-bold truncate">
               {activeQA?.tag || 'Ghostboard PiP'}
             </span>
           )}
-          <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20 shrink-0">
+          <span className="text-xs font-mono text-zinc-200 bg-white/[0.08] px-1.5 py-0.2 rounded border border-white/[0.12] shrink-0">
             ALWAYS ON TOP
           </span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
           {slides.length > 1 && (
-            <span className="text-[10px] font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+            <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
               {slideIndex + 1}/{slides.length}
             </span>
           )}
@@ -86,8 +86,8 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col justify-center py-2 px-1">
         {isBridgeActive && bridgePhrase ? (
-          <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 animate-in fade-in">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400 font-bold block mb-1">
+          <div className="p-2.5 rounded-xl bg-white/[0.08] border border-white/[0.12] text-zinc-200 animate-in fade-in">
+            <span className="text-xs font-mono uppercase tracking-wider text-zinc-200 font-bold block mb-1">
               ⚡ Фраза для виграшу часу (Speak Now):
             </span>
             <p className="text-sm font-semibold leading-snug">
@@ -97,7 +97,7 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
         ) : (
           <>
             {activeQA?.question && (
-              <p className="text-[10px] font-mono text-zinc-500 line-clamp-1 mb-1">
+              <p className="text-xs font-mono text-zinc-500 line-clamp-1 mb-1">
                 Q: {activeQA.question}
               </p>
             )}
@@ -120,15 +120,15 @@ export const DocumentPiPPrompter: React.FC<DocumentPiPPrompterProps> = ({
       </div>
 
       {/* Footer Controls */}
-      <div className="flex items-center justify-between pt-2 border-t border-white/[0.08] text-[10px] font-mono">
+      <div className="flex items-center justify-between pt-2 border-t border-white/[0.08] text-xs font-mono">
         {onTriggerBridge && (
           <button
             type="button"
             onClick={onTriggerBridge}
-            className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold flex items-center gap-1 cursor-pointer transition-all"
+            className="px-2 py-1 rounded bg-white/[0.08] hover:bg-white/[0.08] border border-white/[0.12] text-zinc-200 font-bold flex items-center gap-1 cursor-pointer transition-all"
             title="Emergency stall phrase"
           >
-            <Zap className="w-3 h-3 text-amber-400" />
+            <Zap className="w-3 h-3 text-zinc-200" />
             <span>Bridge [B]</span>
           </button>
         )}

@@ -7,13 +7,16 @@ const execAsync = promisify(exec);
 
 async function requireAuth(req: NextRequest): Promise<NextResponse | null> {
   const token = req.cookies.get('ghostboard_session')?.value;
-  const clientToken = req.headers.get('x-ghostboard-client');
+  const isProd = process.env.NODE_ENV === 'production';
+  const clientToken = !isProd ? req.headers.get('x-ghostboard-client') : null;
   if (!token && !clientToken) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   if (token) {
     const user = await getSessionUser(token);
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  } else if (isProd) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   return null;
 }

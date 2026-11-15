@@ -438,7 +438,7 @@ export const StealthQuickTestsDrawer: React.FC<StealthQuickTestsDrawerProps> = (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/60   transition-opacity"
         onClick={onClose}
       />
 
@@ -446,14 +446,14 @@ export const StealthQuickTestsDrawer: React.FC<StealthQuickTestsDrawerProps> = (
       <div className="relative w-full max-w-xl stealth-glass-panel rounded-3xl border border-white/10 p-6 shadow-2xl z-10 animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-8 h-8 rounded-xl bg-white/[0.08] border border-white/[0.12] flex items-center justify-center text-zinc-200">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-base font-black text-white tracking-tight">
                 {txt.title}
               </h2>
-              <p className="text-[11px] text-zinc-400 font-mono">
+              <p className="text-xs text-zinc-400 font-mono">
                 {txt.subtitle}
               </p>
             </div>
@@ -476,7 +476,7 @@ export const StealthQuickTestsDrawer: React.FC<StealthQuickTestsDrawerProps> = (
               onClick={() => setActiveCategory(cat.id)}
               className={`px-2.5 py-1 rounded-xl text-xs font-mono transition-all cursor-pointer ${
                 activeCategory === cat.id
-                  ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 font-bold'
+                  ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.12] font-bold'
                   : 'bg-white/5 text-zinc-400 hover:text-white border border-white/5'
               }`}
             >
@@ -494,20 +494,20 @@ export const StealthQuickTestsDrawer: React.FC<StealthQuickTestsDrawerProps> = (
                 onInjectTest(chip.q);
                 onClose();
               }}
-              className="w-full text-left p-3 rounded-2xl bg-black/40 hover:bg-amber-950/30 border border-white/5 hover:border-amber-500/40 transition-all cursor-pointer group"
+              className="w-full text-left p-3 rounded-2xl bg-black/40 hover:bg-white/[0.08] border border-white/5 hover:border-white/[0.12] transition-all cursor-pointer group"
             >
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-mono font-bold text-amber-300 group-hover:text-amber-200">
+                <span className="text-xs font-mono font-bold text-zinc-200 group-hover:text-zinc-200">
                   {chip.label}
                 </span>
-                <span className="text-[10px] font-mono text-zinc-500 group-hover:text-zinc-300">
+                <span className="text-xs font-mono text-zinc-500 group-hover:text-zinc-300">
                   {txt.launch}
                 </span>
               </div>
               <p className="text-xs text-zinc-300 font-sans leading-snug line-clamp-2">
                 {chip.q}
               </p>
-              <p className="text-[10px] text-zinc-500 font-mono mt-1">
+              <p className="text-xs text-zinc-500 font-mono mt-1">
                 {chip.desc}
               </p>
             </button>
@@ -519,7 +519,7 @@ export const StealthQuickTestsDrawer: React.FC<StealthQuickTestsDrawerProps> = (
           <a
             href="/interviewer.html"
             target="_blank"
-            className="flex items-center gap-1.5 text-zinc-400 hover:text-cyan-300 font-mono text-xs transition-colors"
+            className="flex items-center gap-1.5 text-zinc-400 hover:text-zinc-200 font-mono text-xs transition-colors"
           >
             <span>{txt.mobileSim}</span>
             <ExternalLink className="w-3.5 h-3.5" />

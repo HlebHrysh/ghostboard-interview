@@ -20,6 +20,7 @@ import {
   parseStructuredGhostboardOutput,
   mergeContinuationQuestion,
   buildEmergencyCoachingCard,
+  normalizeFollowUpTurns,
   AiModifier,
   PatchTargetSlot,
 } from '@/lib/aiPromptCore';
@@ -133,6 +134,7 @@ const DualStreamPayloadSchema = z.object({
       experienceLevel: z.string().optional(),
       cvContext: z.string().optional(),
       resumeContext: z.string().optional(),
+      customContext: z.string().optional(),
       techStack: z.array(z.string()).optional(),
       petProjects: z.array(z.any()).optional(),
       customBio: z.string().optional(),
@@ -172,16 +174,42 @@ export async function POST(req: NextRequest) {
       req.headers.get('origin')?.startsWith('tauri://') ||
       req.headers.get('origin')?.includes('tauri.localhost');
 
+    const isDev = process.env.NODE_ENV !== 'production';
+    const clientHeader = req.headers.get('x-ghostboard-client');
+    const isLoopbackIp = (ip: string | null | undefined): boolean => {
+      if (!ip) return true;
+      const normalized = ip.trim().toLowerCase();
+      return (
+        normalized === '127.0.0.1' ||
+        normalized === '::1' ||
+        normalized === '::ffff:127.0.0.1' ||
+        normalized === 'localhost'
+      );
+    };
+    const cfIp = req.headers.get('cf-connecting-ip');
+    const forwardedFor = req.headers.get('x-forwarded-for');
+    const forwardedIps = forwardedFor
+      ? forwardedFor.split(',').map((h) => h.trim()).filter(Boolean)
+      : [];
+    const isExternalClientIp = Boolean(
+      (cfIp && !isLoopbackIp(cfIp)) || forwardedIps.some((ip) => !isLoopbackIp(ip))
+    );
+    const isStudioOrHudDev =
+      isDev &&
+      !isExternalClientIp &&
+      (clientHeader === 'studio-session' ||
+        clientHeader === 'desktop-hud' ||
+        clientHeader === 'desktop-app');
     const isDemo =
-      req.headers.get('x-ghostboard-demo') === 'true' ||
-      req.nextUrl.searchParams.get('demo') === '1';
+      req.nextUrl.searchParams.get('demo') === '1' ||
+      req.headers.get('x-ghostboard-demo') === 'true';
 
     let user = token ? await resolveSessionUserFast(token) : null;
-    if (!user && isDemo) {
+    if (!user && (isDemo || isStudioOrHudDev)) {
       user = {
-        id: 'demo-guest-user',
-        email: 'guest@ghostboard.local',
-        plan: 'free',
+        id: isDemo ? 'demo-guest-user' : 'studio-dev-user',
+        email: isDemo ? 'guest@ghostboard.local' : 'studio@ghostboard.local',
+        plan: isDemo ? 'free' : 'pro',
         createdAt: new Date(),
       };
     }
@@ -330,8 +358,24 @@ export async function POST(req: NextRequest) {
       },
     ];
 
-    if (history && history.length > 0) {
-      // Include last 4 turns for low prompt latency & fast prefill (capped at 200 chars to avoid prefill bloat)
+    const followUpTurns = normalizeFollowUpTurns(history);
+    if (followUpTurns.length > 0) {
+      followUpTurns.forEach((turn) => {
+        contents.push({
+          role: 'user',
+          parts: [{ text: `INTERVIEWER: ${turn.question}` }],
+        });
+        const rawAns = (turn.shortHook || turn.answer || '').trim();
+        if (rawAns) {
+          const shortAns = rawAns.length > 200 ? `${rawAns.slice(0, 200)}...` : rawAns;
+          contents.push({
+            role: 'model',
+            parts: [{ text: `CANDIDATE: ${shortAns}` }],
+          });
+        }
+      });
+    } else if (history && history.length > 0) {
+      // Fallback for candidate-only history entries
       history.slice(-4).forEach((h) => {
         if ('speaker' in h) {
           const text =
@@ -342,26 +386,26 @@ export async function POST(req: NextRequest) {
             role: h.speaker === 'interviewer' ? 'user' : 'model',
             parts: [{ text: `${h.speaker.toUpperCase()}: ${text}` }],
           });
-        } else if ('question' in h) {
-          contents.push({
-            role: 'user',
-            parts: [{ text: `INTERVIEWER: ${h.question}` }],
-          });
-          const rawAns = (h.shortHook || h.answer || '').trim();
-          if (rawAns) {
-            const shortAns = rawAns.length > 200 ? `${rawAns.slice(0, 200)}...` : rawAns;
-            contents.push({
-              role: 'model',
-              parts: [{ text: `CANDIDATE: ${shortAns}` }],
-            });
-          }
         }
       });
     }
 
+    const recentTurnsPrefix =
+      followUpTurns.length > 0
+        ? `RECENT CONVERSATION TURNS (use to resolve follow-ups like "Why?", "Write code for this", "А які мінуси?", pronouns "this"/"that"/"це"):\n` +
+          followUpTurns
+            .map((t, idx) => {
+              const ans = (t.shortHook || t.answer || '').trim();
+              const shortAns = ans.length > 160 ? `${ans.slice(0, 160)}...` : ans;
+              return `Turn ${idx + 1} Q: ${t.question.trim()}\nTurn ${idx + 1} A: ${shortAns}`;
+            })
+            .join('\n') +
+          '\n\n'
+        : '';
+
     const userQuestionText = addedConstraint
-      ? `INTERVIEW QUESTION: ${finalQuestion}\n\n[CONTINUATION REFINEMENT: Keep the opening natural, and specifically address the newly added constraint: "${addedConstraint}"]`
-      : `INTERVIEW QUESTION: ${finalQuestion}`;
+      ? `${recentTurnsPrefix}INTERVIEW QUESTION: ${finalQuestion}\n\n[CONTINUATION REFINEMENT: Keep the opening natural, and specifically address the newly added constraint: "${addedConstraint}"]`
+      : `${recentTurnsPrefix}INTERVIEW QUESTION: ${finalQuestion}`;
 
     contents.push({
       role: 'user',

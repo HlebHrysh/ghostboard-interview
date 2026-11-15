@@ -59,6 +59,30 @@ A: We enforce NTP synchronization with maximum drift tolerance under 5ms and dis
       );
     });
 
+    it('parses <<<PHASE_4:TRAP>>> in pipe-delimited (Question? ||| Counter-answer) format', () => {
+      const pipeTrapOutput = `<<<META: Backend | Senior | EN>>>
+<<<PHASE_1:HOOK>>>
+Use Redis Lua sliding-window counters for atomic quota enforcement.
+<<<PHASE_2:PILLARS>>>
+• **Atomicity**: Single round-trip Lua execution prevents race conditions.
+<<<PHASE_3:DEEP_DIVE>>>
+\`\`\`ts
+await redis.eval(script, 1, key);
+\`\`\`
+<<<PHASE_4:TRAP>>>
+What happens if a hot key overwhelms a single Redis shard? ||| Add a short-TTL local in-memory token bucket at the gateway tier and shard hot keys with bounded random suffixes.
+<<<END>>>`;
+
+      const parsed = parseStructuredGhostboardOutput(pipeTrapOutput);
+      expect(parsed.followUpTrap).toBeDefined();
+      expect(parsed.followUpTrap?.question).toBe(
+        'What happens if a hot key overwhelms a single Redis shard?'
+      );
+      expect(parsed.followUpTrap?.answer).toBe(
+        'Add a short-TTL local in-memory token bucket at the gateway tier and shard hot keys with bounded random suffixes.'
+      );
+    });
+
     it('returns undefined followUpTrap when Phase 4 is not in output', () => {
       const legacyOutput = `<<<META: DevOps | Lead/Staff | EN>>>
 <<<PHASE_1:HOOK>>>

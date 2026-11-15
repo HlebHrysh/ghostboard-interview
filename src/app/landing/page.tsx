@@ -18,7 +18,7 @@ export default function HomePage() {
   const t = getHomeTranslations(locale);
 
   return (
-    <div className="min-h-screen bg-[#08090A] text-zinc-100 selection:bg-emerald-500/20 selection:text-white font-sans flex flex-col justify-between overflow-x-hidden">
+    <div className="min-h-screen bg-transparent text-zinc-100 selection:bg-emerald-500/20 selection:text-white font-sans flex flex-col justify-between overflow-x-hidden">
       <UnifiedNavbar />
 
       <main className="flex-1 flex flex-col">

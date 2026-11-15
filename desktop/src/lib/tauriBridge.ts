@@ -93,12 +93,18 @@ export interface CandidateProfilePayload {
   primaryStack?: string;
   experienceLevel?: string;
   customBio?: string;
+  cvContext?: string;
+  resumeContext?: string;
+  customContext?: string;
   techStack?: string[];
 }
 
 export interface HistoryTurnPayload {
   speaker: 'interviewer' | 'candidate';
   text: string;
+  question?: string;
+  answer?: string;
+  shortHook?: string;
 }
 
 /**

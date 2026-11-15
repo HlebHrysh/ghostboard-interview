@@ -95,6 +95,9 @@ export default defineConfig(() => {
       // Source root containing index.html and renderer source code
       root: path.resolve(import.meta.dirname, 'src'),
 
+      // Public media assets (5 ghost images & 6 showcase videos) copied straight to dist/
+      publicDir: path.resolve(import.meta.dirname, 'public'),
+
       plugins: [
         react(),
         tailwindcss(),

@@ -1,20 +1,22 @@
 'use client';
 
 import React from 'react';
+import { motion } from 'framer-motion';
 import {
   Play,
   Square,
   Zap,
   Code2,
-  Cpu,
+  Lightbulb,
   Scale,
-  ShieldAlert,
+  MessageCircle,
+  Snowflake,
   CornerDownLeft,
 } from 'lucide-react';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
 
-interface StealthCommandDockProps {
+export interface StealthCommandDockProps {
   isCapturing: boolean;
   isAnalyzingScreenshot?: boolean;
   questionCount?: number;
@@ -31,6 +33,7 @@ interface StealthCommandDockProps {
   onStartCapture: (source?: 'tab' | 'mic') => void;
   onStopCapture: () => void;
   onToggleFreeze?: () => void;
+  onTriggerBridge?: () => void;
   onTriggerScreenshot?: () => void;
   onToggleHistory?: () => void;
   onToggleQuickTests?: () => void;
@@ -38,20 +41,24 @@ interface StealthCommandDockProps {
   onTogglePanic?: () => void;
   onOpenSoundCheck?: () => void;
   sessionDuration?: number;
-  onRefineQA?: (modifier: 'shorter' | 'code' | 'under_the_hood' | 're_angle') => void;
+  onRefineQA?: (modifier: 'shorter' | 'simpler' | 'code' | 'under_the_hood' | 're_angle') => void;
   isRefining?: boolean;
   hasActiveQA?: boolean;
 }
 
+const SPRING = { type: 'spring' as const, stiffness: 350, damping: 28, mass: 0.6 };
+
 export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
   isCapturing,
+  isFrozen = false,
+  pendingNewCount = 0,
   triggerMode = 'auto',
   audioSource = 'tab',
-  onToggleAudioSource,
   onAnswerNow,
   onStartCapture,
   onStopCapture,
-  onTogglePanic,
+  onToggleFreeze,
+  onTriggerBridge,
   sessionDuration = 0,
   onRefineQA,
   isRefining = false,
@@ -59,162 +66,169 @@ export const StealthCommandDock: React.FC<StealthCommandDockProps> = ({
 }) => {
   const { locale } = useLocale();
   const hud = getHudTranslations(locale).dock;
+  const isUa = locale === 'ua';
 
   const fmtTime = (secs: number) =>
     `${Math.floor(secs / 60).toString().padStart(2, '0')}:${(secs % 60).toString().padStart(2, '0')}`;
 
+  const modifierButtons: {
+    key: 'shorter' | 'simpler' | 'code' | 're_angle';
+    label: string;
+    hotkey: string;
+    tooltip: string;
+    Icon: React.ComponentType<{ className?: string }>;
+    tint: string;
+  }[] = [
+    {
+      key: 'shorter',
+      label: isUa ? 'Коротше' : 'Shorter',
+      hotkey: '1',
+      tooltip: isUa ? 'Стиснути до 3 тез [1]' : 'Shorten answer [1]',
+      Icon: Zap,
+      tint: 'text-amber-300',
+    },
+    {
+      key: 'simpler',
+      label: isUa ? 'Простіше' : 'Simpler',
+      hotkey: '2',
+      tooltip: isUa ? 'Простішою мовою [2]' : 'Simpler phrasing [2]',
+      Icon: Lightbulb,
+      tint: 'text-emerald-300',
+    },
+    {
+      key: 'code',
+      label: isUa ? 'Код' : 'Code',
+      hotkey: '3',
+      tooltip: isUa ? 'Додати чистий код + O(n) [3]' : 'Code example [3]',
+      Icon: Code2,
+      tint: 'text-sky-300',
+    },
+    {
+      key: 're_angle',
+      label: isUa ? 'Інший підхід' : 'Re-angle',
+      hotkey: '4',
+      tooltip: isUa ? 'Альтернативний підхід та компроміси [4]' : 'Trade-offs / alternative [4]',
+      Icon: Scale,
+      tint: 'text-violet-300',
+    },
+  ];
+
   return (
-    <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] inset-x-0 z-40 flex justify-center px-2 sm:px-4 pointer-events-none pb-safe select-none">
-      <div className="pointer-events-auto flex flex-col items-center gap-1.5 max-w-full">
-        {/* ── MAIN COMBAT DOCK BAR (Rule of 2 Seconds) ── */}
-        <div className="px-3 py-1.5 rounded-full bg-[#0D0D10]/95 border border-white/[0.12] shadow-[0_16px_40px_rgba(0,0,0,0.85)] flex items-center gap-2 backdrop-blur-2xl max-w-[calc(100vw-16px)] overflow-x-auto no-scrollbar">
-          {/* 1. Main Capture Control: Start / Stop */}
-          {!isCapturing ? (
-            <button
-              type="button"
-              onClick={() => onStartCapture(audioSource)}
-              className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-white hover:bg-zinc-200 text-black font-extrabold text-xs font-mono transition-all cursor-pointer shadow-[0_0_20px_rgba(255,255,255,0.25)] active:scale-95 shrink-0"
-              title={hud.startSession}
-            >
-              <Play className="w-3.5 h-3.5 fill-black" />
-              <span>{hud.startSession}</span>
-              <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/15 font-bold">
-                Space
-              </kbd>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onStopCapture}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-600/90 hover:bg-rose-500 text-white font-mono text-xs font-bold transition-all cursor-pointer active:scale-95 shadow-sm shrink-0"
-              title={hud.stopSession}
-            >
-              <Square className="w-3 h-3 fill-white" />
-              <span>Stop</span>
-              {sessionDuration > 0 && (
-                <span className="text-[10px] text-rose-200 tabular-nums font-normal opacity-90 border-l border-white/20 pl-1.5">
-                  {fmtTime(sessionDuration)}
-                </span>
-              )}
-            </button>
-          )}
+    <div className="fixed bottom-[calc(0.85rem+env(safe-area-inset-bottom,0px))] inset-x-0 z-40 flex justify-center px-2 sm:px-4 pointer-events-none pb-safe select-none">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={SPRING}
+        className="pointer-events-auto liquid-glass-dock px-3 sm:px-4 py-2 rounded-2xl border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_24px_60px_rgba(0,0,0,0.85)] flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 w-fit max-w-[calc(100vw-16px)]"
+      >
+        {/* 1. Primary Capture Control: Start / Stop */}
+        {!isCapturing ? (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            type="button"
+            onClick={() => onStartCapture(audioSource)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs font-mono transition-colors cursor-pointer shrink-0 shadow-[0_0_24px_rgba(255,255,255,0.2),inset_0_1px_0_rgba(255,255,255,0.9)]"
+            title={hud.startSession}
+          >
+            <Play className="w-3.5 h-3.5 fill-zinc-950" />
+            <span>{hud.startSession}</span>
+          </motion.button>
+        ) : (
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.97 }}
+            type="button"
+            onClick={onStopCapture}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-500/85 hover:bg-rose-500 border border-rose-300/35 text-white font-mono text-xs font-semibold transition-colors cursor-pointer shadow-[0_0_24px_rgba(244,63,94,0.3)] shrink-0"
+            title={hud.stopSession}
+          >
+            <Square className="w-3 h-3 fill-white" />
+            <span>Stop</span>
+            {sessionDuration > 0 && (
+              <span className="text-xs text-rose-100 tabular-nums border-l border-white/25 pl-2">
+                {fmtTime(sessionDuration)}
+              </span>
+            )}
+          </motion.button>
+        )}
 
-          {/* Audio Source Switcher */}
-          {onToggleAudioSource && (
-            <button
-              type="button"
-              onClick={onToggleAudioSource}
-              className="px-2.5 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/[0.08] text-[11px] font-mono flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
-              title={audioSource === 'tab' ? hud.audioSourceTabTooltip : hud.audioSourceMicTooltip}
-            >
-              <span>{audioSource === 'tab' ? '🌐' : '🎙️'}</span>
-              <span className="hidden sm:inline">{audioSource === 'tab' ? 'Tab+Mic' : 'Mic Only'}</span>
-            </button>
-          )}
+        {/* Manual Answer Trigger in Enter mode */}
+        {isCapturing && triggerMode === 'enter' && onAnswerNow && (
+          <button
+            type="button"
+            onClick={onAnswerNow}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-300/35 text-cyan-50 text-xs font-mono font-semibold transition-colors cursor-pointer shrink-0"
+            title={hud.answerNow}
+          >
+            <span>{isUa ? 'Відповісти' : 'Answer'}</span>
+            <CornerDownLeft className="w-3.5 h-3.5 text-cyan-200" />
+          </button>
+        )}
 
-          {/* Manual Enter Mode Answer Button */}
-          {isCapturing && triggerMode === 'enter' && onAnswerNow && (
-            <button
-              type="button"
-              onClick={onAnswerNow}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-mono font-bold transition-all cursor-pointer active:scale-95 shrink-0"
-              title={hud.answerNow}
-            >
-              <span>Answer</span>
-              <CornerDownLeft className="w-3 h-3 text-white" />
-            </button>
-          )}
+        {/* 2. Freeze Teleprompter (Space) */}
+        {onToggleFreeze && (
+          <button
+            type="button"
+            onClick={onToggleFreeze}
+            className={`px-3 py-2 rounded-xl border text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+              isFrozen
+                ? 'bg-cyan-500/25 border-cyan-300/45 text-cyan-50 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+                : 'bg-white/[0.05] hover:bg-white/[0.12] border-white/10 text-zinc-200 hover:text-white'
+            }`}
+            title={isUa ? 'Заморозити / розморозити суфлер [Space]' : 'Freeze / Unfreeze prompter [Space]'}
+          >
+            <Snowflake className="w-3.5 h-3.5 text-cyan-300" />
+            <span className="hidden sm:inline">{isFrozen ? 'Frozen' : 'Freeze'}</span>
+            <kbd className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-white/[0.08] text-zinc-300 leading-none">
+              Space
+            </kbd>
+            {pendingNewCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-cyan-300 text-zinc-950 font-bold text-[11px] tabular-nums leading-none">
+                +{pendingNewCount}
+              </span>
+            )}
+          </button>
+        )}
 
-          {/* 2. Four Quick Response Modification Buttons (Combat Core) */}
-          <div className="flex items-center gap-1 pl-1 border-l border-white/[0.08]">
-            {/* Shorter / Blitz */}
-            <button
-              type="button"
-              disabled={!hasActiveQA || isRefining}
-              onClick={() => onRefineQA?.('shorter')}
-              className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-35 disabled:pointer-events-none text-zinc-300 hover:text-white border border-white/[0.08] text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer shrink-0"
-              title="Shorter / Blitz (2-3 punchy bullet points) [Q]"
-            >
-              <Zap className="w-3 h-3 text-amber-400" />
-              <span>Shorter</span>
-            </button>
-
-            {/* Code */}
-            <button
-              type="button"
-              disabled={!hasActiveQA || isRefining}
-              onClick={() => onRefineQA?.('code')}
-              className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-35 disabled:pointer-events-none text-zinc-300 hover:text-white border border-white/[0.08] text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer shrink-0"
-              title="Code snippet example"
-            >
-              <Code2 className="w-3 h-3 text-emerald-400" />
-              <span>Code</span>
-            </button>
-
-            {/* Under the hood */}
-            <button
-              type="button"
-              disabled={!hasActiveQA || isRefining}
-              onClick={() => onRefineQA?.('under_the_hood')}
-              className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-35 disabled:pointer-events-none text-zinc-300 hover:text-white border border-white/[0.08] text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer shrink-0"
-              title="Under the hood / Deep Dive"
-            >
-              <Cpu className="w-3 h-3 text-cyan-400" />
-              <span className="hidden md:inline">Under the hood</span>
-              <span className="md:hidden">Deep</span>
-            </button>
-
-            {/* Re-angle */}
-            <button
-              type="button"
-              disabled={!hasActiveQA || isRefining}
-              onClick={() => onRefineQA?.('re_angle')}
-              className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-35 disabled:pointer-events-none text-zinc-300 hover:text-white border border-white/[0.08] text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer shrink-0"
-              title="Re-angle / Trade-offs"
-            >
-              <Scale className="w-3 h-3 text-violet-400" />
-              <span>Re-angle</span>
-            </button>
-          </div>
-
-          {/* 3. Panic Shield (F12) - Visually Isolated on the Right */}
-          {onTogglePanic && (
-            <div className="ml-2 pl-2.5 border-l border-white/15 shrink-0">
+        {/* 3. Unified 1-5 Modifiers */}
+        <div className="flex items-center gap-1.5 pl-1.5 sm:pl-2 border-l border-white/[0.12] flex-wrap justify-center">
+          {modifierButtons.map((mod) => {
+            const Icon = mod.Icon;
+            return (
               <button
+                key={mod.key}
                 type="button"
-                onClick={onTogglePanic}
-                className="px-3 py-1 rounded-full bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/40 text-rose-200 hover:text-white text-[11px] font-mono font-bold flex items-center gap-1.5 shadow-[0_0_15px_rgba(244,63,94,0.25)] transition-all cursor-pointer active:scale-95"
-                title="Emergency Panic Shield (F12 / Esc)"
+                disabled={!hasActiveQA || isRefining}
+                onClick={() => onRefineQA?.(mod.key)}
+                title={mod.tooltip}
+                className="px-2.5 sm:px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.13] border border-white/10 hover:border-white/25 disabled:opacity-35 disabled:pointer-events-none text-zinc-100 hover:text-white text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
               >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
-                <span>Panic</span>
-                <kbd className="text-[9px] font-mono px-1 py-0.2 rounded bg-black/40 border border-rose-500/30 text-rose-300">
-                  F12
+                <Icon className={`w-3.5 h-3.5 ${mod.tint}`} />
+                <span className="hidden md:inline">{mod.label}</span>
+                <kbd className="text-[11px] font-mono text-zinc-300 bg-white/[0.08] px-1.5 py-0.5 rounded leading-none">
+                  {mod.hotkey}
                 </kbd>
               </button>
-            </div>
+            );
+          })}
+
+          {onTriggerBridge && (
+            <button
+              type="button"
+              onClick={onTriggerBridge}
+              title={isUa ? 'Миттєва фраза для виграшу часу [5]' : 'Bridge phrase to stall smoothly [5]'}
+              className="px-2.5 sm:px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.13] border border-white/10 hover:border-white/25 text-zinc-100 hover:text-white text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-cyan-300" />
+              <span className="hidden md:inline">{isUa ? 'Тягнути час' : 'Bridge'}</span>
+              <kbd className="text-[11px] font-mono text-zinc-300 bg-white/[0.08] px-1.5 py-0.5 rounded leading-none">
+                5
+              </kbd>
+            </button>
           )}
         </div>
-
-        {/* ── KEYCAPS LEGEND ROW ── */}
-        <div className="text-[9px] font-mono text-zinc-500 flex items-center gap-2 select-none tracking-wider">
-          <span className="flex items-center gap-1">
-            <kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Space</kbd> {isCapturing ? 'Stop' : 'Start'}
-          </span>
-          <span>·</span>
-          <span className="flex items-center gap-1">
-            <kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">Q</kbd> Shorter
-          </span>
-          <span>·</span>
-          <span className="flex items-center gap-1">
-            <kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px]">B</kbd> Bridge
-          </span>
-          <span>·</span>
-          <span className="flex items-center gap-1 text-rose-400/90 font-medium">
-            <kbd className="kbd-obsidian !h-4 !min-w-[1.2rem] !text-[9px] !border-rose-500/30">F12</kbd> Panic Shield
-          </span>
-        </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

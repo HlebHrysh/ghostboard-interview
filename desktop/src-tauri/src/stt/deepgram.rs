@@ -11,11 +11,14 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::ipc::events::HudEvent;
 
 pub const BASE_DEEPGRAM_URL: &str =
-    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true";
+    "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true&utterance_end_ms=1000";
 
 pub const DEFAULT_DEEPGRAM_URL: &str = BASE_DEEPGRAM_URL;
 
-/// 20 key technical terms boosted for Deepgram (nova-3 limit: 500 tokens across all keyterms).
+pub const MAX_KEYTERMS: usize = 24;
+pub const MAX_KEYTERM_TOKENS: usize = 95;
+
+/// 20 key technical terms boosted for Deepgram (nova-3 limit: <25 terms / <100 tokens total).
 pub const TECH_KEYTERMS: &[&str] = &[
     "Python", "TypeScript", "React", "Next.js", "Node.js", "Rust", "SQL", "PostgreSQL", "Redis", "Docker",
     "Kubernetes", "AWS", "Kafka", "gRPC", "GraphQL", "REST", "Microservices", "LLM", "JWT", "CI/CD",
@@ -267,12 +270,12 @@ pub fn get_fallback_url(current_url: &str) -> String {
             "uk"
         };
         format!(
-            "wss://api.deepgram.com/v1/listen?model=nova-2&language={}&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true",
+            "wss://api.deepgram.com/v1/listen?model=nova-2&language={}&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true&utterance_end_ms=1000",
             lang
         )
     } else if current_url.contains("model=nova-2") {
         // Fallback Step 3: Minimal nova-3 without keywords
-        "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true".to_string()
+        "wss://api.deepgram.com/v1/listen?model=nova-3&language=multi&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&punctuate=true&smart_format=true&endpointing=350&vad_events=true&utterance_end_ms=1000".to_string()
     } else {
         // Already minimal, avoid infinite retry oscillation
         current_url.to_string()

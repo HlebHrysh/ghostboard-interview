@@ -42,7 +42,7 @@ impl LlmOrchestrator {
         crate::load_env_files();
         // Detect available API keys in environment: GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
         let (provider, api_key, model) = if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-            (LlmProviderType::Gemini, k, "gemini-3.5-flash".to_string())
+            (LlmProviderType::Gemini, k, "gemini-3.5-flash-lite".to_string())
         } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Groq, k, "llama-3.3-70b-versatile".to_string())
         } else if let Some(k) = std::env::var("OPENAI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -50,7 +50,7 @@ impl LlmOrchestrator {
         } else if let Some(k) = std::env::var("ANTHROPIC_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Anthropic, k, "claude-3-5-haiku-20241022".to_string())
         } else {
-            (LlmProviderType::Gemini, String::new(), "gemini-3.5-flash".to_string())
+            (LlmProviderType::Gemini, String::new(), "gemini-3.5-flash-lite".to_string())
         };
 
         Self {
@@ -178,7 +178,7 @@ impl LlmOrchestrator {
             if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                 config.provider = LlmProviderType::Gemini;
                 config.api_key = k;
-                config.model = "gemini-3.5-flash".to_string();
+                config.model = "gemini-3.5-flash-lite".to_string();
                 let mut conf_lock = self.config.lock().await;
                 *conf_lock = config.clone();
             } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -193,6 +193,10 @@ impl LlmOrchestrator {
         let candidate_profile = {
             let p_lock = self.candidate_profile.lock().await;
             p_lock.clone()
+        };
+        let recent_turns = {
+            let turns = self.recent_turns.lock().await;
+            turns.clone()
         };
         let is_concise = {
             let c_lock = self.concise_mode.lock().await;
@@ -219,6 +223,11 @@ impl LlmOrchestrator {
             let m_val = modifier.clone();
             let ol_val = out_lang.clone();
             let hl_val = helper_lang.clone();
+            let prof_dto = candidate_profile.as_ref().map(|p| crate::llm::prompt::CandidateProfileDto {
+                cv_context: Some(p.clone()),
+                ..Default::default()
+            });
+            let turns_clone = recent_turns.clone();
             let active_cancellation_ref = self.active_cancellation.clone();
 
             tokio::spawn(async move {
@@ -227,6 +236,8 @@ impl LlmOrchestrator {
                     m_val,
                     ol_val.clone(),
                     hl_val,
+                    prof_dto,
+                    Some(turns_clone),
                     q_id.clone(),
                     channel_clone.clone(),
                     cancel_clone,
@@ -263,10 +274,6 @@ impl LlmOrchestrator {
             helper_lang.as_deref(),
         );
 
-        let recent_turns = {
-            let turns = self.recent_turns.lock().await;
-            turns.clone()
-        };
         let user_prompt = crate::llm::prompt::build_user_prompt_with_history(
             &trigger.question_text,
             Some(&trigger.context_90s),
@@ -327,11 +334,14 @@ impl LlmOrchestrator {
 
             match outcome {
                 Ok(LlmStreamOutcome::Completed { full_text, .. }) => {
-                    let short_hook = full_text
-                        .lines()
-                        .find(|l| !l.trim().is_empty())
-                        .map(|s| s.trim().chars().take(160).collect::<String>());
-                    {
+                    if !full_text.trim().starts_with("<<<IGNORE>>>") && !full_text.contains("<<<IGNORE>>>") {
+                        let short_hook = full_text
+                            .lines()
+                            .find(|l| {
+                                let t = l.trim();
+                                !t.is_empty() && !t.starts_with("<<<")
+                            })
+                            .map(|s| s.trim().chars().take(160).collect::<String>());
                         let mut turns = recent_turns_ref.lock().await;
                         turns.push(crate::llm::prompt::FollowUpContextTurn {
                             question: trigger_q,
@@ -353,11 +363,17 @@ impl LlmOrchestrator {
                 }
                 Ok(LlmStreamOutcome::Failed(err)) | Err(err) => {
                     tracing::warn!(target: "ghostboard::llm", error = %err, "Native LLM stream failed, attempting local Next.js failover");
+                    let prof_dto = candidate_profile.as_ref().map(|p| crate::llm::prompt::CandidateProfileDto {
+                        cv_context: Some(p.clone()),
+                        ..Default::default()
+                    });
                     if let Err(e) = stream_from_local_nextjs_backend(
                         trigger_q,
                         modifier,
                         out_lang.clone(),
                         helper_lang,
+                        prof_dto,
+                        Some(recent_turns),
                         q_id.clone(),
                         channel_clone.clone(),
                         cancel_token,
@@ -433,7 +449,7 @@ impl LlmOrchestrator {
             if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                 config.provider = LlmProviderType::Gemini;
                 config.api_key = k;
-                config.model = "gemini-3.5-flash".to_string();
+                config.model = "gemini-3.5-flash-lite".to_string();
                 let mut conf_lock = self.config.lock().await;
                 *conf_lock = config.clone();
             } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -445,12 +461,27 @@ impl LlmOrchestrator {
             }
         }
 
+        let recent_turns = if let Some(ref history) = history_dto {
+            let turns = crate::llm::prompt::normalize_history_turns(history);
+            if turns.is_empty() {
+                let t_lock = self.recent_turns.lock().await;
+                t_lock.clone()
+            } else {
+                turns
+            }
+        } else {
+            let t_lock = self.recent_turns.lock().await;
+            t_lock.clone()
+        };
+
         if config.api_key.trim().is_empty() {
             match stream_from_local_nextjs_backend(
                 question.to_string(),
                 modifier.clone(),
                 output_lang.clone(),
                 helper_lang.clone(),
+                candidate_profile_dto.clone(),
+                Some(recent_turns.clone()),
                 q_id.clone(),
                 hud_channel.clone(),
                 cancel_token.clone(),
@@ -475,7 +506,7 @@ impl LlmOrchestrator {
             }
         }
 
-        let candidate_profile_str = match candidate_profile_dto {
+        let candidate_profile_str = match candidate_profile_dto.as_ref() {
             Some(dto) => {
                 let s = dto.to_context_string();
                 if s.trim().is_empty() {
@@ -497,32 +528,6 @@ impl LlmOrchestrator {
             output_lang.as_deref(),
             helper_lang.as_deref(),
         );
-
-        let recent_turns = if let Some(history) = history_dto {
-            let mut turns = Vec::new();
-            let mut last_q: Option<String> = None;
-            for h in history {
-                if h.speaker == "interviewer" {
-                    last_q = Some(h.text);
-                } else if h.speaker == "candidate" {
-                    if let Some(q) = last_q.take() {
-                        turns.push(crate::llm::prompt::FollowUpContextTurn {
-                            question: q,
-                            short_hook: Some(h.text),
-                        });
-                    }
-                }
-            }
-            if turns.is_empty() {
-                let t_lock = self.recent_turns.lock().await;
-                t_lock.clone()
-            } else {
-                turns
-            }
-        } else {
-            let t_lock = self.recent_turns.lock().await;
-            t_lock.clone()
-        };
 
         let user_prompt = crate::llm::prompt::build_user_prompt_with_history(
             question,
@@ -575,11 +580,14 @@ impl LlmOrchestrator {
 
         match outcome {
             Ok(LlmStreamOutcome::Completed { full_text, .. }) => {
-                let short_hook = full_text
-                    .lines()
-                    .find(|l| !l.trim().is_empty())
-                    .map(|s| s.trim().chars().take(160).collect::<String>());
-                {
+                if !full_text.trim().starts_with("<<<IGNORE>>>") && !full_text.contains("<<<IGNORE>>>") {
+                    let short_hook = full_text
+                        .lines()
+                        .find(|l| {
+                            let t = l.trim();
+                            !t.is_empty() && !t.starts_with("<<<")
+                        })
+                        .map(|s| s.trim().chars().take(160).collect::<String>());
                     let mut turns = self.recent_turns.lock().await;
                     turns.push(crate::llm::prompt::FollowUpContextTurn {
                         question: question.to_string(),
@@ -607,6 +615,8 @@ impl LlmOrchestrator {
                     modifier,
                     output_lang.clone(),
                     helper_lang,
+                    candidate_profile_dto,
+                    Some(recent_turns),
                     q_id.clone(),
                     hud_channel.clone(),
                     cancel_token,
@@ -639,6 +649,8 @@ async fn stream_from_local_nextjs_backend(
     modifier: Option<String>,
     output_lang: Option<String>,
     helper_lang: Option<String>,
+    candidate_profile: Option<crate::llm::prompt::CandidateProfileDto>,
+    recent_turns: Option<Vec<crate::llm::prompt::FollowUpContextTurn>>,
     q_id: String,
     hud_channel: HudChannelState,
     cancel_token: CancellationToken,
@@ -646,21 +658,32 @@ async fn stream_from_local_nextjs_backend(
     let start_time = Instant::now();
     let mut urls: Vec<String> = Vec::new();
 
-    if let Ok(custom_url) = std::env::var("GHOSTBOARD_API_URL").or_else(|_| std::env::var("VITE_API_URL")) {
-        let trimmed = custom_url.trim();
-        if !trimmed.is_empty() {
-            let full_url = if trimmed.ends_with("/api/ai/dual-stream") {
-                trimmed.to_string()
-            } else {
-                format!("{}/api/ai/dual-stream", trimmed.trim_end_matches('/'))
-            };
-            urls.push(full_url);
+    let push_endpoint = |target_urls: &mut Vec<String>, raw: &str| {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return;
         }
+        let full_url = if trimmed.ends_with("/api/ai/dual-stream") {
+            trimmed.to_string()
+        } else {
+            format!("{}/api/ai/dual-stream", trimmed.trim_end_matches('/'))
+        };
+        if !target_urls.contains(&full_url) {
+            target_urls.push(full_url);
+        }
+    };
+
+    if let Ok(custom_url) = std::env::var("GHOSTBOARD_API_URL").or_else(|_| std::env::var("VITE_API_URL")) {
+        push_endpoint(&mut urls, &custom_url);
+    } else if let Some(baked_url) = option_env!("GHOSTBOARD_API_URL").or_else(|| option_env!("VITE_API_URL")) {
+        push_endpoint(&mut urls, baked_url);
     }
 
-    urls.push("http://localhost:3000/api/ai/dual-stream".to_string());
-    urls.push("http://localhost:3001/api/ai/dual-stream".to_string());
-    urls.push("https://ghostboard.tech/api/ai/dual-stream".to_string());
+    if cfg!(debug_assertions) {
+        push_endpoint(&mut urls, "http://localhost:3000/api/ai/dual-stream");
+        push_endpoint(&mut urls, "http://localhost:3001/api/ai/dual-stream");
+    }
+    push_endpoint(&mut urls, "https://ghostboard.ai/api/ai/dual-stream");
 
     let auth_token = std::env::var("GHOSTBOARD_AUTH_TOKEN")
         .ok()
@@ -676,12 +699,32 @@ async fn stream_from_local_nextjs_backend(
 
     let client = crate::llm::client::get_shared_llm_client();
 
-    let payload = serde_json::json!({
+    let history_json: Vec<serde_json::Value> = recent_turns
+        .unwrap_or_default()
+        .into_iter()
+        .rev()
+        .take(2)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|t| {
+            serde_json::json!({
+                "question": t.question,
+                "shortHook": t.short_hook.unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    let mut payload = serde_json::json!({
         "question": question,
         "directorModifier": modifier.unwrap_or_else(|| "normal".to_string()),
         "outputLanguage": output_lang.unwrap_or_else(|| "en".to_string()),
         "helperLanguage": helper_lang.unwrap_or_else(|| "uk".to_string()),
+        "history": history_json,
     });
+    if let Some(prof) = candidate_profile {
+        payload["candidateProfile"] = serde_json::to_value(prof).unwrap_or(serde_json::Value::Null);
+    }
 
     let mut response_opt = None;
     for url in &urls {

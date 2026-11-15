@@ -1,84 +1,36 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { DesktopAuthGate } from './components/DesktopAuthGate';
 import { OfficeWindow } from './components/OfficeWindow';
 import { HudWindow } from './components/HudWindow';
 import { HudErrorBoundary } from './hud/HudErrorBoundary';
-import { EyeLineTeleprompter } from './components/EyeLineTeleprompter';
-import { useHudStream } from './hooks/useHudStream';
 import {
-  setScreenShareStealth,
-  toggleClickThrough,
-  setWindowOpacity,
-  setWindowSize,
-  panicHide,
-  triggerManualAnswer,
-  clearSession,
   getAccessToken,
-  captureScreen,
-  logout,
   isTauriEnvironment,
+  logout,
+  setWindowSize,
   type CopilotMode,
 } from './lib/tauriBridge';
 import { checkAuth, type UserProfileData } from './lib/apiClient';
 
-/**
- * Compatibility harness satisfying test assertions for teleprompter hotkeys and STT error handling
- * (see tests/m5_eyeline_hud_tauri_bridge.test.ts & tests/hud_stt_error_boundary.test.tsx)
- */
-export function LegacyEyeLineBridge() {
-  const hudStream = useHudStream({ autoConnect: false });
-  const handleManualAnswer = useCallback(() => {
-    void triggerManualAnswer();
-  }, []);
-  const handleClearSession = useCallback(() => {
-    void clearSession();
-  }, []);
-
-  // Assertions for test inspection
-  const hasReconnecting = hudStream.sttStatus.status === 'reconnecting';
-  const hasFailed = hudStream.sttStatus.status === 'failed' || hudStream.error?.code === 'AUDIO_PIPELINE_ERROR';
-  if (hasFailed && false) {
-    hudStream.restartCapture();
-  }
-
-  return (
-    <div style={{ display: 'none' }} aria-hidden="true" data-testid="legacy-bridge">
-      {hasReconnecting && <span>Reconnecting STT</span>}
-      <EyeLineTeleprompter
-        mode="notch"
-        activeQuestion=""
-        activeAnswer={null}
-        isStreaming={false}
-        isFrozen={false}
-        opacity={1}
-        isClickThrough={false}
-        isAuthenticated={true}
-        onTriggerAnswer={handleManualAnswer}
-        onTriggerScreenshot={() => { void captureScreen(); }}
-        onClearSession={handleClearSession}
-        onRestartAudio={() => hudStream.restartCapture()}
-        onOpacityChange={(o) => { void setWindowOpacity(o); }}
-        onToggleClickThrough={() => { void toggleClickThrough(false); }}
-      />
-    </div>
-  );
-}
-
 export default function App() {
-  const isUrlHud = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('window') === 'hud';
+  const isUrlHud =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('window') === 'hud';
+
   const [isHudActive, setIsHudActive] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUser, setAuthUser] = useState<UserProfileData | null>(null);
 
-  // Synchronize document attribute for CSS styling
+  // Sync window attribute so CSS keeps #09090b in Office/Auth and transparent chrome in HUD
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.body.dataset.window = (isUrlHud || isHudActive) ? 'hud' : 'office';
+      document.body.dataset.window = isUrlHud || isHudActive ? 'hud' : 'office';
     }
   }, [isUrlHud, isHudActive]);
 
-  // Initial session check on desktop startup
+  // Verify existing OS Keyring / session token on desktop startup
   useEffect(() => {
     let isMounted = true;
     async function verifyExistingSession() {
@@ -126,7 +78,7 @@ export default function App() {
     try {
       await logout();
     } catch {
-      // Best-effort logout
+      // Best-effort token revocation
     }
     setAuthUser(null);
     setIsAuthenticated(false);
@@ -137,7 +89,7 @@ export default function App() {
     setIsHudActive(true);
     if (isTauriEnvironment()) {
       const width = mode === 'top_bar' ? 680 : 780;
-      const height = mode === 'top_bar' ? 150 : 460;
+      const height = mode === 'top_bar' ? 160 : 460;
       setWindowSize(width, height).catch(() => {});
     }
   }, []);
@@ -149,45 +101,49 @@ export default function App() {
     }
   }, []);
 
-  // 1. Detached HUD Window (Opened via launch_copilot_window) or In-Window HUD Fallback
+  // 1. Detached Stealth HUD Window (?window=hud) or in-window HUD fallback
   if (isUrlHud || isHudActive) {
     return (
-      <HudErrorBoundary fallbackTitle="HUD Overlay">
+      <HudErrorBoundary fallbackTitle="Stealth HUD">
         <HudWindow onReturnToOffice={isHudActive ? handleReturnToOffice : undefined} />
-        <LegacyEyeLineBridge />
       </HudErrorBoundary>
     );
   }
 
-  // 2. Initial Session Check Splash
+  // 2. Initial OS Keyring / session splash screen (#09090b engineering grid)
   if (isAuthChecking) {
     return (
       <div
         data-tauri-drag-region
-        className="fixed inset-0 z-50 flex items-center justify-center bg-[#09090b] border border-zinc-800 select-none"
+        className="gb-office fixed inset-0 z-50 flex items-center justify-center border border-white/[0.08] select-none"
       >
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 rounded-full border-2 border-zinc-700 border-t-white animate-spin shadow-sm" />
-          <p className="text-xs font-mono text-zinc-400 tracking-wider">ПЕРЕВІРКА СЕСІЇ GHOSTBOARD...</p>
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.08] bg-[#111114] px-7 py-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.75)]">
+          <motion.img
+            src="./ghost-transparent.png"
+            alt="Ghostboard"
+            animate={{ y: [0, -8, 0] }}
+            transition={{ duration: 2.6, ease: 'easeInOut', repeat: Infinity }}
+            className="h-12 w-12 object-contain"
+          />
+          <div className="flex items-center gap-2 text-xs font-mono tracking-wider text-zinc-300">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            ПЕРЕВІРКА СЕСІЇ GHOSTBOARD...
+          </div>
         </div>
       </div>
     );
   }
 
-  // 3. Authentication Gate (Strictly Login / Register / Offline Demo)
+  // 3. Authentication Gate (Stealth Access Pass)
   if (!isAuthenticated) {
     return (
-      <HudErrorBoundary fallbackTitle="Authentication">
-        <DesktopAuthGate
-          onSuccess={handleAuthSuccess}
-          onDemoMode={handleDemoMode}
-        />
-        <LegacyEyeLineBridge />
+      <HudErrorBoundary fallbackTitle="Stealth Access Pass">
+        <DesktopAuthGate onSuccess={handleAuthSuccess} onDemoMode={handleDemoMode} />
       </HudErrorBoundary>
     );
   }
 
-  // 4. Ghostboard Office (The ONLY main window interface: 5 Working Tabs + Interview Arena)
+  // 4. Ghostboard Office (Command Center)
   return (
     <HudErrorBoundary fallbackTitle="Ghostboard Office">
       <OfficeWindow
@@ -196,7 +152,6 @@ export default function App() {
         onOpenAuth={() => setIsAuthenticated(false)}
         onStartHud={handleStartHud}
       />
-      <LegacyEyeLineBridge />
     </HudErrorBoundary>
   );
 }

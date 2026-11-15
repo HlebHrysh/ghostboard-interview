@@ -26,6 +26,7 @@ describe('envGuard', () => {
     expect(isMemoryDbAllowed(env({ NODE_ENV: 'production' }))).toBe(false);
     expect(isMemoryDbAllowed(env({ NODE_ENV: 'production', ALLOW_MEMORY_DB: 'true' }))).toBe(true);
     expect(isProdSimulatorAllowed(env({ NODE_ENV: 'production' }))).toBe(false);
+    expect(isProdSimulatorAllowed(env({ NODE_ENV: 'production', NEXT_PUBLIC_QA_MODE: 'true' }))).toBe(false);
     expect(isProdSimulatorAllowed(env({ NODE_ENV: 'production', ENABLE_PROD_SIMULATOR: 'true' }))).toBe(true);
   });
 
@@ -135,5 +136,111 @@ describe('syncStore (Redis backend)', () => {
     const mod = await import('../src/lib/interviewSyncStore');
     await expect(mod.syncStore.getState('u')).rejects.toThrow(/requires Upstash Redis in production/);
     expect(() => mod.interviewSyncStore.getState()).toThrow(/requires Upstash Redis in production/);
+  });
+
+  it('throws EnvConfigError in production when Redis read or write fails', async () => {
+    vi.doMock('@upstash/redis', () => ({
+      Redis: class {
+        async get() {
+          throw new Error('redis read timeout');
+        }
+        async set() {
+          throw new Error('redis write timeout');
+        }
+        async del() {
+          return 1;
+        }
+      },
+    }));
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('UPSTASH_REDIS_REST_URL', 'https://example.upstash.io');
+    vi.stubEnv('UPSTASH_REDIS_REST_TOKEN', 'token');
+    vi.stubEnv('VITEST', '');
+    const mod = await import('../src/lib/interviewSyncStore');
+    await expect(mod.syncStore.getState('u')).rejects.toMatchObject({ name: 'EnvConfigError', code: 'ENV_CONFIG_ERROR' });
+    await expect(mod.syncStore.registerDevice('desktop', true, 'u')).rejects.toMatchObject({
+      name: 'EnvConfigError',
+      code: 'ENV_CONFIG_ERROR',
+    });
+  });
+});
+
+describe('production route & mail lockdown', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('returns 403 on /api/qa/control and redirects /checkout/simulator in production even with NEXT_PUBLIC_QA_MODE=true', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('NEXT_PUBLIC_QA_MODE', 'true');
+    vi.stubEnv('ENABLE_PROD_SIMULATOR', 'false');
+
+    const { NextRequest } = await import('next/server');
+    const qaRoute = await import('../src/app/api/qa/control/route');
+    const qaRes = await qaRoute.GET(new NextRequest('https://ghostboard.ai/api/qa/control'));
+    expect(qaRes.status).toBe(403);
+
+    const { proxy } = await import('../src/proxy');
+    const simRes = await proxy(new NextRequest('https://ghostboard.ai/checkout/simulator'));
+    expect(simRes.status).toBe(307);
+    expect(simRes.headers.get('location')).toBe('https://ghostboard.ai/pricing?error=simulator_disabled');
+  });
+
+  it('rejects unauthenticated desktop headers on /api/ai/interview-sync, /api/desktop/heartbeat, and /api/audio/ensure-stealth in production', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const { NextRequest } = await import('next/server');
+
+    const syncRoute = await import('../src/app/api/ai/interview-sync/route');
+    const syncRes = await syncRoute.POST(
+      new NextRequest('https://ghostboard.ai/api/ai/interview-sync', {
+        method: 'POST',
+        headers: { 'x-ghostboard-client': 'desktop-app', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'STATUS', isCapturing: true }),
+      })
+    );
+    expect(syncRes.status).toBe(401);
+
+    const heartbeatRoute = await import('../src/app/api/desktop/heartbeat/route');
+    const hbRes = await heartbeatRoute.POST(
+      new NextRequest('https://ghostboard.ai/api/desktop/heartbeat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: 'launcher' }),
+      })
+    );
+    expect(hbRes.status).toBe(401);
+
+    const stealthRoute = await import('../src/app/api/audio/ensure-stealth/route');
+    const stealthRes = await stealthRoute.POST(
+      new NextRequest('https://ghostboard.ai/api/audio/ensure-stealth', {
+        method: 'POST',
+        headers: { 'x-ghostboard-client': 'desktop-app', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ping' }),
+      })
+    );
+    expect(stealthRes.status).toBe(401);
+  });
+
+  it('blocks mock console email fallback in production unless ENABLE_PROD_SIMULATOR=true', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('RESEND_API_KEY', '');
+    vi.stubEnv('NEXT_PUBLIC_QA_MODE', 'true');
+    vi.stubEnv('ENABLE_PROD_SIMULATOR', 'false');
+
+    const { sendRetentionEmail } = await import('../src/lib/mail');
+    await expect(sendRetentionEmail('user@example.com', 'Alex')).rejects.toMatchObject({
+      name: 'EnvConfigError',
+      code: 'ENV_CONFIG_ERROR',
+    });
+  });
+
+  it('returns null from getSessionUser when DB returns null in production instead of crashing on memSessions', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DATABASE_URL', 'postgresql://example:5432/db');
+    const db = await import('../src/lib/serverDb');
+    const findUniqueSpy = vi.spyOn(db.rawPrisma.session, 'findUnique').mockResolvedValueOnce(null);
+    await expect(db.getSessionUser('nonexistent-session-token')).resolves.toBeNull();
+    findUniqueSpy.mockRestore();
   });
 });

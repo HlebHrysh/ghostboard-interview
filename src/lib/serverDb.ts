@@ -10,6 +10,7 @@ import {
   getCachedUserByEmail,
   setCachedUser,
   removeCachedUser,
+  clearUserCache,
   type CachedUser,
 } from './server/users';
 
@@ -133,12 +134,23 @@ export const rawPrisma = globalForPrisma.prisma || new PrismaClient();
 export const prisma = createPrismaCircuitBreakerProxy(rawPrisma);
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = rawPrisma;
 
+export const VALID_APP_ROLES = ['user', 'developer', 'admin'] as const;
+export type AppRole = (typeof VALID_APP_ROLES)[number];
+
+export function isValidAppRole(role: unknown): role is AppRole {
+  return typeof role === 'string' && (VALID_APP_ROLES as readonly string[]).includes(role);
+}
+
+export function normalizeAppRole(role: unknown): AppRole {
+  return isValidAppRole(role) ? role : 'user';
+}
+
 export interface UserRecord {
   id: string;
   email: string;
   name?: string | null;
   plan: string;
-  role?: string | null;
+  role?: string | null; // RBAC: 'user' | 'developer' | 'admin'
   trialQuestionsUsed?: number;
   stripeCustomerId?: string | null;
   resumeContext?: string | null;
@@ -216,6 +228,17 @@ function guardMemoryMap<K, V>(name: string, map: Map<K, V>): Map<K, V> {
   });
 }
 
+function assertProdDbReady(context: string): void {
+  if (!isMemoryDbAllowed()) {
+    if (!process.env.DATABASE_URL) {
+      assertMemoryDbAllowed(context);
+    }
+    if (isDbCircuitBroken()) {
+      throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
+    }
+  }
+}
+
 const memUsersByEmail = guardMemoryMap('memUsersByEmail', g.memUsersByEmail || (g.memUsersByEmail = new Map<string, DbUser>()));
 const memUsersById = guardMemoryMap('memUsersById', g.memUsersById || (g.memUsersById = new Map<string, DbUser>()));
 const memSessions = guardMemoryMap('memSessions', g.memSessions || (g.memSessions = new Map<string, DbSession>()));
@@ -237,12 +260,11 @@ export async function setUserPassword(userId: string, password: string): Promise
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return;
       // Fallback
     }
   }
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('setUserPassword');
   const memUser = memUsersById.get(userId);
   if (memUser) memUser.passwordHash = passwordHash;
   const cached = getCachedUserById(userId);
@@ -261,9 +283,11 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
       return user;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
       // Fallback to in-memory store if DB is unreachable
     }
   }
+  assertProdDbReady('getUserByEmail');
   const mem = memUsersByEmail.get(normalized) || null;
   if (mem) setCachedUser(mem as CachedUser);
   return mem;
@@ -280,9 +304,11 @@ export async function getUserById(id: string): Promise<DbUser | null> {
       return user;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
       // Fallback to in-memory store
     }
   }
+  assertProdDbReady('getUserById');
   const mem = memUsersById.get(id) || null;
   if (mem) setCachedUser(mem as CachedUser);
   return mem;
@@ -292,9 +318,12 @@ export async function createUser(
   email: string,
   name?: string,
   plan: string = 'free',
-  role?: string
+  _role?: string
 ): Promise<DbUser> {
   const normalized = email.trim().toLowerCase();
+  // Security: public registration / OAuth callers can never self-assign elevated RBAC roles.
+  // Elevated roles ('developer' | 'admin') must be assigned via updateUserRole() from admin endpoints.
+  const initialRole: AppRole = 'user';
 
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
@@ -308,7 +337,7 @@ export async function createUser(
           email: normalized,
           name: name || normalized.split('@')[0],
           plan,
-          role: role || 'Python Backend Developer',
+          role: initialRole,
         },
       });
       setCachedUser(created as CachedUser);
@@ -319,9 +348,7 @@ export async function createUser(
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('createUser');
 
   const existingMem = memUsersByEmail.get(normalized);
   if (existingMem) {
@@ -334,7 +361,7 @@ export async function createUser(
     email: normalized,
     name: name || normalized.split('@')[0],
     plan,
-    role: role || 'Python Backend Developer',
+    role: initialRole,
     createdAt: new Date(),
   };
   memUsersByEmail.set(normalized, newUser);
@@ -361,6 +388,9 @@ interface CachedSessionUser {
 }
 const sessionUserCache = new Map<string, CachedSessionUser>();
 const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute fast in-memory cache
+const MAX_SESSION_CACHE_ENTRIES = 5000;
+let sessionCacheHits = 0;
+let sessionCacheMisses = 0;
 
 export function invalidateSessionUserCache(token?: string, userId?: string): void {
   if (token) {
@@ -376,29 +406,88 @@ export function invalidateSessionUserCache(token?: string, userId?: string): voi
   }
 }
 
+export function getSessionCacheStats() {
+  const total = sessionCacheHits + sessionCacheMisses;
+  return {
+    entries: sessionUserCache.size,
+    hits: sessionCacheHits,
+    misses: sessionCacheMisses,
+    hitRate: total > 0 ? Math.round((sessionCacheHits / total) * 1000) / 10 : 0,
+    ttlMs: SESSION_CACHE_TTL_MS,
+  };
+}
+
+export function flushAllServerCaches(): {
+  clearedSessionEntries: number;
+} {
+  const clearedSessionEntries = sessionUserCache.size;
+  sessionUserCache.clear();
+  sessionCacheHits = 0;
+  sessionCacheMisses = 0;
+  clearUserCache();
+  return { clearedSessionEntries };
+}
+
 export async function updateUserPlan(userId: string, plan: string): Promise<void> {
   invalidateSessionUserCache(undefined, userId);
+  removeCachedUser(userId);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
-      await prisma.user.update({
+      const updated = await prisma.user.update({
         where: { id: userId },
         data: { plan },
       });
+      setCachedUser(updated as CachedUser);
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return;
       // Fallback
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('updateUserPlan');
 
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.plan = plan;
+    setCachedUser(memUser as CachedUser);
   }
+}
+
+export async function updateUserRole(userId: string, role: AppRole): Promise<DbUser | null> {
+  if (!isValidAppRole(role)) {
+    throw new Error(`Invalid RBAC role: ${String(role)}`);
+  }
+  invalidateSessionUserCache(undefined, userId);
+  removeCachedUser(userId);
+
+  if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
+    try {
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { role },
+      });
+      const memUser = memUsersById.get(userId);
+      if (memUser) memUser.role = updated.role;
+      setCachedUser(updated as CachedUser);
+      return updated;
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
+      // Fallback
+    }
+  }
+
+  assertProdDbReady('updateUserRole');
+
+  const memUser = memUsersById.get(userId);
+  if (memUser) {
+    memUser.role = role;
+    setCachedUser(memUser as CachedUser);
+    return memUser;
+  }
+  return null;
 }
 
 export async function updateUser(
@@ -413,30 +502,59 @@ export async function updateUser(
   }
 ): Promise<DbUser | null> {
   invalidateSessionUserCache(undefined, userId);
+  removeCachedUser(userId);
+
+  const sanitizedData: {
+    plan?: string;
+    name?: string;
+    role?: AppRole;
+    isBanned?: boolean;
+    lastActiveAt?: Date | null;
+    trialQuestionsUsed?: number;
+  } = {
+    ...(data.plan !== undefined ? { plan: data.plan } : {}),
+    ...(data.name !== undefined ? { name: data.name } : {}),
+    ...(data.role !== undefined && isValidAppRole(data.role) ? { role: data.role } : {}),
+    ...(data.isBanned !== undefined ? { isBanned: data.isBanned } : {}),
+    ...(data.lastActiveAt !== undefined ? { lastActiveAt: data.lastActiveAt } : {}),
+    ...(data.trialQuestionsUsed !== undefined ? { trialQuestionsUsed: data.trialQuestionsUsed } : {}),
+  };
+
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
-      return await prisma.user.update({
+      const updated = await prisma.user.update({
         where: { id: userId },
-        data,
+        data: sanitizedData,
       });
+      const memUser = memUsersById.get(userId);
+      if (memUser) {
+        if (sanitizedData.plan !== undefined) memUser.plan = updated.plan;
+        if (sanitizedData.name !== undefined) memUser.name = updated.name;
+        if (sanitizedData.role !== undefined) memUser.role = updated.role;
+        if (sanitizedData.isBanned !== undefined) memUser.isBanned = updated.isBanned;
+        if (sanitizedData.lastActiveAt !== undefined) memUser.lastActiveAt = updated.lastActiveAt;
+        if (sanitizedData.trialQuestionsUsed !== undefined) memUser.trialQuestionsUsed = updated.trialQuestionsUsed;
+      }
+      setCachedUser(updated as CachedUser);
+      return updated;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
       // Fallback
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('updateUser');
 
   const memUser = memUsersById.get(userId);
   if (memUser) {
-    if (data.plan !== undefined) memUser.plan = data.plan;
-    if (data.name !== undefined) memUser.name = data.name;
-    if (data.role !== undefined) memUser.role = data.role;
-    if (data.isBanned !== undefined) memUser.isBanned = data.isBanned;
-    if (data.lastActiveAt !== undefined) memUser.lastActiveAt = data.lastActiveAt;
-    if (data.trialQuestionsUsed !== undefined) memUser.trialQuestionsUsed = data.trialQuestionsUsed;
+    if (sanitizedData.plan !== undefined) memUser.plan = sanitizedData.plan;
+    if (sanitizedData.name !== undefined) memUser.name = sanitizedData.name;
+    if (sanitizedData.role !== undefined) memUser.role = sanitizedData.role;
+    if (sanitizedData.isBanned !== undefined) memUser.isBanned = sanitizedData.isBanned;
+    if (sanitizedData.lastActiveAt !== undefined) memUser.lastActiveAt = sanitizedData.lastActiveAt;
+    if (sanitizedData.trialQuestionsUsed !== undefined) memUser.trialQuestionsUsed = sanitizedData.trialQuestionsUsed;
+    setCachedUser(memUser as CachedUser);
     return memUser;
   }
   return null;
@@ -466,9 +584,12 @@ export async function recordUserActivity(userId: string): Promise<void> {
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return;
       // Fallback
     }
   }
+
+  assertProdDbReady('recordUserActivity');
 
   const memUser = memUsersById.get(userId);
   if (memUser) {
@@ -486,15 +607,19 @@ export async function banUser(userId: string, isBanned: boolean = true): Promise
 }
 
 export async function resetUserSessions(userId: string): Promise<number> {
+  invalidateSessionUserCache(undefined, userId);
   let count = 0;
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const res = await prisma.session.deleteMany({ where: { userId } });
       count = res.count;
+      if (!isMemoryDbAllowed()) return count;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return count;
     }
   }
+  assertProdDbReady('resetUserSessions');
   for (const [token, session] of memSessions.entries()) {
     if (session.userId === userId) {
       memSessions.delete(token);
@@ -506,22 +631,22 @@ export async function resetUserSessions(userId: string): Promise<number> {
 
 
 export async function deleteUser(userId: string): Promise<boolean> {
+  invalidateSessionUserCache(undefined, userId);
   removeCachedUser(userId);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
-      await prisma.history.deleteMany({ where: { userId } }).catch(() => {});
-      await prisma.session.deleteMany({ where: { userId } }).catch(() => {});
+      await prisma.history.deleteMany({ where: { userId } });
+      await prisma.session.deleteMany({ where: { userId } });
       await prisma.user.delete({ where: { id: userId } });
       return true;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return false;
       // Fallback
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('deleteUser');
 
   const user = memUsersById.get(userId);
   if (user) {
@@ -560,9 +685,7 @@ export async function createSession(
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('createSession');
 
   const session: DbSession = {
     token,
@@ -605,11 +728,12 @@ export async function listUserSessions(userId: string, currentToken?: string): P
     }
   }
   if (!fromDb) {
+    assertProdDbReady('listUserSessions');
     sessions = Array.from(memSessions.values())
       .filter((s) => s.userId === userId && s.expiresAt > now)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-  } else {
-    // Also include any active in-memory sessions for this user not yet in DB
+  } else if (isMemoryDbAllowed()) {
+    // Also include any active in-memory sessions for this user not yet in DB (dev/test only)
     const dbTokenSet = new Set(sessions.map((s) => s.token));
     const extraMem = Array.from(memSessions.values())
       .filter((s) => s.userId === userId && s.expiresAt > now && !dbTokenSet.has(s.token));
@@ -627,17 +751,24 @@ export async function listUserSessions(userId: string, currentToken?: string): P
 
 /** Revoke a session by its public id, only if it belongs to the given user. */
 export async function revokeUserSession(userId: string, publicId: string): Promise<boolean> {
-  const memTokens = Array.from(memSessions.values()).filter((s) => s.userId === userId).map((s) => s.token);
   let dbTokens: string[] = [];
+  let fromDb = false;
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const rows = await prisma.session.findMany({ where: { userId }, select: { token: true } });
       dbTokens = rows.map((r) => r.token);
+      fromDb = true;
     } catch (dbErr) {
       failDbInProduction(dbErr);
       // Fallback
     }
   }
+  if (!fromDb) {
+    assertProdDbReady('revokeUserSession');
+  }
+  const memTokens = isMemoryDbAllowed()
+    ? Array.from(memSessions.values()).filter((s) => s.userId === userId).map((s) => s.token)
+    : [];
   const allTokens = Array.from(new Set([...dbTokens, ...memTokens]));
   const match = allTokens.find((t) => sessionPublicId(t) === publicId);
   if (!match) return false;
@@ -647,11 +778,8 @@ export async function revokeUserSession(userId: string, publicId: string): Promi
 
 /** Revoke all sessions belonging to the user except the specified current token. */
 export async function revokeAllOtherUserSessions(userId: string, currentToken: string): Promise<number> {
-  const memTokens = Array.from(memSessions.values())
-    .filter((s) => s.userId === userId && s.token !== currentToken)
-    .map((s) => s.token);
-
   let dbTokens: string[] = [];
+  let fromDb = false;
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       const rows = await prisma.session.findMany({
@@ -659,11 +787,20 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
         select: { token: true },
       });
       dbTokens = rows.map((r) => r.token);
+      fromDb = true;
     } catch (dbErr) {
       failDbInProduction(dbErr);
       // Fallback
     }
   }
+  if (!fromDb) {
+    assertProdDbReady('revokeAllOtherUserSessions');
+  }
+  const memTokens = isMemoryDbAllowed()
+    ? Array.from(memSessions.values())
+        .filter((s) => s.userId === userId && s.token !== currentToken)
+        .map((s) => s.token)
+    : [];
 
   const allTokensToRevoke = Array.from(new Set([...dbTokens, ...memTokens]));
   for (const t of allTokensToRevoke) {
@@ -675,12 +812,19 @@ export async function revokeAllOtherUserSessions(userId: string, currentToken: s
 export async function getSessionUser(token: string): Promise<DbUser | null> {
   if (!token) return null;
   const now = new Date();
+  const nowMs = now.getTime();
   const cached = sessionUserCache.get(token);
-  if (cached && cached.expiresAt > now.getTime()) {
-    return cached.user;
+  if (cached) {
+    if (cached.expiresAt > nowMs) {
+      sessionCacheHits++;
+      return cached.user;
+    }
+    sessionUserCache.delete(token);
   }
+  sessionCacheMisses++;
 
   let user: DbUser | null = null;
+  let fromDb = false;
 
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
@@ -688,16 +832,22 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
         where: { token },
         include: { user: true },
       });
+      fromDb = true;
       if (session && session.expiresAt > now) {
         user = session.user;
       }
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
       // Fallback
     }
   }
 
-  if (!user) {
+  if (!fromDb) {
+    assertProdDbReady('getSessionUser');
+  }
+
+  if (!user && isMemoryDbAllowed()) {
     const memSession = memSessions.get(token);
     if (memSession && memSession.expiresAt > now) {
       user = memUsersById.get(memSession.userId) || null;
@@ -705,6 +855,16 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
   }
 
   if (user) {
+    if (sessionUserCache.size >= MAX_SESSION_CACHE_ENTRIES) {
+      const cutoff = Date.now();
+      for (const [k, v] of sessionUserCache.entries()) {
+        if (v.expiresAt <= cutoff) sessionUserCache.delete(k);
+      }
+      if (sessionUserCache.size >= MAX_SESSION_CACHE_ENTRIES) {
+        const oldestKey = sessionUserCache.keys().next().value;
+        if (oldestKey) sessionUserCache.delete(oldestKey);
+      }
+    }
     sessionUserCache.set(token, { user, expiresAt: Date.now() + SESSION_CACHE_TTL_MS });
   }
 
@@ -716,7 +876,15 @@ export const getUserBySessionToken = getSessionUser;
 export async function deleteSession(token: string): Promise<void> {
   invalidateSessionUserCache(token);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
-    await prisma.session.delete({ where: { token } }).catch(() => {});
+    try {
+      await prisma.session.delete({ where: { token } });
+      if (!isMemoryDbAllowed()) return;
+    } catch (dbErr) {
+      failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return;
+    }
+  } else {
+    assertProdDbReady('deleteSession');
   }
   memSessions.delete(token);
 }
@@ -753,9 +921,7 @@ export async function saveInterviewSession(
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('saveInterviewSession');
 
   const entry: DbSavedSession = {
     id: `hist_${crypto.randomBytes(12).toString('hex')}`,
@@ -783,13 +949,12 @@ export async function makeSessionPublic(historyId: string, slug: string): Promis
       return true;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return false;
       // Fallback
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('makeSessionPublic');
 
   const mem = memHistoryById.get(historyId);
   if (mem) {
@@ -813,12 +978,15 @@ export async function getPublicScorecard(slug: string): Promise<DbSavedSession |
           timestamp: Number(history.timestamp),
         };
       }
+      if (!isMemoryDbAllowed()) return null;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return null;
       // Fallback
     }
   }
 
+  assertProdDbReady('getPublicScorecard');
   return memPublicScorecards.get(slug) || null;
 }
 
@@ -835,10 +1003,12 @@ export async function getUserInterviewSessions(userId: string): Promise<DbSavedS
       }));
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return [];
       // Fallback
     }
   }
 
+  assertProdDbReady('getUserInterviewSessions');
   return memHistory.get(userId) || [];
 }
 
@@ -851,13 +1021,12 @@ export async function deleteSavedSession(sessionId: string): Promise<boolean> {
       return true;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return false;
       // Fallback
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('deleteSavedSession');
 
   const session = memHistoryById.get(sessionId);
   if (session) {
@@ -885,6 +1054,7 @@ export async function getAllUsers(): Promise<DbUser[]> {
       failDbInProduction(dbErr);
     }
   }
+  assertProdDbReady('getAllUsers');
   return Array.from(memUsersById.values()).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 }
 
@@ -897,6 +1067,7 @@ export async function getAllSessions(): Promise<DbSavedSession[]> {
       failDbInProduction(dbErr);
     }
   }
+  assertProdDbReady('getAllSessions');
   return Array.from(memHistoryById.values()).sort((a, b) => b.timestamp - a.timestamp);
 }
 
@@ -932,9 +1103,7 @@ export async function logPayment(payment: Omit<DbPayment, 'id' | 'timestamp'>): 
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('logPayment');
 
   const entry: DbPayment = {
     ...payment,
@@ -967,6 +1136,7 @@ export async function getAllPayments(): Promise<DbPayment[]> {
       });
     }
   }
+  assertProdDbReady('getAllPayments');
   return Array.from(memPayments.values()).sort((a: DbPayment, b: DbPayment) => b.timestamp - a.timestamp);
 }
 
@@ -983,15 +1153,14 @@ export async function updateUserCandidateProfile(
       return;
     } catch (err: unknown) {
       failDbInProduction(err);
+      if (!isMemoryDbAllowed()) return;
       log.warn('[serverDb.updateUserCandidateProfile] Prisma update failed:', {
         userId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('updateUserCandidateProfile');
   const memUser = memUsersById.get(userId);
   if (memUser) {
     memUser.candidateProfile = candidateProfile as Prisma.JsonValue;
@@ -1008,12 +1177,14 @@ export async function getUserCandidateProfile(userId: string): Promise<Prisma.Js
       return user?.candidateProfile ?? null;
     } catch (err: unknown) {
       failDbInProduction(err);
+      if (!isMemoryDbAllowed()) return null;
       log.warn('[serverDb.getUserCandidateProfile] Prisma select failed:', {
         userId,
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
+  assertProdDbReady('getUserCandidateProfile');
   const memUser = memUsersById.get(userId);
   return memUser?.candidateProfile ?? null;
 }
@@ -1035,12 +1206,11 @@ export async function incrementUserTrialQuestions(userId: string): Promise<numbe
       return user.trialQuestionsUsed;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return 1;
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('incrementUserTrialQuestions');
 
   const memUser = memUsersById.get(userId);
   if (memUser) {
@@ -1060,12 +1230,11 @@ export async function updateUserResumeContext(userId: string, context: string): 
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
+      if (!isMemoryDbAllowed()) return;
     }
   }
 
-  if (isDbCircuitBroken() && !isMemoryDbAllowed()) {
-    throw new EnvConfigError('[serverDb] Database is temporarily unavailable (circuit breaker active)');
-  }
+  assertProdDbReady('updateUserResumeContext');
 
   const memUser = memUsersById.get(userId);
   if (memUser) {

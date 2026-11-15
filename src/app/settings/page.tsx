@@ -31,6 +31,7 @@ import { SubpageStripesContainer } from "@/components/ui/SubpageStripesContainer
 import { useLocale } from "@/contexts/LocaleContext";
 import { LOCALE_META, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { getSettingsTranslations, type Platform } from "@/lib/settingsI18n";
+import { SubscriptionStatusCard } from "@/app/profile/SubscriptionStatusCard";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -39,7 +40,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
         <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.6)]" />
         {title}
       </h2>
-      <div className="bg-[#0a0a0e]/90 backdrop-blur-xl border border-white/[0.08] rounded-3xl p-5 sm:p-7 space-y-4 shadow-xl">
+      <div className="spatial-glass-window rounded-3xl p-6 sm:p-7 space-y-4 border border-white/[0.1] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
         {children}
       </div>
     </div>
@@ -187,46 +188,14 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* ── Section 1: Subscription Summary & Profile Link ── */}
-          <Section title={isUa ? "Тариф та Доступ" : "Plan & Billing"}>
-            <div className="p-4 sm:p-5 rounded-2xl bg-[#0e0e14] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-white font-mono">
-                    {userPlan === "lifetime"
-                      ? "Ghostboard Lifetime Founder Pass"
-                      : userPlan === "pro"
-                      ? "Ghostboard Pro Pass"
-                      : "Free Trial Demo"}
-                  </span>
-                  <span
-                    className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
-                      userPlan === "lifetime"
-                        ? "bg-amber-400/20 text-amber-300 border border-amber-400/40"
-                        : userPlan === "pro"
-                        ? "bg-white/15 text-white border border-white/30"
-                        : "bg-amber-400/15 text-amber-400 border border-amber-400/30"
-                    }`}
-                  >
-                    {userPlan === "lifetime" ? "VIP PASS" : userPlan === "pro" ? "PRO" : "FREE DEMO"}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-                  {isUa
-                    ? "Управління підпискою, способами оплати, пристроями та лімітами перенесено до вашого Командного Центру."
-                    : "Subscription management, payment portal, active devices, and limits are managed in your Command Center."}
-                </p>
-              </div>
-
-              <Link
-                href="/profile?tab=security_billing"
-                className="btn-resend-glass text-xs font-mono !py-2.5 !px-4 flex items-center justify-center gap-2 shrink-0 cursor-pointer"
-              >
-                <Shield className="w-3.5 h-3.5 text-zinc-300" />
-                <span>{isUa ? "Керувати у Профілі" : "Manage in Profile"}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-            </div>
+          {/* ── Section 1: Unified Subscription & Billing Status Card ── */}
+          <Section title={isUa ? "Підписка та оплата" : "Subscription & Billing"}>
+            <SubscriptionStatusCard
+              plan={userPlan}
+              locale={locale}
+              compact={true}
+              showManageProfileLink={true}
+            />
           </Section>
 
           {/* ── Section 2: AI Copilot Operation Modes ── */}
@@ -377,7 +346,7 @@ export default function SettingsPage() {
                 <ol className="space-y-2.5 mt-3">
                   {guide.steps.map((step, i) => (
                     <li key={i} className="flex items-start gap-3 text-xs text-zinc-300 font-sans leading-relaxed">
-                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-[10px] font-bold font-mono flex items-center justify-center mt-0.5">
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white/10 border border-white/20 text-zinc-200 text-xs font-bold font-mono flex items-center justify-center mt-0.5">
                         {i + 1}
                       </span>
                       {step}

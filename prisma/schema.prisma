@@ -12,7 +12,7 @@ model User {
   email     String   @unique
   name      String?
   plan      String   @default("free") // free, pro, lifetime
-  role               String?
+  role               String   @default("user") // user | developer | admin
   trialQuestionsUsed Int      @default(0)
   stripeCustomerId   String?
   resumeContext      String?

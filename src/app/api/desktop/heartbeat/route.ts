@@ -26,10 +26,14 @@ export async function POST(req: NextRequest) {
       user = await getUserBySessionToken(token);
     }
 
-    // Default guest candidate if unauthenticated desktop client
+    if (process.env.NODE_ENV === 'production' && !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Default guest candidate in dev/test only if unauthenticated desktop client
     const userId = user?.id || 'desktop-guest';
     const userEmail = user?.email || 'guest@ghostboard.local';
-    const userPlan = user?.plan || 'pro';
+    const userPlan = user?.plan || 'free';
 
     const clientIp = getClientIp(req);
 

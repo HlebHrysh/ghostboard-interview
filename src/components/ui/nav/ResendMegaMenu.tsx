@@ -178,8 +178,8 @@ export function ResendMegaMenu() {
             onMouseLeave={handleMouseLeave}
             className="absolute top-full left-1/2 -translate-x-1/2 pt-3 z-50 pointer-events-auto"
           >
-            {/* High-Contrast Frosted Glass Card */}
-            <div className="relative rounded-[28px] bg-[#0d0d12]/98 backdrop-blur-3xl border border-white/15 shadow-[0_30px_80px_rgba(0,0,0,0.9),0_0_0_1px_rgba(255,255,255,0.08)] p-6 sm:p-7 text-left overflow-hidden w-[640px] max-w-[94vw]">
+            {/* High-Contrast Apple Spatial Glass Card */}
+            <div className="spatial-glass-window relative rounded-3xl bg-[#0b0d13]/92 backdrop-blur-3xl border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_30px_80px_rgba(0,0,0,0.85)] p-6 sm:p-7 text-left overflow-hidden w-[640px] max-w-[94vw]">
               {/* Pointing caret arrow */}
               <div className="absolute -top-[6px] left-1/2 -translate-x-1/2 w-3.5 h-3.5 rotate-45 bg-[#0d0d12] border-l border-t border-white/15 z-20 pointer-events-none" />
 
@@ -251,7 +251,7 @@ export function ResendMegaMenu() {
                             <span className="flex items-center gap-1.5">
                               <span>{item.title}</span>
                               {item.badge && (
-                                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase font-bold">
+                                <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30 uppercase font-bold">
                                   {item.badge}
                                 </span>
                               )}
@@ -270,7 +270,7 @@ export function ResendMegaMenu() {
                 {/* Right: Focused Live HUD Showcase Card */}
                 <div className="col-span-5 flex flex-col justify-between p-4 rounded-2xl bg-[#14151e] border border-white/10 shadow-inner">
                   <div className="space-y-2.5">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono font-bold text-emerald-300 uppercase tracking-wider">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-xs font-mono font-bold text-emerald-300 uppercase tracking-wider">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                       <span>SUB-1.2S STACK</span>
                     </div>

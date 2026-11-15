@@ -29,12 +29,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://ipc.localhost tauri://localhost; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://localhost:3001 ws://localhost:3001 https://ghostboard.ai wss://ghostboard.ai https://api.deepgram.com wss://api.deepgram.com https://api.openai.com https://api.groq.com https://api.anthropic.com https://generativelanguage.googleapis.com; img-src 'self' asset: http://asset.localhost data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; script-src 'self' blob:",
+      "csp": "default-src 'self' ipc: http://ipc.localhost tauri://localhost; connect-src 'self' ipc: http://ipc.localhost https://ghostboard.ai wss://ghostboard.ai https://api.deepgram.com wss://api.deepgram.com https://api.openai.com https://api.groq.com https://api.anthropic.com https://generativelanguage.googleapis.com; img-src 'self' asset: http://asset.localhost data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; script-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "devCsp": "default-src 'self' ipc: http://ipc.localhost tauri://localhost; connect-src 'self' ipc: http://ipc.localhost http://localhost:3000 http://localhost:3001 ws://localhost:3001 http://localhost:5173 ws://localhost:5173 https://ghostboard.ai wss://ghostboard.ai https://api.deepgram.com wss://api.deepgram.com https://api.openai.com https://api.groq.com https://api.anthropic.com https://generativelanguage.googleapis.com; img-src 'self' asset: http://asset.localhost data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' blob:; worker-src 'self' blob:; script-src 'self' blob:",
       "capabilities": ["default"]
     }
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["appimage", "deb", "nsis", "dmg"],
     "icon": [
       "icons/16x16.png",

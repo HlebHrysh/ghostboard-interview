@@ -206,10 +206,29 @@ export function useCopilotSession({ settings, getProfile, onHotkey }: UseCopilot
       });
       setNativeError(null);
 
-      const history = stateRef.current.messages
-        .filter((m) => m.speaker !== 'manual')
-        .slice(-6)
-        .map((m) => ({ speaker: m.speaker === 'candidate' ? ('candidate' as const) : ('interviewer' as const), text: m.text }));
+      const recentCompletedAnswers = stateRef.current.answers
+        .filter((a) => a.id !== answerId && a.raw.trim().length > 0)
+        .slice(-2);
+      const historyFromAnswers = recentCompletedAnswers.flatMap((a) => {
+        const cleanHook = a.raw
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.length > 0 && !l.startsWith('<<<')) || a.raw.slice(0, 200);
+        return [
+          { speaker: 'interviewer' as const, text: a.question },
+          { speaker: 'candidate' as const, text: cleanHook.slice(0, 200) },
+        ];
+      });
+      const history =
+        historyFromAnswers.length > 0
+          ? historyFromAnswers
+          : stateRef.current.messages
+              .filter((m) => m.speaker !== 'manual')
+              .slice(-4)
+              .map((m) => ({
+                speaker: m.speaker === 'candidate' ? ('candidate' as const) : ('interviewer' as const),
+                text: m.text,
+              }));
 
       const req: AnswerRequest = {
         question,

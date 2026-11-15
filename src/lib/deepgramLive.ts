@@ -37,8 +37,11 @@ export type DeepgramLiveClientOptions = DeepgramLiveOptions;
 
 /**
  * High-impact technical keyterms for boosting Deepgram Nova-3 accuracy.
- * Kept strictly under 40 items (< 1.5 KB query string) to prevent HTTP 400 errors.
+ * Kept strictly under 25 items (< 100 tokens total) to prevent HTTP 400 errors.
  */
+export const MAX_KEYTERMS = 24;
+export const MAX_KEYTERM_TOKENS = 95;
+
 export const TECH_KEYTERMS = [
   'Python', 'TypeScript', 'React', 'Next.js', 'Node.js', 'Rust', 'SQL',
   'PostgreSQL', 'Redis', 'Docker', 'Kubernetes', 'AWS', 'Kafka',

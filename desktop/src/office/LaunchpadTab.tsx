@@ -1,23 +1,25 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Zap,
-  Play,
-  FlaskConical,
-  Volume2,
+  AlertTriangle,
+  Columns2,
   Cpu,
-  UserCheck,
-  Check,
-  Layers,
-  Eye,
-  Sparkles,
+  FileText,
+  FlaskConical,
+  Headphones,
+  LayoutGrid,
+  Loader2,
+  Zap,
 } from 'lucide-react';
-import { Card, Pill, StatusDot, SectionTitle, Button, Shortcut, stopDrag } from '../ui/primitives';
-import { VuBars } from '../ui/VuMeter';
-import { SHORTCUTS } from '../lib/platform';
-import { LISTEN_MODE_META } from '../lib/audioSession';
 import type { DesktopSettings } from '../lib/desktopSettings';
 import type { CandidateProfile } from '../lib/profileStore';
 import type { CopilotMode } from '../lib/tauriBridge';
+import { LISTEN_MODE_META } from '../lib/audioSession';
+import { LevitatingGhostMascot, type GhostMascotMode } from '../ui/LevitatingGhostMascot';
+import { SPRING, stopDrag } from '../ui/primitives';
+import { STUDIO_VIDEO_CLIPS, VideoPreviewCapsule } from '../ui/VideoPreviewCapsule';
+import { VuBars } from '../ui/VuMeter';
+import type { OfficeTab } from './OfficeNavRail';
 
 interface LaunchpadTabProps {
   settings: DesktopSettings;
@@ -27,8 +29,27 @@ interface LaunchpadTabProps {
   onSelectMode: (mode: CopilotMode) => void;
   onLaunch: () => void;
   onRunDemo: () => void;
-  onNavigateTab: (tab: 'audio' | 'ai' | 'context' | 'stealth') => void;
+  onNavigateTab: (tab: OfficeTab) => void;
 }
+
+const CASCADE_LABEL: Record<DesktopSettings['aiModelCascade'], string> = {
+  hedged_race: 'Gemini 2.5 + Groq Race',
+  gemini_flash: 'Gemini 2.5 Flash',
+  groq_llama: 'Groq Llama 3.3 Turbo',
+};
+
+const LANG_LABEL: Record<DesktopSettings['hintLanguage'], string> = {
+  auto: 'Авто',
+  uk: 'Українська',
+  en: 'English',
+  bilingual_uk: 'Білінгв EN+UA',
+  bilingual_ru: 'Білінгв EN+RU',
+  ru: 'Русский',
+  pl: 'Polski',
+  de: 'Deutsch',
+  es: 'Español',
+  fr: 'Français',
+};
 
 export const LaunchpadTab: React.FC<LaunchpadTabProps> = ({
   settings,
@@ -40,255 +61,297 @@ export const LaunchpadTab: React.FC<LaunchpadTabProps> = ({
   onRunDemo,
   onNavigateTab,
 }) => {
-  const audioMeta = LISTEN_MODE_META[settings.listenMode] || LISTEN_MODE_META.interviewer;
+  const [hoveredMode, setHoveredMode] = useState<GhostMascotMode | null>(null);
+
+  // Sync mascot state dynamically with active selection or user hover
+  const defaultMascotMode: GhostMascotMode = useMemo(() => {
+    if (settings.copilotMode === 'top_bar') return 'notch';
+    if (settings.listenMode === 'interviewer' && settings.stealth) return 'split';
+    return 'stealth';
+  }, [settings.copilotMode, settings.listenMode, settings.stealth]);
+
+  const [manualMascotMode, setManualMascotMode] = useState<GhostMascotMode | null>(null);
+  const mascotMode = hoveredMode ?? manualMascotMode ?? defaultMascotMode;
+
+  const audioMeta = LISTEN_MODE_META[settings.listenMode];
+  const vuChannel = settings.listenMode === 'mic' ? 'candidate' : 'interviewer';
 
   return (
-    <div className="space-y-6 pb-6 select-none">
-      <SectionTitle
-        eyebrow="КОМАНДНИЙ ЦЕНТР"
-        title="Запуск та Готовність"
-        hint="Перевірте параметри сесії, оберіть формат суфлера та запустіть Копайлот"
-      />
-
-      {/* ─────────────────────────────────────────────────────────────
-          1. PRE-FLIGHT READINESS BAR (3 Interactive Status Cards)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {/* Card 1: Audio Source */}
-        <Card
+    <div className="space-y-5 pb-4">
+      {/* Top Row: 3 Interactive 1-Click Readiness Cards */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {/* 1. Audio Channel Readiness + Mini Live Equalizer */}
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.98 }}
+          transition={SPRING}
+          onMouseEnter={() => setHoveredMode('audio')}
+          onMouseLeave={() => setHoveredMode(null)}
           onClick={() => onNavigateTab('audio')}
-          className="cursor-pointer p-3.5 transition-all hover:border-white/20"
+          className="group rounded-2xl border border-white/[0.08] bg-[#111114] p-3.5 text-left shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] transition-colors hover:border-white/20 cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5 text-zinc-300" />
-              <span>Аудіо Джерело</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+              <Headphones className="h-3.5 w-3.5 text-emerald-400" />
+              Аудіо Джерело
             </span>
-            <VuBars channel="interviewer" bars={4} />
+            <VuBars channel={vuChannel} bars={6} tone="ok" />
           </div>
-          <div className="text-xs font-semibold text-white truncate mb-1">
+          <div className="mt-2 truncate text-xs font-semibold text-white">
             {audioMeta.badge}
           </div>
-          <div className="text-[11px] text-zinc-500 truncate">
+          <div className="mt-0.5 truncate text-[11px] text-zinc-500 group-hover:text-zinc-400">
             {settings.listenMode === 'interviewer'
-              ? 'Мікрофон фізично вимкнений'
-              : settings.listenMode === 'dual'
-              ? '2 роздільні канали'
-              : 'Один мікрофон'}
+              ? 'Мікрофон фізично вимкнено'
+              : 'Змінити канали →'}
           </div>
-        </Card>
+        </motion.button>
 
-        {/* Card 2: AI Engine */}
-        <Card
+        {/* 2. AI Engine Cascade Readiness */}
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.98 }}
+          transition={SPRING}
+          onMouseEnter={() => setHoveredMode('turbo')}
+          onMouseLeave={() => setHoveredMode(null)}
           onClick={() => onNavigateTab('ai')}
-          className="cursor-pointer p-3.5 transition-all hover:border-white/20"
+          className="group rounded-2xl border border-white/[0.08] bg-[#111114] p-3.5 text-left shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] transition-colors hover:border-white/20 cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-zinc-300" />
-              <span>ШІ-Ядро</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+              <Cpu className="h-3.5 w-3.5 text-zinc-200" />
+              ШІ-Ядро
             </span>
-            <StatusDot tone="ok" ping />
+            <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-1.5 py-0.5 text-[9.5px] font-mono text-emerald-300">
+              {settings.answerSpeed === 'fast' ? '<180ms' : 'DEEP'}
+            </span>
           </div>
-          <div className="text-xs font-semibold text-white truncate mb-1">
-            Gemini 3.5 Flash • &lt;220ms
+          <div className="mt-2 truncate text-xs font-semibold text-white">
+            {CASCADE_LABEL[settings.aiModelCascade]}
           </div>
-          <div className="text-[11px] text-zinc-500 truncate">
-            {settings.hintLanguage === 'bilingual_uk'
-              ? 'Білінгв (EN + UA підказка)'
-              : settings.hintLanguage === 'uk'
-              ? 'Українська'
-              : settings.hintLanguage === 'en'
-              ? 'English'
-              : 'Авто-мова запитання'}
+          <div className="mt-0.5 truncate text-[11px] text-zinc-500 group-hover:text-zinc-400">
+            Мова: {LANG_LABEL[settings.hintLanguage]}
           </div>
-        </Card>
+        </motion.button>
 
-        {/* Card 3: Candidate Context */}
-        <Card
+        {/* 3. Candidate Context Readiness */}
+        <motion.button
+          type="button"
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.98 }}
+          transition={SPRING}
+          onMouseEnter={() => setHoveredMode('stealth')}
+          onMouseLeave={() => setHoveredMode(null)}
           onClick={() => onNavigateTab('context')}
-          className="cursor-pointer p-3.5 transition-all hover:border-white/20"
+          className="group rounded-2xl border border-white/[0.08] bg-[#111114] p-3.5 text-left shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] transition-colors hover:border-white/20 cursor-pointer"
         >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <UserCheck className="w-3.5 h-3.5 text-zinc-300" />
-              <span>Контекст Кандидата</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+              <FileText className="h-3.5 w-3.5 text-zinc-200" />
+              Контекст Кандидата
             </span>
-            <Pill tone="neutral" className="h-4 px-1 text-[9px] uppercase">
+            <span className="rounded border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-[9.5px] font-mono uppercase text-zinc-300">
               {profile.experienceLevel}
-            </Pill>
+            </span>
           </div>
-          <div className="text-xs font-semibold text-white truncate mb-1">
+          <div className="mt-2 truncate text-xs font-semibold text-white">
             {profile.role || 'Software Engineer'}
           </div>
-          <div className="text-[11px] text-zinc-500 truncate">
-            {profile.techStack?.slice(0, 3).join(', ') || 'React, Node, SQL'}
-            {(profile.techStack?.length || 0) > 3 ? ` +${profile.techStack.length - 3}` : ''}
+          <div className="mt-0.5 truncate text-[11px] text-zinc-500 group-hover:text-zinc-400">
+            Стек: {profile.techStack.slice(0, 3).join(', ') || 'Налаштувати CV →'}
           </div>
-        </Card>
+        </motion.button>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. INTERACTIVE HUD MODE SELECTOR (With Live Visual Previews)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Оберіть формат відображення суфлера
+      {/* Hero Stage: Levitating Mascot + Interactive HUD Mode Selector with Live Mini-Videos */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.6)]">
+        <div className="flex flex-col items-center justify-between gap-4 border-b border-white/[0.07] pb-4 sm:flex-row">
+          <div className="space-y-1 text-center sm:text-left">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-[#09090b] px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-[0.1em] text-zinc-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Командний Центр Запуску
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-white">
+              Оберіть формат Stealth HUD
+            </h1>
+            <p className="text-xs leading-relaxed text-zinc-400 max-w-md">
+              Вікно копайлота запускається миттєво поверх Zoom, Meet або Teams і не потрапляє у захоплення екрана.
+            </p>
+          </div>
+
+          <LevitatingGhostMascot
+            mode={mascotMode}
+            onModeChange={(next) => setManualMascotMode(next)}
+            size="md"
+            showModePills
+          />
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {/* Card A: Split AI Chat */}
+        {/* Mode Selector Cards with Embedded Live Video Capsules */}
+        <div className="mt-4 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+          {/* Option 1: Split AI Copilot */}
           <div
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            onClick={() => onSelectMode('chat')}
-            className={`group relative rounded-xl border p-4 transition-all cursor-pointer select-none ${
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setManualMascotMode('split');
+              onSelectMode('chat');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setManualMascotMode('split');
+                onSelectMode('chat');
+              }
+            }}
+            onMouseEnter={() => setHoveredMode('split')}
+            onMouseLeave={() => setHoveredMode(null)}
+            className={`group rounded-xl border p-3 transition-all cursor-pointer space-y-3 ${
               settings.copilotMode === 'chat'
-                ? 'border-white bg-white/[0.05] ring-1 ring-white/20 shadow-lg'
-                : 'border-white/[0.08] bg-[#111114] hover:border-white/20 hover:bg-white/[0.02]'
+                ? 'border-white/35 bg-[#16161b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16)]'
+                : 'border-white/[0.08] bg-[#0c0c0f] hover:border-white/20'
             }`}
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                    settings.copilotMode === 'chat'
-                      ? 'bg-white text-zinc-950 font-bold'
-                      : 'bg-white/10 text-zinc-300'
-                  }`}
-                >
-                  <Layers className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-white">Двоколонковий Копайлот</div>
-                  <div className="text-[10px] text-zinc-400">Split AI Chat (Діалог 38% | Суфлер 62%)</div>
-                </div>
-              </div>
-              {settings.copilotMode === 'chat' && (
-                <div className="w-5 h-5 rounded-full bg-white text-zinc-950 flex items-center justify-center">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                </div>
-              )}
-            </div>
+            <VideoPreviewCapsule
+              clip={STUDIO_VIDEO_CLIPS.mascot}
+              compact
+              actionLabel="Протестувати вигляд"
+              onAction={() => {
+                onSelectMode('chat');
+                onLaunch();
+              }}
+            />
 
-            {/* Visual Mini Mockup */}
-            <div className="h-24 rounded-lg bg-black/60 border border-white/[0.06] p-2 flex gap-2 overflow-hidden pointer-events-none">
-              {/* Left Column (38%) */}
-              <div className="w-[38%] border-r border-white/[0.06] pr-2 space-y-1.5 flex flex-col justify-center">
-                <div className="w-3/4 h-2 rounded bg-zinc-700/60" />
-                <div className="w-full h-3 rounded bg-zinc-600/40" />
-                <div className="w-1/2 h-2 rounded bg-zinc-700/60" />
-              </div>
-              {/* Right Column (62%) */}
-              <div className="flex-1 pl-1 space-y-1.5 flex flex-col justify-center">
-                <div className="w-full h-3.5 rounded bg-emerald-500/20 border border-emerald-500/40 flex items-center px-1">
-                  <div className="w-3/4 h-1.5 rounded bg-emerald-400/80" />
+            <div className="flex items-start justify-between gap-2 px-0.5">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                  <Columns2 className="h-3.5 w-3.5 text-zinc-300" />
+                  Двоколонковий ШІ-Копайлот
                 </div>
-                <div className="space-y-1">
-                  <div className="w-5/6 h-2 rounded bg-zinc-600/50" />
-                  <div className="w-4/6 h-2 rounded bg-zinc-600/50" />
-                </div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                  Транскрипт розмови (26%) + 4-фазна відповідь з кодом та пасткою (74%).
+                </p>
               </div>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-400">
-              <span className="text-zinc-500">Глибина: Hook + 3 Pillars + Code</span>
-              <span className="font-mono text-[10px] text-zinc-400">780x460 px</span>
+              <span
+                className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border flex items-center justify-center ${
+                  settings.copilotMode === 'chat'
+                    ? 'border-white bg-white'
+                    : 'border-white/25 bg-transparent'
+                }`}
+              >
+                {settings.copilotMode === 'chat' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-950" />
+                )}
+              </span>
             </div>
           </div>
 
-          {/* Card B: Eyeline Notch */}
+          {/* Option 2: Eyeline Notch */}
           <div
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            onClick={() => onSelectMode('top_bar')}
-            className={`group relative rounded-xl border p-4 transition-all cursor-pointer select-none ${
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setManualMascotMode('notch');
+              onSelectMode('top_bar');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setManualMascotMode('notch');
+                onSelectMode('top_bar');
+              }
+            }}
+            onMouseEnter={() => setHoveredMode('notch')}
+            onMouseLeave={() => setHoveredMode(null)}
+            className={`group rounded-xl border p-3 transition-all cursor-pointer space-y-3 ${
               settings.copilotMode === 'top_bar'
-                ? 'border-white bg-white/[0.05] ring-1 ring-white/20 shadow-lg'
-                : 'border-white/[0.08] bg-[#111114] hover:border-white/20 hover:bg-white/[0.02]'
+                ? 'border-white/35 bg-[#16161b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16)]'
+                : 'border-white/[0.08] bg-[#0c0c0f] hover:border-white/20'
             }`}
           >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-                    settings.copilotMode === 'top_bar'
-                      ? 'bg-white text-zinc-950 font-bold'
-                      : 'bg-white/10 text-zinc-300'
-                  }`}
-                >
-                  <Eye className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-semibold text-white">Верхній Суфлер</div>
-                  <div className="text-[10px] text-zinc-400">Eyeline Notch (Під вебкамерою)</div>
-                </div>
-              </div>
-              {settings.copilotMode === 'top_bar' && (
-                <div className="w-5 h-5 rounded-full bg-white text-zinc-950 flex items-center justify-center">
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                </div>
-              )}
-            </div>
+            <VideoPreviewCapsule
+              clip={STUDIO_VIDEO_CLIPS.notch}
+              compact
+              actionLabel="Протестувати вигляд"
+              onAction={() => {
+                onSelectMode('top_bar');
+                onLaunch();
+              }}
+            />
 
-            {/* Visual Mini Mockup */}
-            <div className="h-24 rounded-lg bg-black/60 border border-white/[0.06] p-2 flex flex-col justify-center items-center overflow-hidden pointer-events-none relative">
-              {/* Mock Webcam Notch */}
-              <div className="w-8 h-2 rounded-full bg-zinc-800 border border-zinc-700 mb-2" />
-              {/* Notch Bar */}
-              <div className="w-full max-w-[200px] h-9 rounded-lg bg-zinc-900 border border-white/15 p-1.5 space-y-1">
-                <div className="w-1/2 h-1.5 rounded bg-zinc-500" />
-                <div className="w-5/6 h-2.5 rounded bg-white/90" />
+            <div className="flex items-start justify-between gap-2 px-0.5">
+              <div>
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                  <LayoutGrid className="h-3.5 w-3.5 text-zinc-300" />
+                  Верхній Суфлер Eyeline Notch
+                </div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                  Ультра-вузька капсула 680×160px прямо під веб-камерою для 100% контакту очей.
+                </p>
               </div>
-            </div>
-
-            <div className="mt-3 flex items-center justify-between text-[11px] text-zinc-400">
-              <span className="text-zinc-500">100% зоровий контакт із камерою</span>
-              <span className="font-mono text-[10px] text-zinc-400">680x160 px</span>
+              <span
+                className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border flex items-center justify-center ${
+                  settings.copilotMode === 'top_bar'
+                    ? 'border-white bg-white'
+                    : 'border-white/25 bg-transparent'
+                }`}
+              >
+                {settings.copilotMode === 'top_bar' && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-950" />
+                )}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          3. PRIMARY LAUNCH BAR (CTA Button + 1-Click Demo)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="pt-2 space-y-3">
-        {launchError && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
-            Помилка запуску: {launchError}
-          </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <Button
-            variant="primary"
-            size="lg"
-            onClick={onLaunch}
-            disabled={isLaunching}
-            className="w-full sm:flex-1 h-13 text-sm font-semibold tracking-tight shadow-xl flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Zap className={`w-4 h-4 fill-current ${isLaunching ? 'animate-spin' : ''}`} />
-            <span>Запустити Копайлот</span>
-            <Shortcut spec={SHORTCUTS.launch} />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="lg"
-            onClick={onRunDemo}
-            disabled={isLaunching}
-            className="w-full sm:w-auto h-13 px-5 text-xs font-semibold text-zinc-300 hover:text-white flex items-center justify-center gap-2 cursor-pointer"
-            title="Запустити демонстраційний сценарій співбесіди для перевірки HUD без звуку"
-          >
-            <FlaskConical className="w-4 h-4 text-emerald-400" />
-            <span>Демо в 1 клік</span>
-          </Button>
+      {/* Bottom Launch Bar */}
+      {launchError && (
+        <div className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2.5 text-xs text-rose-300">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{launchError}</span>
         </div>
+      )}
 
-        <p className="text-[11px] text-zinc-500 text-center font-mono">
-          Працює автоматично у фоні • Невидимий для Zoom/Meet/Teams • Завжди поверх інших вікон
-        </p>
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+        <motion.button
+          type="button"
+          data-tauri-drag-region="false"
+          onMouseDown={stopDrag}
+          whileHover={{ scale: 1.012 }}
+          whileTap={{ scale: 0.975 }}
+          transition={SPRING}
+          onClick={onLaunch}
+          disabled={isLaunching}
+          className="flex-1 flex items-center justify-center gap-2.5 rounded-2xl bg-white px-5 py-3.5 text-sm font-semibold text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_14px_34px_rgba(255,255,255,0.08)] transition-colors hover:bg-zinc-100 disabled:opacity-65 cursor-pointer"
+        >
+          {isLaunching ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Zap className="h-4 w-4" />
+          )}
+          <span>⚡ Запустити Копайлот</span>
+          <kbd className="rounded-md border border-black/15 bg-black/[0.06] px-1.5 py-0.5 font-mono text-[11px] font-medium text-zinc-700">
+            Ctrl+Enter
+          </kbd>
+        </motion.button>
+
+        <motion.button
+          type="button"
+          data-tauri-drag-region="false"
+          onMouseDown={stopDrag}
+          whileHover={{ scale: 1.015 }}
+          whileTap={{ scale: 0.975 }}
+          transition={SPRING}
+          onClick={onRunDemo}
+          disabled={isLaunching}
+          className="flex items-center justify-center gap-2 rounded-2xl border border-white/[0.1] bg-[#111114] px-4 py-3.5 text-xs font-medium text-zinc-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] transition-colors hover:border-white/25 hover:bg-[#18181d] disabled:opacity-60 cursor-pointer"
+        >
+          <FlaskConical className="h-4 w-4 text-emerald-400" />
+          <span>🧪 Демо-симуляція в 1 клік</span>
+        </motion.button>
       </div>
     </div>
   );

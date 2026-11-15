@@ -75,17 +75,16 @@ export async function POST(req: NextRequest) {
       req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
 
     const isDev = process.env.NODE_ENV !== 'production';
-    const isDesktop = req.headers.get('x-ghostboard-client') === 'desktop-app';
 
     let userId: string = 'default';
     if (token) {
       const user = await getSessionUser(token);
       if (user) {
         userId = user.id;
-      } else if (!isDev && !isDesktop) {
+      } else if (!isDev) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
       }
-    } else if (!isDev && !isDesktop) {
+    } else if (!isDev) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

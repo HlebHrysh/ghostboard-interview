@@ -1,254 +1,209 @@
-import React, { useCallback } from 'react';
-import {
-  Cpu,
-  Sparkles,
-  Zap,
-  Globe,
-  Sliders,
-  AlignLeft,
-  Code,
-  Check,
-} from 'lucide-react';
-import { Card, SectionTitle, Segmented, Pill, StatusDot, stopDrag } from '../ui/primitives';
-import { setAiPreferences } from '../lib/tauriBridge';
-import type { DesktopSettings, AnswerSpeed, AnswerLength, HintLanguage } from '../lib/desktopSettings';
+import React, { useId } from 'react';
+import { motion } from 'framer-motion';
+import { Check, Cpu, Globe2, Sparkles, Zap } from 'lucide-react';
+import type {
+  AiModelCascade,
+  AnswerLength,
+  AnswerSpeed,
+  DesktopSettings,
+  HintLanguage,
+} from '../lib/desktopSettings';
+import { SectionTitle, Segmented, SPRING } from '../ui/primitives';
+import { STUDIO_VIDEO_CLIPS, VideoPreviewCapsule } from '../ui/VideoPreviewCapsule';
 
 interface AiBrainTabProps {
   settings: DesktopSettings;
   updateSettings: (patch: Partial<DesktopSettings>) => void;
 }
 
-const LANGUAGE_OPTIONS: Array<{
-  value: HintLanguage;
-  label: string;
-  badge?: string;
+const CASCADES: Array<{
+  id: AiModelCascade;
+  title: string;
+  badge: string;
   desc: string;
 }> = [
-  { value: 'auto', label: 'Авто', desc: 'Відповідати тією ж мовою, якою прозвучало запитання' },
-  { value: 'uk', label: 'Українська', desc: 'Відповідати завжди чистою українською мовою' },
-  { value: 'en', label: 'English', desc: 'Strict English technical answers for international interviews' },
   {
-    value: 'bilingual_uk',
-    label: 'Білінгв (EN + UA)',
-    badge: 'Consensus',
-    desc: 'Англійська основна відповідь + швидка українська підказка',
+    id: 'hedged_race',
+    title: 'Gemini 2.5 Flash + Groq Llama 3.3',
+    badge: 'Hedged Race • <180ms',
+    desc: 'Паралельна гонка моделей: перемагає та, хто швидше віддає перший токен Hook.',
+  },
+  {
+    id: 'gemini_flash',
+    title: 'Gemini 2.5 Flash',
+    badge: 'Deep Accuracy',
+    desc: 'Стабільні діаграми, архітектурні trade-offs та точне форматування коду.',
+  },
+  {
+    id: 'groq_llama',
+    title: 'Groq Llama 3.3 Turbo',
+    badge: 'Ultra-Low TTFT',
+    desc: 'Миттєвий потік коротких відповідей для бліц-раундів та скринінгу.',
   },
 ];
 
-const SPEED_OPTIONS: Array<{
-  value: AnswerSpeed;
-  label: string;
-  desc: string;
-  badge?: string;
-}> = [
-  { value: 'fast', label: '⚡ Швидкий (<220ms)', desc: 'Миттєвий хук та 3 тези для безперервної розмови', badge: 'Ultra-low TTFT' },
-  { value: 'deep', label: '🧠 Глибокий', desc: 'Архітектурний аналіз, детальні trade-offs та граничні випадки' },
+const LANGUAGES: Array<{ id: HintLanguage; label: string; tag: string }> = [
+  { id: 'auto', label: 'Авто', tag: 'AUTO' },
+  { id: 'uk', label: 'Українська', tag: 'UA' },
+  { id: 'en', label: 'English', tag: 'EN' },
+  { id: 'bilingual_uk', label: 'Білінгв', tag: 'EN + UA' },
+  { id: 'ru', label: 'Русский', tag: 'RU' },
+  { id: 'bilingual_ru', label: 'Билингв', tag: 'EN + RU' },
 ];
 
-const LENGTH_OPTIONS: Array<{
-  value: AnswerLength;
-  label: string;
-  desc: string;
-}> = [
-  { value: 'short', label: '✂️ Лаконічно', desc: '1-2 речення для швидких перевірочних запитань' },
-  { value: 'detailed', label: '📋 Розгорнуто', desc: '3-фазний суфлер: Hook + 3 Pillars + Deep Dive' },
-  { value: 'code', label: '💻 З кодом', desc: 'Пріоритет на реалізацію алгоритмів та синтаксис' },
-];
-
-export const AiBrainTab: React.FC<AiBrainTabProps> = ({
-  settings,
-  updateSettings,
-}) => {
-  const syncToRust = useCallback(
-    (nextSettings: DesktopSettings) => {
-      void setAiPreferences({
-        outputLanguage: nextSettings.hintLanguage === 'auto' ? null : nextSettings.hintLanguage,
-        helperLanguage: nextSettings.hintLanguage.startsWith('bilingual') ? 'uk' : null,
-        modifier: nextSettings.answerSpeed === 'deep' ? 'deep_dive' : null,
-        concise: nextSettings.answerLength === 'short',
-      });
-    },
-    []
-  );
-
-  const handleLanguageChange = (lang: HintLanguage) => {
-    updateSettings({ hintLanguage: lang });
-    syncToRust({ ...settings, hintLanguage: lang });
-  };
-
-  const handleSpeedChange = (speed: AnswerSpeed) => {
-    updateSettings({ answerSpeed: speed });
-    syncToRust({ ...settings, answerSpeed: speed });
-  };
-
-  const handleLengthChange = (len: AnswerLength) => {
-    updateSettings({ answerLength: len });
-    syncToRust({ ...settings, answerLength: len });
-  };
-
-  const handleCustomInstructionsChange = (text: string) => {
-    const val = text.slice(0, 1200);
-    updateSettings({ customInstructions: val });
-  };
+export const AiBrainTab: React.FC<AiBrainTabProps> = ({ settings, updateSettings }) => {
+  const promptId = useId();
 
   return (
-    <div className="space-y-6 pb-6 select-none">
-      <SectionTitle
-        eyebrow="ШІ ТА ПІДКАЗКИ"
-        title="ШІ-Ядро та Модель"
-        hint="Налаштування поведінки генератора відповідей, мови інтерв'ю та глибини аргументації"
-        right={
-          <Pill tone="ok" className="h-6 px-2 text-[10px] font-mono">
-            <StatusDot tone="ok" />
-            <span>Direct Rust LLM Engine</span>
-          </Pill>
-        }
-      />
+    <div className="space-y-5 pb-4">
+      <SectionTitle title="ШІ-Ядро, Моделі та Промпт" />
 
-      {/* ─────────────────────────────────────────────────────────────
-          1. OUTPUT LANGUAGE SELECTOR
-      ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-          <Globe className="w-3.5 h-3.5 text-zinc-300" />
-          <span>Мова генерації відповіді</span>
+      {/* Cascade Model Picker */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-white">
+            <Cpu className="h-3.5 w-3.5 text-zinc-300" />
+            Каскад генерації відповідей
+          </div>
+          <span className="text-[10.5px] font-mono text-zinc-500">Rust Orchestrator</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
-          {LANGUAGE_OPTIONS.map((opt) => {
-            const isSelected = settings.hintLanguage === opt.value;
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {CASCADES.map((item) => {
+            const selected = settings.aiModelCascade === item.id;
             return (
-              <div
-                key={opt.value}
-                data-tauri-drag-region="false"
-                onMouseDown={stopDrag}
-                onClick={() => handleLanguageChange(opt.value)}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
-                  isSelected
-                    ? 'border-white bg-white/[0.06] ring-1 ring-white/20 shadow-sm'
-                    : 'border-white/[0.08] bg-[#111114] hover:border-white/20'
+              <motion.button
+                key={item.id}
+                type="button"
+                whileHover={{ scale: 1.012 }}
+                whileTap={{ scale: 0.985 }}
+                transition={SPRING}
+                onClick={() => updateSettings({ aiModelCascade: item.id })}
+                className={`rounded-xl border p-3 text-left transition-all cursor-pointer space-y-1.5 ${
+                  selected
+                    ? 'border-white/35 bg-[#18181f] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16)]'
+                    : 'border-white/[0.08] bg-[#0c0c0f] hover:border-white/20'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-white">{opt.label}</span>
-                    {isSelected && (
-                      <div className="w-4 h-4 rounded-full bg-white text-zinc-950 flex items-center justify-center">
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-zinc-400 leading-snug">{opt.desc}</p>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="rounded bg-white/[0.07] px-1.5 py-0.5 text-[9.5px] font-mono text-emerald-300">
+                    {item.badge}
+                  </span>
+                  {selected && <Check className="h-3.5 w-3.5 text-white" />}
                 </div>
-                {opt.badge && (
-                  <div className="mt-2 text-[9px] font-mono text-cyan-400 uppercase">{opt.badge}</div>
-                )}
-              </div>
+                <div className="text-xs font-semibold text-white leading-snug">
+                  {item.title}
+                </div>
+                <p className="text-[11px] leading-relaxed text-zinc-400">{item.desc}</p>
+              </motion.button>
             );
           })}
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. SPEED & DEPTH MODIFIERS
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Speed / Depth */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Швидкість реакції / Глибина</span>
+      {/* Language + Speed + Depth */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <div className="flex items-center gap-2 text-xs font-semibold text-white">
+            <Globe2 className="h-3.5 w-3.5 text-zinc-300" />
+            Мова підказок
           </div>
-
-          <div className="space-y-2">
-            {SPEED_OPTIONS.map((opt) => {
-              const active = settings.answerSpeed === opt.value;
+          <div className="grid grid-cols-2 gap-2">
+            {LANGUAGES.map((lang) => {
+              const selected = settings.hintLanguage === lang.id;
               return (
                 <button
-                  key={opt.value}
+                  key={lang.id}
                   type="button"
-                  data-tauri-drag-region="false"
-                  onMouseDown={stopDrag}
-                  onClick={() => handleSpeedChange(opt.value)}
-                  className={`w-full p-2.5 rounded-lg border text-left transition-all flex items-center justify-between cursor-pointer ${
-                    active
-                      ? 'border-white bg-white/[0.06] text-white'
-                      : 'border-white/[0.06] bg-black/20 text-zinc-400 hover:text-zinc-200 hover:border-white/15'
+                  onClick={() => updateSettings({ hintLanguage: lang.id })}
+                  className={`flex items-center justify-between rounded-xl border px-3 py-2 text-xs transition-colors cursor-pointer ${
+                    selected
+                      ? 'border-white/35 bg-[#18181f] font-semibold text-white'
+                      : 'border-white/[0.08] bg-[#0c0c0f] text-zinc-400 hover:border-white/20 hover:text-zinc-200'
                   }`}
                 >
-                  <div>
-                    <div className="text-xs font-semibold">{opt.label}</div>
-                    <div className="text-[11px] text-zinc-500 mt-0.5">{opt.desc}</div>
-                  </div>
-                  {opt.badge && (
-                    <Pill tone="ok" className="h-4 px-1 text-[9px] font-mono">{opt.badge}</Pill>
-                  )}
+                  <span className="truncate">{lang.label}</span>
+                  <span className="ml-1.5 rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[9.5px] text-zinc-300">
+                    {lang.tag}
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* Answer Length */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-            <AlignLeft className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Формат та деталізація відповіді</span>
+        <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white">
+              <Zap className="h-3.5 w-3.5 text-emerald-400" />
+              Швидкість vs Глибина
+            </div>
+            <Segmented<AnswerSpeed>
+              name="answer-speed"
+              value={settings.answerSpeed}
+              onChange={(answerSpeed) => updateSettings({ answerSpeed })}
+              options={[
+                { value: 'fast', label: '⚡ Блискавично' },
+                { value: 'deep', label: '🧠 Глибокий розбір' },
+              ]}
+            />
           </div>
 
-          <div className="space-y-2">
-            {LENGTH_OPTIONS.map((opt) => {
-              const active = settings.answerLength === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  data-tauri-drag-region="false"
-                  onMouseDown={stopDrag}
-                  onClick={() => handleLengthChange(opt.value)}
-                  className={`w-full p-2.5 rounded-lg border text-left transition-all flex items-center justify-between cursor-pointer ${
-                    active
-                      ? 'border-white bg-white/[0.06] text-white'
-                      : 'border-white/[0.06] bg-black/20 text-zinc-400 hover:text-zinc-200 hover:border-white/15'
-                  }`}
-                >
-                  <div>
-                    <div className="text-xs font-semibold">{opt.label}</div>
-                    <div className="text-[11px] text-zinc-500 mt-0.5">{opt.desc}</div>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-white">
+              <Sparkles className="h-3.5 w-3.5 text-zinc-300" />
+              Формат та глибина відповіді
+            </div>
+            <Segmented<AnswerLength>
+              name="answer-length"
+              value={settings.answerLength}
+              onChange={(answerLength) => updateSettings({ answerLength })}
+              options={[
+                { value: 'short', label: 'Тези' },
+                { value: 'detailed', label: 'Детально' },
+                { value: 'code', label: 'З кодом' },
+              ]}
+            />
           </div>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          3. CUSTOM SYSTEM INSTRUCTIONS (PERSISTED & SYNCED)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Додаткові інструкції для ШІ (System Prompt Additions)</span>
-          </label>
-          <span className="text-[10px] font-mono text-zinc-500">
-            {settings.customInstructions.length} / 1200 симв.
-          </span>
+      {/* Custom System Prompt + Video */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3 rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor={promptId} className="text-xs font-semibold text-white">
+              Кастомні інструкції (System Prompt Override)
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                updateSettings({
+                  customInstructions:
+                    'Відповідай від 1-ї особи, починай з конкретного висновку (1 речення), додавай реальні edge-cases із production та оцінюй Big-O.',
+                })
+              }
+              className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10.5px] text-zinc-300 hover:bg-white/[0.1] cursor-pointer"
+            >
+              Шаблон Senior
+            </button>
+          </div>
+          <textarea
+            id={promptId}
+            rows={4}
+            value={settings.customInstructions}
+            onChange={(e) => updateSettings({ customInstructions: e.target.value })}
+            placeholder="Наприклад: підкреслюй досвід з high-load PostgreSQL, уникай теорії з підручників, пиши код на TypeScript..."
+            className="gb-input h-auto py-2.5 text-xs leading-relaxed resize-none"
+          />
+          <p className="text-[11px] text-zinc-500">
+            Авто-синхронізується з Rust LLM Orchestrator у реальному часі.
+          </p>
         </div>
 
-        <textarea
-          data-tauri-drag-region="false"
-          onMouseDown={stopDrag}
-          rows={3}
-          value={settings.customInstructions}
-          onChange={(e) => handleCustomInstructionsChange(e.target.value)}
-          placeholder='Наприклад: "Фокусуйся на clean architecture. Відповідай без вступів. Пропонуй мікросервісні патерни та Redis для кешування."'
-          className="gb-input h-auto py-2 font-mono text-xs leading-relaxed resize-none"
-        />
-        <p className="text-[11px] text-zinc-500 leading-relaxed">
-          Ці інструкції додаються безпосередньо до системного промпту кожного запиту ШІ.
-        </p>
+        <div className="lg:col-span-2">
+          <VideoPreviewCapsule clip={STUDIO_VIDEO_CLIPS.book} />
+        </div>
       </div>
     </div>
   );

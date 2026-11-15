@@ -38,10 +38,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const SIZES = {
-  xs: 'h-6 px-2 text-[11px] rounded-md',
-  sm: 'h-8 px-3 text-xs',
-  md: 'h-10 px-4 text-sm',
-  lg: 'h-14 px-7 text-base rounded-xl',
+  xs: 'min-h-6 py-1 px-2 text-[11px] rounded-md',
+  sm: 'min-h-8 py-1.5 px-3 text-xs',
+  md: 'min-h-10 py-2 px-4 text-sm',
+  lg: 'min-h-14 py-3 px-7 text-base rounded-xl',
 } as const;
 
 export function Button({ variant = 'ghost', size = 'sm', className, onMouseDown, children, ...rest }: ButtonProps) {
@@ -112,11 +112,11 @@ export function Card({ className, children, hover = true, active = false, ...res
 
 export function SectionTitle({ eyebrow, title, hint, right }: { eyebrow?: string; title: string; hint?: string; right?: ReactNode }) {
   return (
-    <div className="mb-5 flex items-end justify-between gap-4">
+    <div className="mb-6 flex items-end justify-between gap-4">
       <div className="min-w-0">
-        {eyebrow && <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.18em] text-zinc-500">{eyebrow}</div>}
-        <h1 className="text-[22px] font-semibold leading-tight tracking-tight text-white">{title}</h1>
-        {hint && <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-zinc-400">{hint}</p>}
+        {eyebrow && <div className="mb-1.5 font-mono text-[11px] uppercase tracking-[0.18em] text-zinc-400">{eyebrow}</div>}
+        <h1 className="font-display text-[22px] sm:text-[24px] font-bold leading-tight tracking-[-0.025em] text-white antialiased">{title}</h1>
+        {hint && <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-zinc-400 antialiased">{hint}</p>}
       </div>
       {right}
     </div>
@@ -131,7 +131,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
         {label}
       </label>
       <div id={id}>{children}</div>
-      {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">{hint}</p>}
+      {hint && <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-400">{hint}</p>}
     </div>
   );
 }
@@ -160,7 +160,7 @@ export function Segmented<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="radiogroup" className={cx('relative flex gap-1 rounded-xl border border-white/[0.08] bg-black/30 p-1', className)}>
+    <div role="radiogroup" className={cx('relative flex gap-1 rounded-xl border border-white/[0.08] bg-[#09090b]/95 p-1 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]', className)}>
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -172,10 +172,10 @@ export function Segmented<T extends string>({
             onClick={() => onChange(o.value)}
             className={cx(
               'relative z-10 flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
-              active ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-200'
+              active ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'
             )}
           >
-            {active && <motion.span layoutId={`seg-${name}`} transition={SPRING} className="absolute inset-0 -z-10 rounded-lg bg-white" />}
+            {active && <motion.span layoutId={`seg-${name}`} transition={SPRING} className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-b from-white to-zinc-200 shadow-[0_2px_10px_rgba(255,255,255,0.16)]" />}
             <span className="truncate">{o.label}</span>
             {o.badge}
           </button>
@@ -233,7 +233,7 @@ export function Slider({
     <div>
       <div className="mb-2.5 flex items-center justify-between">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{label}</span>
-        <span className="font-mono text-xs font-semibold text-white">{format(value)}</span>
+        <span className="font-mono tabular-nums text-xs font-semibold text-white">{format(value)}</span>
       </div>
       <input
         type="range"
@@ -254,9 +254,9 @@ export function Slider({
 export function EmptyState({ icon, title, hint, action }: { icon: ReactNode; title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="flex h-full min-h-[120px] flex-col items-center justify-center gap-2 px-6 text-center">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-zinc-400">{icon}</div>
-      <div className="text-[13px] font-semibold text-zinc-200">{title}</div>
-      {hint && <div className="max-w-[260px] text-[12px] leading-relaxed text-zinc-500">{hint}</div>}
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.1] bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] text-zinc-300">{icon}</div>
+      <div className="font-display text-[13.5px] font-semibold text-zinc-100">{title}</div>
+      {hint && <div className="max-w-[260px] text-xs leading-relaxed text-zinc-400">{hint}</div>}
       {action}
     </div>
   );

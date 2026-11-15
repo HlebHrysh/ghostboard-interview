@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
-import { Sparkles, MessageSquare, ArrowUpRight } from 'lucide-react';
-import type { ChatMessage, AnswerEntry } from '../lib/session';
+import { ArrowUpRight, Sparkles } from 'lucide-react';
+import type { AnswerEntry, ChatMessage } from '../lib/session';
 
 export interface ChatMessageRowProps {
   message: ChatMessage;
@@ -19,61 +19,72 @@ export const ChatMessageRow = memo(function ChatMessageRow({
 }: ChatMessageRowProps) {
   const isInterviewer = message.speaker === 'interviewer';
   const isCandidate = message.speaker === 'candidate';
-  const isManual = message.speaker === 'manual';
 
-  const timeStr = new Date(message.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const timeStr = new Date(message.ts).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 
   return (
     <div
       data-tauri-drag-region="false"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => onSelect(message)}
-      className={`group relative rounded-xl p-3 transition-all duration-150 cursor-pointer border select-text ${
+      className={`group relative rounded-xl border p-3 transition-colors duration-150 cursor-pointer select-text ${
         isSelected
-          ? 'bg-white/[0.08] border-white/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]'
-          : 'bg-[#111114] border-white/[0.06] hover:border-white/15 hover:bg-white/[0.04]'
+          ? 'border-emerald-500/45 bg-[#15181b] shadow-[inset_0_1px_0_0_rgba(167,243,208,0.18)]'
+          : 'border-white/[0.07] bg-[#111114] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] hover:border-white/20 hover:bg-[#15151a]'
       }`}
     >
-      {/* Header: Speaker & Timestamp & Answer Badge */}
-      <div className="flex items-center justify-between gap-2 mb-1.5 pointer-events-none">
+      {/* Header: Speaker badge, timestamp & linked answer number */}
+      <div className="mb-1.5 flex items-center justify-between gap-2 pointer-events-none">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-mono font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+            className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-mono font-semibold uppercase tracking-wider ${
               isInterviewer
-                ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                ? 'border-white/15 bg-white/[0.06] text-zinc-100'
                 : isCandidate
-                ? 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                : 'bg-violet-500/15 text-violet-300 border border-violet-500/30'
+                  ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+                  : 'border-white/10 bg-white/[0.04] text-zinc-300'
             }`}
           >
+            <span
+              className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                isInterviewer ? 'bg-emerald-400' : isCandidate ? 'bg-zinc-400' : 'bg-zinc-300'
+              }`}
+            />
             {isInterviewer ? "Інтерв'юер" : isCandidate ? 'Ви' : 'Вручну'}
           </span>
-          <span className="text-[10px] font-mono text-zinc-500">{timeStr}</span>
+          <span className="text-[10px] font-mono tabular-nums text-zinc-500">{timeStr}</span>
         </div>
 
-        {/* Linked Answer Badge */}
         {answer && (
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors ${
+            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-mono font-medium tabular-nums ${
               isSelected
-                ? 'bg-emerald-400/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_10px_rgba(52,211,153,0.2)]'
-                : 'bg-white/[0.05] text-emerald-400 border-emerald-500/20'
+                ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-200'
+                : 'border-white/10 bg-[#09090b] text-zinc-300'
             }`}
           >
-            <Sparkles size={10} className="text-emerald-400" />
-            <span>Відповідь #{answer.seq}</span>
+            <Sparkles size={9} className={isSelected ? 'text-emerald-300' : 'text-zinc-400'} />
+            <span>#{answer.seq}</span>
           </span>
         )}
       </div>
 
-      {/* Message Text */}
-      <p className={`text-[13px] leading-relaxed break-words ${isCandidate ? 'text-zinc-400 italic' : 'text-zinc-100 font-medium'}`}>
+      {/* Transcript utterance */}
+      <p
+        className={`text-[12.5px] leading-relaxed break-words antialiased ${
+          isCandidate ? 'text-zinc-400 italic' : 'text-zinc-100 font-medium'
+        }`}
+      >
         {message.text}
       </p>
 
-      {/* Action to ask AI or refine if no answer yet */}
+      {/* Direct Ask action if no answer yet */}
       {!answer && (
-        <div className="mt-2 pt-1.5 border-t border-white/[0.04] flex justify-end opacity-75 group-hover:opacity-100 transition-opacity">
+        <div className="mt-2 flex justify-end border-t border-white/[0.05] pt-1.5">
           <button
             type="button"
             data-tauri-drag-region="false"
@@ -82,10 +93,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               e.stopPropagation();
               onAsk(message);
             }}
-            className="gb-nodrag inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 active:scale-95 px-2.5 py-1 rounded-md border border-emerald-500/30 transition-all cursor-pointer shadow-sm"
+            className="gb-nodrag inline-flex items-center gap-1 rounded-md border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10.5px] font-medium text-zinc-100 transition-colors hover:bg-white/[0.14] cursor-pointer"
           >
-            <Sparkles size={11} />
-            <span>{isInterviewer ? 'Запитати ШІ' : 'Покращити відповідь'}</span>
+            <Sparkles size={10} />
+            <span>{isInterviewer ? 'Запитати ШІ' : 'Покращити'}</span>
             <ArrowUpRight size={10} />
           </button>
         </div>

@@ -13,7 +13,7 @@ import {
 import {
   parseStreamingMarkdown,
   type MarkdownSection,
-} from '../desktop/src/components/DualColumnChat';
+} from '../desktop/src/lib/answerParser';
 
 describe('Challenger M3 Stress Suite — Technical Speech & UI Stability', () => {
   describe('1. Extreme Cyrillic Tech Slang & Phonetic Stress', () => {

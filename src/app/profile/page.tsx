@@ -11,6 +11,8 @@ import {
   Shield,
   User,
   Activity,
+  FileText,
+  ArrowRight,
 } from "lucide-react";
 import {
   ROLE_PRESETS,
@@ -26,7 +28,7 @@ import { getProfileTranslations } from "@/lib/profileI18n";
 import { CabinetHeader } from "@/components/cabinet/CabinetHeader";
 import { TelemetryBento } from "@/components/cabinet/TelemetryBento";
 import { LiveCopilotMonitor } from "@/components/cabinet/LiveCopilotMonitor";
-import { SubscriptionCard } from "@/components/cabinet/SubscriptionCard";
+import { SubscriptionStatusCard } from "./SubscriptionStatusCard";
 import { DeviceManager, DeviceSession } from "@/components/cabinet/DeviceManager";
 import { SecuritySettings } from "@/components/cabinet/SecuritySettings";
 import { SpecializationTab } from "@/components/cabinet/SpecializationTab";
@@ -299,7 +301,7 @@ export default function ProfilePage() {
 
   const handleManageBilling = async () => {
     try {
-      const res = await fetch("/api/stripe/portal", { method: "POST" });
+      const res = await fetch("/api/billing/portal", { method: "POST" });
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
@@ -426,10 +428,87 @@ export default function ProfilePage() {
           {/* ── Zone 2.5: Live Desktop & Copilot Monitor ── */}
           <LiveCopilotMonitor locale={locale} userEmail={user?.email} />
 
+          {/* ── Zone 2.8: First-Screen Quick CV Context & Session History Strip ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bento-card rounded-3xl p-5 sm:p-6 bg-white/[0.03] border border-white/[0.1] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-mono text-zinc-300 font-semibold uppercase tracking-wider">
+                    <FileText className="w-4 h-4 text-sky-400" />
+                    <span>{locale === "ua" ? "Резюме та ШІ-контекст" : "CV & AI Context"}</span>
+                  </span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-mono border ${
+                      resumeContext.trim() || candidateProfile?.cvContext
+                        ? "bg-emerald-500/15 border-emerald-400/30 text-emerald-300"
+                        : "bg-amber-500/15 border-amber-400/30 text-amber-300"
+                    }`}
+                  >
+                    {resumeContext.trim() || candidateProfile?.cvContext
+                      ? locale === "ua"
+                        ? "Калібровано"
+                        : "Calibrated"
+                      : locale === "ua"
+                        ? "Очікує CV"
+                        : "Pending CV"}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-white truncate">
+                  {candidateProfile?.role || "Software Engineer"}
+                </p>
+                <p className="text-xs text-zinc-400 line-clamp-2">
+                  {resumeContext.trim() ||
+                    candidateProfile?.cvContext ||
+                    (locale === "ua"
+                      ? "Додайте текст резюме або стек технологій, щоб телесуфлер відповідав від вашого імені."
+                      : "Upload or paste your resume so Copilot grounds every answer in your real projects.")}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("specialization")}
+                className="w-fit inline-flex items-center gap-1.5 text-xs font-mono text-zinc-200 hover:text-white cursor-pointer"
+              >
+                <span>{locale === "ua" ? "Завантажити / Редагувати CV" : "Upload / Edit CV"}</span>
+                <ArrowRight className="w-3.5 h-3.5 text-sky-400" />
+              </button>
+            </div>
+
+            <div className="bento-card rounded-3xl p-5 sm:p-6 bg-white/[0.03] border border-white/[0.1] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-2 text-xs font-mono text-zinc-300 font-semibold uppercase tracking-wider">
+                    <Activity className="w-4 h-4 text-emerald-400" />
+                    <span>{locale === "ua" ? "Останні сесії та Скоркарди" : "Recent Sessions & Scorecards"}</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-white/[0.06] border border-white/[0.1] text-zinc-200">
+                    {sessionCount} {locale === "ua" ? "сесій" : "sessions"}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-white">
+                  {totalQuestions} {locale === "ua" ? "розібраних питань у Copilot & Arena" : "questions answered across Copilot & Arena"}
+                </p>
+                <p className="text-xs text-zinc-400">
+                  {locale === "ua"
+                    ? "Миттєвий доступ до архіву відповідей, таймінгів та експорту скоркардів."
+                    : "Instant access to transcript history, latency logs, and shareable scorecards."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("sessions")}
+                className="w-fit inline-flex items-center gap-1.5 text-xs font-mono text-zinc-200 hover:text-white cursor-pointer"
+              >
+                <span>{locale === "ua" ? "Відкрити історію сесій" : "Open Session History"}</span>
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
+              </button>
+            </div>
+          </div>
+
           {/* ── Zone 3: Main Workspace with Tabbed Navigation ── */}
           <div className="space-y-6">
             {/* Elegant Tab Pills Bar */}
-            <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-zinc-950/80 border border-white/[0.08] backdrop-blur-xl w-full sm:w-fit">
+            <div className="flex items-center gap-1.5 p-1 rounded-2xl spatial-glass-window border border-white/[0.1] w-full sm:w-fit">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -446,7 +525,7 @@ export default function ProfilePage() {
                       <motion.div
                         layoutId="activeTabPill"
                         className="absolute inset-0 rounded-xl bg-white/10 border border-white/15 shadow-[0_2px_12px_rgba(255,255,255,0.06)]"
-                        transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                        transition={{ type: "spring", stiffness: 300, damping: 26 }}
                       />
                     )}
                     <Icon className="w-3.5 h-3.5 relative z-10" />
@@ -532,7 +611,7 @@ export default function ProfilePage() {
                   className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
                 >
                   <div className="lg:col-span-5 space-y-6">
-                    <SubscriptionCard
+                    <SubscriptionStatusCard
                       plan={user?.plan || "free"}
                       locale={locale}
                       onManageBilling={handleManageBilling}

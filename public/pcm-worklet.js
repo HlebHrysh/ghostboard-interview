@@ -10,20 +10,28 @@ class PCMProcessor extends AudioWorkletProcessor {
     this.bufferOffset = 0;
     this.sampleAccumulator = 0;
     this.weightAccumulator = 0;
+
+    this.port.onmessage = (event) => {
+      if (event && event.data === 'flush') {
+        this.flush();
+      }
+    };
   }
 
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     if (!input || !input[0]) return true;
 
-    const channelData = input[0];
-    const inputLen = channelData.length;
+    const ch0 = input[0];
+    const ch1 = input.length > 1 ? input[1] : null;
+    const inputLen = ch0.length;
     if (inputLen === 0) return true;
 
-    // Fast path: if context is already ~16kHz, no resampling needed
+    // Fast path: if context is already ~16kHz, convert directly to mono linear16
     if (this.ratio <= 1.05 && this.ratio >= 0.95) {
       for (let i = 0; i < inputLen; i++) {
-        const s = Math.max(-1, Math.min(1, channelData[i]));
+        const raw = ch1 ? (ch0[i] + ch1[i]) * 0.5 : ch0[i];
+        const s = Math.max(-1, Math.min(1, raw));
         this.buffer[this.bufferOffset++] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         if (this.bufferOffset >= this.bufferSize) {
           this.flush();
@@ -32,10 +40,10 @@ class PCMProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Boxcar downsampling (area-averaging filter):
-    // Accumulate each input sample until we reach ratio weights
+    // Boxcar downsampling (area-averaging anti-aliasing filter) strictly to 16000 Hz mono linear16:
+    // Accumulate each input sample until we reach ratio weights (reduces 48kHz bandwidth by 66.7%)
     for (let i = 0; i < inputLen; i++) {
-      const sample = channelData[i];
+      const sample = ch1 ? (ch0[i] + ch1[i]) * 0.5 : ch0[i];
       let weight = 1.0;
 
       while (weight > 0) {

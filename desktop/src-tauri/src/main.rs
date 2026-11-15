@@ -369,9 +369,17 @@ async fn start_audio_capture(
             }
         }
         engine.set_devices(loopback_device, mic_device);
-        let capture_src = match source.as_deref().map(|s| s.to_lowercase()).as_deref() {
-            Some("mic") | Some("microphone") => crate::audio::capture::CaptureSource::Microphone,
-            Some("loopback") | Some("system") => crate::audio::capture::CaptureSource::SystemLoopback,
+        let effective_mode = source
+            .as_deref()
+            .map(|s| s.to_lowercase())
+            .unwrap_or_else(get_explicit_listen_mode);
+        let capture_src = match effective_mode.as_str() {
+            "mic" | "microphone" | "mic_only" | "candidate_only" => {
+                crate::audio::capture::CaptureSource::Microphone
+            }
+            "loopback" | "system" | "interviewer_only" | "interviewer" | "system_only" | "loopback_only" => {
+                crate::audio::capture::CaptureSource::SystemLoopback
+            }
             _ => crate::audio::capture::CaptureSource::Dual,
         };
         engine.set_source(capture_src);
@@ -557,7 +565,7 @@ async fn stream_ai_answer(
                 .set_config(crate::llm::client::LlmConfig {
                     provider: crate::llm::client::LlmProviderType::Gemini,
                     api_key: trimmed,
-                    model: "gemini-3.5-flash".to_string(),
+                    model: "gemini-3.5-flash-lite".to_string(),
                     endpoint_url: None,
                 })
                 .await;
@@ -672,7 +680,7 @@ async fn configure_copilot_keys(
             .set_config(crate::llm::client::LlmConfig {
                 provider: crate::llm::client::LlmProviderType::Gemini,
                 api_key: key,
-                model: "gemini-3.5-flash".to_string(),
+                model: "gemini-3.8-flash".to_string(),
                 endpoint_url: None,
             })
             .await;
@@ -1016,25 +1024,26 @@ pub fn spawn_copilot_pipeline(
                 )
                 .await;
 
-            let clean = token.text.trim().to_string();
+            let clean = crate::llm::eot::deduplicate_stt_transcript(token.text.trim());
             if clean.is_empty() {
                 continue;
             }
 
             let mut trigger_candidate = None;
+            let mut should_abort_premature = false;
             {
                 let mut tr = tracker_for_stt.lock().await;
+                if let Some((last_trig_at, _)) = tr.recent_triggers.last() {
+                    if last_trig_at.elapsed() <= std::time::Duration::from_millis(1500) {
+                        should_abort_premature = true;
+                    }
+                }
                 tr.last_text = clean.clone();
                 tr.last_is_final = token.is_final;
                 tr.last_token_instant = Some(std::time::Instant::now());
 
                 if token.is_final {
-                    if tr.rolling_buffer.is_empty() {
-                        tr.rolling_buffer = clean.clone();
-                    } else {
-                        tr.rolling_buffer.push(' ');
-                        tr.rolling_buffer.push_str(&clean);
-                    }
+                    crate::llm::eot::append_deduplicated_segment(&mut tr.rolling_buffer, &clean);
                 }
 
                 let current_eval_text = if !tr.rolling_buffer.is_empty() {
@@ -1043,25 +1052,55 @@ pub fn spawn_copilot_pipeline(
                     clean.clone()
                 };
 
+                // Discard pure greetings or background webinar chatter on finalized segments
+                if (token.is_final || token.speech_final)
+                    && crate::llm::eot::is_greeting_or_noise(&current_eval_text)
+                    && !crate::llm::eot::is_question_heuristic(&current_eval_text)
+                {
+                    tr.rolling_buffer.clear();
+                    tr.last_token_instant = None;
+                    continue;
+                }
+
                 let word_count = current_eval_text.split_whitespace().count();
-                let is_question = crate::llm::eot::is_question_heuristic(&current_eval_text);
+                let is_dangling = crate::llm::eot::is_dangling_ending(&current_eval_text)
+                    && !current_eval_text.ends_with('?');
+                let is_question = !is_dangling && crate::llm::eot::is_question_heuristic(&current_eval_text);
 
                 if is_question && word_count >= 2 && !is_recent_duplicate(&tr.recent_triggers, &current_eval_text) {
                     trigger_candidate = Some(current_eval_text);
                 }
             }
 
+            if should_abort_premature {
+                llm_for_stt.abort_in_flight().await;
+            }
+
             if let Some(candidate_text) = trigger_candidate {
-                let eot_result = llm_for_stt.evaluate_eot(token.speech_final, token.timestamp_ms).await;
+                let eot_result = llm_for_stt.evaluate_eot(token.speech_final || token.is_final, token.timestamp_ms).await;
                 let trigger = match eot_result {
                     Some(t) => Some(t),
-                    None if (token.speech_final || candidate_text.ends_with('?')) && crate::llm::eot::is_question_heuristic(&candidate_text) => {
+                    None if (token.speech_final || token.is_final || candidate_text.ends_with('?'))
+                        && crate::llm::eot::is_question_heuristic(&candidate_text) =>
+                    {
                         let now_ms = token.timestamp_ms;
                         let context_90s = llm_for_stt.get_sliding_context().await;
                         let focused = crate::llm::eot::extract_focused_question(&candidate_text, &context_90s);
+                        let merged_question = {
+                            let tr = tracker_for_stt.lock().await;
+                            if let Some((last_at, prev_q)) = tr.recent_triggers.last() {
+                                if last_at.elapsed() <= std::time::Duration::from_millis(1500) {
+                                    crate::llm::eot::merge_continuation_question(prev_q, &focused).merged_question
+                                } else {
+                                    focused
+                                }
+                            } else {
+                                focused
+                            }
+                        };
                         Some(crate::llm::eot::EotTrigger {
                             question_id: format!("q-stt-{}", now_ms),
-                            question_text: focused,
+                            question_text: merged_question,
                             context_90s,
                             timestamp_ms: now_ms,
                         })
@@ -1072,8 +1111,11 @@ pub fn spawn_copilot_pipeline(
                 if let Some(trig) = trigger {
                     {
                         let mut tr = tracker_for_stt.lock().await;
+                        let now_inst = std::time::Instant::now();
                         tr.recent_triggers.retain(|(t, _)| t.elapsed() < std::time::Duration::from_secs(30));
-                        tr.recent_triggers.push((std::time::Instant::now(), trig.question_text.clone()));
+                        tr.recent_triggers.push((now_inst, trig.question_text.clone()));
+                        tr.last_trigger_instant = Some(now_inst);
+                        tr.triggered_text = trig.question_text.clone();
                         tr.rolling_buffer.clear();
                         tr.last_token_instant = None;
                     }
@@ -1086,13 +1128,13 @@ pub fn spawn_copilot_pipeline(
     });
 
     // 2. Periodic silence watcher:
-    // 350ms silence for finalized sentences (is_final == true)
+    // 250ms (<300ms) silence for finalized sentences (is_final == true)
     // 900ms silence for interim utterances (is_final == false)
     let tracker_for_silence = tracker.clone();
     let hud_for_silence = hud_state.clone();
     let llm_for_silence = llm_orchestrator.clone();
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(50));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(25));
         loop {
             interval.tick().await;
             let mut should_trigger = false;
@@ -1101,7 +1143,7 @@ pub fn spawn_copilot_pipeline(
                 let mut tr = tracker_for_silence.lock().await;
                 if let Some(last_at) = tr.last_token_instant {
                     let threshold = if tr.last_is_final {
-                        std::time::Duration::from_millis(350)
+                        std::time::Duration::from_millis(250)
                     } else {
                         std::time::Duration::from_millis(900)
                     };
@@ -1113,8 +1155,11 @@ pub fn spawn_copilot_pipeline(
                             tr.last_text.clone()
                         };
                         let word_count = candidate_text.split_whitespace().count();
+                        let is_dangling = crate::llm::eot::is_dangling_ending(&candidate_text)
+                            && !candidate_text.ends_with('?');
 
-                        if word_count >= 3
+                        if word_count >= 2
+                            && !is_dangling
                             && !is_recent_duplicate(&tr.recent_triggers, &candidate_text)
                             && (crate::llm::eot::is_question_heuristic(&candidate_text)
                                 || candidate_text.ends_with('?'))
@@ -1416,8 +1461,8 @@ pub(crate) fn load_env_files() {
             }
         }
 
-        // Walk up the directory tree looking for .env and .env.local
-        let max_depth = if cfg!(debug_assertions) { 6 } else { 2 };
+        // Walk up the directory tree looking for .env and .env.local (in both debug and release builds)
+        let max_depth = 6;
         let mut current_dir = std::env::current_dir().ok();
         for _ in 0..max_depth {
             if let Some(dir) = &current_dir {
@@ -1437,24 +1482,42 @@ pub(crate) fn load_env_files() {
             }
         }
 
-        // Also walk up from current_exe directory
+        // Also walk up from current_exe directory (and its resolved symlink target if symlinked)
         if let Ok(exe_path) = std::env::current_exe() {
-            let mut exe_dir = exe_path.parent().map(|p| p.to_path_buf());
-            for _ in 0..max_depth {
-                if let Some(dir) = &exe_dir {
-                    let env_local = dir.join(".env.local");
-                    if env_local.is_file() {
-                        load_single_env_file(&env_local);
+            let resolved_exe = std::fs::canonicalize(&exe_path).unwrap_or_else(|_| exe_path.clone());
+            for start_exe in [exe_path, resolved_exe] {
+                let mut exe_dir = start_exe.parent().map(|p| p.to_path_buf());
+                for _ in 0..max_depth {
+                    if let Some(dir) = &exe_dir {
+                        let env_local = dir.join(".env.local");
+                        if env_local.is_file() {
+                            load_single_env_file(&env_local);
+                            loaded_any = true;
+                        }
+                        let env_file = dir.join(".env");
+                        if env_file.is_file() {
+                            load_single_env_file(&env_file);
+                            loaded_any = true;
+                        }
+                        exe_dir = dir.parent().map(|p| p.to_path_buf());
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Also check user config & data directories ($HOME/.config/ghostboard, $HOME/.local/share/ghostboard)
+        if let Ok(home) = std::env::var("HOME") {
+            let home_path = std::path::PathBuf::from(home);
+            for sub in [".config/ghostboard", ".local/share/ghostboard"] {
+                let dir = home_path.join(sub);
+                for fname in [".env.local", ".env"] {
+                    let fpath = dir.join(fname);
+                    if fpath.is_file() {
+                        load_single_env_file(&fpath);
                         loaded_any = true;
                     }
-                    let env_file = dir.join(".env");
-                    if env_file.is_file() {
-                        load_single_env_file(&env_file);
-                        loaded_any = true;
-                    }
-                    exe_dir = dir.parent().map(|p| p.to_path_buf());
-                } else {
-                    break;
                 }
             }
         }
@@ -1506,13 +1569,31 @@ fn log_key_status(name: &str) {
     tracing::info!(target: "ghostboard::env", "{}: {}", name, status);
 }
 
-/// Fallback key retrieval from local Ghostboard web backend
+/// Fallback key retrieval from Ghostboard web backend
 async fn fetch_deepgram_key_from_backend() -> Option<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_millis(1500))
         .build()
         .ok()?;
-    let resp = client.get("http://localhost:3000/api/ai/deepgram").send().await.ok()?;
+    let configured_base = std::env::var("GHOSTBOARD_API_URL")
+        .or_else(|_| std::env::var("VITE_API_URL"))
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| {
+            option_env!("GHOSTBOARD_API_URL")
+                .or_else(|| option_env!("VITE_API_URL"))
+                .filter(|v| !v.trim().is_empty())
+                .map(|v| v.to_string())
+        });
+    let base_url = configured_base.unwrap_or_else(|| {
+        if cfg!(debug_assertions) {
+            "http://localhost:3000".to_string()
+        } else {
+            "https://ghostboard.ai".to_string()
+        }
+    });
+    let endpoint = format!("{}/api/ai/deepgram", base_url.trim().trim_end_matches('/'));
+    let resp = client.get(endpoint).send().await.ok()?;
     if resp.status().is_success() {
         if let Ok(json) = resp.json::<serde_json::Value>().await {
             if let Some(k) = json.get("key").and_then(|v| v.as_str()) {
@@ -1924,11 +2005,11 @@ fn main() {
                             llm.set_config(crate::llm::client::LlmConfig {
                                 provider: crate::llm::client::LlmProviderType::Gemini,
                                 api_key: key,
-                                model: "gemini-3.5-flash".to_string(),
+                                model: "gemini-3.5-flash-lite".to_string(),
                                 endpoint_url: None,
                             })
                             .await;
-                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 3.5 Flash LLM provider from GEMINI_API_KEY");
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 3.5 Flash-Lite LLM provider from GEMINI_API_KEY");
                         });
                     }
                 } else if let Ok(key) = std::env::var("GROQ_API_KEY") {

@@ -82,7 +82,10 @@ pub fn launch_copilot_window(app: &AppHandle, mode: &str) -> Result<LaunchReport
 
     // 2. Create or reuse.
     let (window, created) = if let Some(existing) = app.get_webview_window(HUD_LABEL) {
-        let _ = existing.set_size(LogicalSize::new(width, height));
+        let existing_for_size = existing.clone();
+        let _ = crate::window::run_window_op_on_main_thread(app, move || {
+            let _ = existing_for_size.set_size(LogicalSize::new(width, height));
+        });
         (existing, false)
     } else {
         let built = WebviewWindowBuilder::new(app, HUD_LABEL, WebviewUrl::App(hud_url(mode).into()))

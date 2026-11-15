@@ -17,6 +17,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function isQaAllowed(): boolean {
+  if (process.env.NODE_ENV === 'production') {
+    return process.env.ENABLE_PROD_SIMULATOR === 'true';
+  }
   return (
     process.env.NEXT_PUBLIC_QA_MODE === 'true' ||
     process.env.ENABLE_PROD_SIMULATOR === 'true'

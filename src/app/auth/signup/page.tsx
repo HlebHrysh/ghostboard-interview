@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   ArrowRight,
   Check,
@@ -243,7 +244,7 @@ export default function SignupPage() {
                 <span className="text-lg font-black font-mono tracking-widest text-white group-hover:text-zinc-300 transition-colors">
                   GHOSTBOARD
                 </span>
-                <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
+                <span className="text-xs font-mono text-zinc-400 tracking-wider">
                   {t.subHeader}
                 </span>
               </div>
@@ -251,11 +252,23 @@ export default function SignupPage() {
             <LangDropdown />
           </div>
 
-          <div className="mt-10">
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-300 bg-white/10 px-3 py-1 rounded-full border border-white/20">
-              {t.badge}
-            </span>
-            <h2 className="text-2xl md:text-3xl font-black text-white mt-4 font-display">
+          <div className="mt-8">
+            <div className="mb-5 inline-flex items-center gap-3 p-2.5 pr-4 rounded-2xl spatial-glass border border-white/[0.12]">
+              <motion.img
+                src="/ghost-transparent.png"
+                alt="Ghostboard Mascot"
+                animate={{ y: [0, -6, 0], rotateZ: [-1.5, 1.5, -1.5] }}
+                transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+                className="w-10 h-10 object-contain drop-shadow-[0_8px_16px_rgba(139,92,246,0.35)]"
+              />
+              <div>
+                <span className="text-xs font-mono tracking-widest uppercase text-zinc-200 font-semibold block">
+                  {t.badge}
+                </span>
+                <span className="text-xs text-zinc-400">Stealth & Sub-1.5s AI Copilot</span>
+              </div>
+            </div>
+            <h2 className="text-2xl md:text-3xl font-black text-white font-display">
               {t.title}
             </h2>
             <p className="text-xs md:text-sm text-zinc-400 mt-2 leading-relaxed">
@@ -297,7 +310,7 @@ export default function SignupPage() {
         glowIntensity={0.06}
         className="md:w-7/12 p-6 md:p-12 flex flex-col justify-center"
       >
-        <div className="max-w-xl w-full mx-auto bento-card p-6 sm:p-8 bg-[#08080c]/90 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.8)]">
+        <div className="max-w-xl w-full mx-auto bento-card spatial-glass-window p-6 sm:p-8 bg-[#090b10]/90 backdrop-blur-2xl border border-white/[0.12] rounded-3xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.8)]">
           {/* Desktop App Auth Indicator Banner */}
           {isDesktopClient && (
             <div className="mb-5 p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-xs font-mono space-y-1 text-cyan-300">
@@ -367,7 +380,7 @@ export default function SignupPage() {
 
             <div className="flex items-center gap-3">
               <div className="flex-1 h-[1px] bg-white/[0.08]" />
-              <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{t.orEmail}</span>
+              <span className="text-xs font-mono text-zinc-400 uppercase tracking-widest">{t.orEmail}</span>
               <div className="flex-1 h-[1px] bg-white/[0.08]" />
             </div>
 
@@ -378,7 +391,7 @@ export default function SignupPage() {
                   <label className="text-[11px] font-mono text-zinc-300 font-bold uppercase tracking-wider">
                     {t.roleStepTitle}
                   </label>
-                  <span className="text-[10px] font-mono text-zinc-500">
+                  <span className="text-xs font-mono text-zinc-400">
                     {isCustomRole && customRoleText.trim() ? customRoleText.trim() : (t.roles.find((r) => r.key === selectedRole)?.label || selectedRole)}
                   </span>
                 </div>

@@ -149,7 +149,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/60   transition-opacity"
         onClick={onClose}
       />
 
@@ -161,7 +161,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
             <h2 className="text-base font-black text-white tracking-tight flex items-center gap-2">
               <span>{t.title}</span>
             </h2>
-            <p className="text-[11px] text-zinc-400 font-mono">{t.subtitle}</p>
+            <p className="text-xs text-zinc-400 font-mono">{t.subtitle}</p>
           </div>
 
           <button
@@ -179,12 +179,12 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
             onClick={() => setActiveTab('current')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'current'
-                ? 'bg-white text-black shadow-[0_0_15px_rgba(196,181,253,0.3)]'
+                ? 'bg-white text-black '
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
             <span>{t.tabCurrent}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+            <span className="text-xs px-1.5 py-0.2 rounded-full bg-black/20">
               {questions.length}
             </span>
           </button>
@@ -193,12 +193,12 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
             onClick={() => setActiveTab('archive')}
             className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'archive'
-                ? 'bg-white text-black shadow-[0_0_15px_rgba(196,181,253,0.3)]'
+                ? 'bg-white text-black '
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
             <span>{t.tabArchive}</span>
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/20">
+            <span className="text-xs px-1.5 py-0.2 rounded-full bg-black/20">
               {pastSessions.length}
             </span>
           </button>
@@ -212,7 +212,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
                 <Clock className="w-10 h-10 mb-2 opacity-30" />
                 <p className="text-xs font-mono">{t.emptyCurrentTitle}</p>
-                <p className="text-[11px] text-zinc-600 mt-1">
+                <p className="text-xs text-zinc-600 mt-1">
                   {t.emptyCurrentDesc}
                 </p>
               </div>
@@ -228,15 +228,15 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                     }}
                     className={`p-3.5 rounded-2xl border transition-all cursor-pointer text-left relative ${
                       isActive
-                        ? 'bg-emerald-950/40 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                        ? 'bg-white/[0.08] border-white/[0.12] '
                         : 'bg-black/30 border-white/5 hover:border-white/20 hover:bg-white/5'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-[10px] font-mono font-bold text-zinc-400">
+                      <span className="text-xs font-mono font-bold text-zinc-400">
                         #{questions.length - idx} • {q.timecode}
                       </span>
-                      <span className="text-[9px] font-mono px-2 py-0.2 rounded bg-white/5 text-zinc-400 border border-white/10 uppercase">
+                      <span className="text-xs font-mono px-2 py-0.2 rounded bg-white/5 text-zinc-400 border border-white/10 uppercase">
                         {q.tag || '#QA'}
                       </span>
                     </div>
@@ -245,7 +245,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                       {q.question}
                     </p>
 
-                    <p className="text-[11px] text-zinc-400 line-clamp-1 mt-1 font-sans">
+                    <p className="text-xs text-zinc-400 line-clamp-1 mt-1 font-sans">
                       {q.quickAnswer || q.startHook}
                     </p>
                   </div>
@@ -264,7 +264,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
               <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500">
                 <Clock className="w-10 h-10 mb-2 opacity-30" />
                 <p className="text-xs font-mono">{t.emptyArchiveTitle}</p>
-                <p className="text-[11px] text-zinc-600 mt-1">
+                <p className="text-xs text-zinc-600 mt-1">
                   {t.emptyArchiveDesc}
                 </p>
               </div>
@@ -289,7 +289,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="text-xs font-bold text-white font-sans">{sess.title}</div>
-                        <div className="text-[10px] font-mono text-zinc-400 flex items-center gap-2 mt-0.5">
+                        <div className="text-xs font-mono text-zinc-400 flex items-center gap-2 mt-0.5">
                           <span>📅 {formattedDate}</span>
                           <span>•</span>
                           <span>⏳ {Math.floor((sess.durationSec || 0) / 60)} {t.minutesShort}</span>
@@ -303,7 +303,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => setExpandedSessionId(isExpanded ? null : sess.id)}
-                        className="text-[11px] font-mono text-zinc-400 hover:text-white px-2 py-1 rounded bg-white/5 border border-white/10 cursor-pointer"
+                        className="text-xs font-mono text-zinc-400 hover:text-white px-2 py-1 rounded bg-white/5 border border-white/10 cursor-pointer"
                       >
                         {isExpanded ? t.collapse : t.details}
                       </button>
@@ -314,7 +314,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleExportMarkdown(sess.items, sess.title)}
-                        className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 hover:text-emerald-300 py-1 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 cursor-pointer"
+                        className="flex items-center gap-1 text-xs font-mono text-zinc-200 hover:text-zinc-200 py-1 px-2.5 rounded-lg bg-white/[0.08] border border-white/[0.12] cursor-pointer"
                       >
                         <Download className="w-3 h-3" />
                         <span>{t.exportMd}</span>
@@ -332,7 +332,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
                             <div className="font-bold text-zinc-200">
                               #{qIdx + 1}. {q.question}
                             </div>
-                            <div className="text-[11px] text-zinc-400 mt-1 line-clamp-2">
+                            <div className="text-xs text-zinc-400 mt-1 line-clamp-2">
                               {q.quickAnswer || q.startHook}
                             </div>
                           </div>
@@ -351,7 +351,7 @@ export const StealthHistoryDrawer: React.FC<StealthHistoryDrawerProps> = ({
           <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
             <button
               onClick={() => handleExportMarkdown(questions, t.tabCurrent)}
-              className="flex items-center gap-1.5 text-xs font-mono text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer py-1.5 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20"
+              className="flex items-center gap-1.5 text-xs font-mono text-zinc-200 hover:text-zinc-200 transition-colors cursor-pointer py-1.5 px-3 rounded-xl bg-white/[0.08] border border-white/[0.12] hover:bg-white/[0.08]"
               title={t.exportAllTooltip}
             >
               <Download className="w-3.5 h-3.5" />

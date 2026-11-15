@@ -15,22 +15,24 @@ export function GhostFx() {
 
     const onMove = (e: PointerEvent) => {
       const t = e.target as HTMLElement | null;
-      const card = t?.closest<HTMLElement>('[class*="rounded-2xl"],[class*="rounded-3xl"],.gb-card,.stealth-card');
+      const card = t?.closest<HTMLElement>(
+        '.spotlight, .gb-card, .bento-card, .liquid-glass-card, .stealth-card, .spotlight-card-wrapper'
+      );
       if (card) {
         const r = card.getBoundingClientRect();
         card.style.setProperty("--mx", `${e.clientX - r.left}px`);
         card.style.setProperty("--my", `${e.clientY - r.top}px`);
       }
       if (reduce) return;
-      const btn = t?.closest<HTMLElement>("button");
-      if (btn && btn.offsetWidth < 320 && !btn.closest("[data-magnetic]")) {
+      const btn = t?.closest<HTMLElement>("[data-magnetic]");
+      if (btn) {
         const r = btn.getBoundingClientRect();
-        btn.style.setProperty("--tx", `${(e.clientX - r.left - r.width / 2) * 0.12}px`);
-        btn.style.setProperty("--ty", `${(e.clientY - r.top - r.height / 2) * 0.2}px`);
+        btn.style.setProperty("--tx", `${(e.clientX - r.left - r.width / 2) * 0.08}px`);
+        btn.style.setProperty("--ty", `${(e.clientY - r.top - r.height / 2) * 0.1}px`);
       }
     };
     const onLeave = (e: PointerEvent) => {
-      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("button");
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-magnetic]");
       btn?.style.removeProperty("--tx");
       btn?.style.removeProperty("--ty");
     };

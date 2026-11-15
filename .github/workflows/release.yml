@@ -95,6 +95,8 @@ jobs:
           echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security import "$RUNNER_TEMP/certificate.p12" -k $KEYCHAIN_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN_PATH"
 
       # Prepare Optional Code Signing for Windows (Authenticode)
       - name: Setup Windows Authenticode Certificate (Optional)
@@ -106,6 +108,7 @@ jobs:
         run: |
           echo "Decoding Windows Authenticode certificate..."
           echo "$WINDOWS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.pfx"
+          echo "WINDOWS_CERTIFICATE_PATH=$RUNNER_TEMP/cert.pfx" >> $GITHUB_ENV
 
       # Compile, Package & Build Tauri v2 Artifacts (including Updater Bundles)
       - name: Build Tauri v2 Desktop Bundle
@@ -120,8 +123,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows Code Signing
-          WINDOWS_CERTIFICATE_PATH: ${{ runner.temp }}/cert.pfx
+          # Windows Code Signing (set via GITHUB_ENV when WINDOWS_CERTIFICATE secret exists)
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
 
       # Compute SHA-256 Checksums for Release & Updater Artifacts

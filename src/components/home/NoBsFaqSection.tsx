@@ -57,10 +57,10 @@ export function NoBsFaqSection({ t }: Props) {
             return (
               <div
                 key={item.id}
-                className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                className={`bento-card rounded-3xl border transition-all duration-200 overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] ${
                   isOpen
-                    ? 'bg-white/[0.04] border-white/20 shadow-lg'
-                    : 'bg-white/[0.015] border-white/[0.06] hover:border-white/[0.12]'
+                    ? 'bg-white/[0.05] border-white/25 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_18px_40px_rgba(0,0,0,0.45)]'
+                    : 'bg-white/[0.02] border-white/[0.09] hover:border-white/[0.16]'
                 }`}
               >
                 <button
@@ -86,7 +86,7 @@ export function NoBsFaqSection({ t }: Props) {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      transition={{ type: 'spring', stiffness: 300, damping: 26 }}
                     >
                       <div className="px-5 sm:px-6 pb-6 text-xs sm:text-sm text-zinc-300 leading-relaxed border-t border-white/[0.04] pt-4">
                         {item.a}

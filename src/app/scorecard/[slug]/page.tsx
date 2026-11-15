@@ -122,28 +122,28 @@ interface ScorecardItem {
 
           {/* Session Meta Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
-            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-white/10 backdrop-blur-md">
+            <div className="bento-card p-4 rounded-2xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
               <div className="text-[11px] font-mono text-zinc-400 uppercase mb-1">Тривалість</div>
               <div className="text-xl font-bold font-mono text-white flex items-center gap-1.5">
                 <Clock className="w-4 h-4 text-zinc-400" />
                 <span>{minutes}хв {seconds}с</span>
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-white/10 backdrop-blur-md">
+            <div className="bento-card p-4 rounded-2xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
               <div className="text-[11px] font-mono text-zinc-400 uppercase mb-1">Питань розкрито</div>
               <div className="text-xl font-bold font-mono text-white flex items-center gap-1.5">
                 <HelpCircle className="w-4 h-4 text-zinc-400" />
                 <span>{questionsCount}</span>
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-white/10 backdrop-blur-md">
+            <div className="bento-card p-4 rounded-2xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
               <div className="text-[11px] font-mono text-zinc-400 uppercase mb-1">Загальний бал</div>
               <div className="text-xl font-bold font-mono text-white flex items-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-white" />
                 <span>{baseScore}/100</span>
               </div>
             </div>
-            <div className="p-4 rounded-2xl bg-zinc-950/80 border border-white/10 backdrop-blur-md">
+            <div className="bento-card p-4 rounded-2xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
               <div className="text-[11px] font-mono text-zinc-400 uppercase mb-1">Рейтинг у когорті</div>
               <div className="text-xl font-bold font-mono text-white">
                 Топ {100 - scorecardData.percentile}%
@@ -166,7 +166,7 @@ interface ScorecardItem {
                 {rawItems.map((item: ScorecardItem, idx: number) => (
                   <div
                     key={item.id || idx}
-                    className="p-5 rounded-2xl bg-zinc-950/80 border border-white/10 hover:border-white/30 transition-all space-y-3 backdrop-blur-sm"
+                    className="bento-card p-5 rounded-3xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:border-white/25 transition-all space-y-3 backdrop-blur-xl"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ interface ScorecardItem {
                         </h3>
                       </div>
                       {item.tag && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5 whitespace-nowrap">
+                        <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/[0.06] text-zinc-300 border border-white/10 whitespace-nowrap">
                           {item.tag}
                         </span>
                       )}
@@ -215,7 +215,7 @@ interface ScorecardItem {
           )}
 
           {/* Call to action for visitors viewing the scorecard */}
-          <div className="p-6 sm:p-8 rounded-3xl bg-zinc-950/90 border border-white/20 text-center space-y-3 shadow-2xl backdrop-blur-md">
+          <div className="spatial-glass-window p-6 sm:p-8 rounded-3xl bg-white/[0.04] border border-white/[0.15] text-center space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_25px_70px_rgba(0,0,0,0.65)] backdrop-blur-2xl">
             <h3 className="text-lg sm:text-xl font-bold text-white font-mono">
               Готуєтеся до технічного інтерв'ю?
             </h3>

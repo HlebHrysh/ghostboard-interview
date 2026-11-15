@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { GhostDetectiveLogo } from '@/components/ui/GhostDetectiveLogo';
 import {
   Copy,
   Check,
@@ -13,27 +15,36 @@ import {
   Snowflake,
   ChevronLeft,
   ChevronRight,
-  Minus,
-  Plus,
   Code2,
   Lightbulb,
   MessagesSquare,
   ScrollText,
-  Radio,
   Zap,
   ExternalLink,
-  Maximize2,
   ChevronDown,
   ChevronUp,
   Layers,
   Lock,
+  Crosshair,
+  GitMerge,
+  Maximize2,
+  PanelLeftClose,
+  ShieldAlert,
+  SlidersHorizontal,
+  Camera,
+  User,
+  History,
+  QrCode,
+  ArrowLeft,
+  MessageCircle,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { useCopilotAI } from '@/hooks/useCopilotAI';
 import { evaluateSpeechIntent } from '@/lib/speechIntentGate';
 import { useAudioCapture } from '@/hooks/useAudioCapture';
 import { InterviewQAItem } from '@/types/interview';
-import { useInterviewHotkeys } from '@/hooks/useInterviewHotkeys';
 import { useScreenshotAI } from '@/hooks/useScreenshotAI';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getHudTranslations } from '@/lib/hudI18n';
@@ -45,18 +56,21 @@ import CandidateProfileModal, {
   getStoredCandidateProfile,
   DEFAULT_CANDIDATE_PROFILE,
 } from '@/components/CandidateProfileModal';
-import { EyelineNotch } from '@/components/interview/EyelineNotch';
 import { StealthDisguise } from '@/components/interview/StealthDisguise';
 import { StealthCommandDock } from '@/components/interview/StealthCommandDock';
 import { StealthHistoryDrawer } from '@/components/interview/StealthHistoryDrawer';
 import { getLuxTranslations } from '@/lib/luxI18n';
-import { GlowBadge } from '@/components/ui/lux/primitives';
-import { TrialLimitModal } from '@/components/interview/TrialLimitModal';
+import { TrialLimitBanner } from '@/components/interview/TrialLimitModal';
+import { CommandPalette, type PaletteCommand } from '@/components/interview/CommandPalette';
 import { SoundCheckModal } from '@/components/interview/SoundCheckModal';
-import { EyeLineTeleprompter } from '@/components/interview/EyeLineTeleprompter';
 import { CompanionQRModal } from '@/components/interview/CompanionQRModal';
 import { AudioSetupWizard } from '@/components/onboarding/AudioSetupWizard';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
+import {
+  cleanStreamText,
+  stripRawMarkdownAsterisks,
+  splitBilingualSegments,
+} from '../../../desktop/src/lib/answerParser';
 
 // Technical terms highlighted inside the live dialogue feed
 const TECH_TERMS_REGEX =
@@ -65,16 +79,17 @@ const TECH_TERMS_TEST =
   /\b(PostgreSQL|MySQL|Redis|Kafka|RabbitMQ|Docker|Kubernetes|K8s|FastAPI|Django|React|Next\.js|Node\.js|TypeScript|Python|Golang|Rust|GraphQL|gRPC|REST|WebSockets?|SSE|Microservices|Prisma|CI\/CD|AWS|GCP|Azure|Nginx|Linux|ACID|CAP|OAuth|JWT|Tailwind)\b/i;
 
 function highlightTech(text: string): React.ReactNode[] {
-  if (!text) return [];
-  if (!TECH_TERMS_TEST.test(text)) {
-    return [text];
+  const cleaned = stripRawMarkdownAsterisks(cleanStreamText(text));
+  if (!cleaned) return [];
+  if (!TECH_TERMS_TEST.test(cleaned)) {
+    return [cleaned];
   }
   const parts: React.ReactNode[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
   const re = new RegExp(TECH_TERMS_REGEX.source, 'gi');
-  while ((m = re.exec(text))) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
+  while ((m = re.exec(cleaned))) {
+    if (m.index > last) parts.push(cleaned.slice(last, m.index));
     parts.push(
       <span key={m.index} className="text-white font-semibold underline decoration-white/25 underline-offset-4">
         {m[0]}
@@ -82,87 +97,84 @@ function highlightTech(text: string): React.ReactNode[] {
     );
     last = m.index + m[0].length;
   }
-  if (last < text.length) parts.push(text.slice(last));
+  if (last < cleaned.length) parts.push(cleaned.slice(last));
   return parts;
 }
 
-function renderBilingualPhrase(text: string): React.ReactNode {
-  if (!text) return null;
-  // Fast path: if no Cyrillic hints in text, skip regex splitting
-  if (!/[а-яА-ЯёЁіІїЇєЄґҐ]/.test(text)) {
-    return <span>{highlightTech(text)}</span>;
-  }
-  const regex = /(\([^)]*[а-яА-ЯёЁіІїЇєЄґҐ][^)]*\))/g;
-  const parts = text.split(regex);
-  return parts.map((part, idx) => {
-    if (part.startsWith('(') && part.endsWith(')') && /[а-яА-ЯёЁіІїЇєЄґҐ]/.test(part)) {
+function renderBilingualPhrase(text: string, isBilingualMode = false): React.ReactNode {
+  const cleaned = stripRawMarkdownAsterisks(cleanStreamText(text));
+  if (!cleaned) return null;
+  const segments = splitBilingualSegments(cleaned, isBilingualMode);
+  return segments.map((seg, idx) => {
+    if (seg.isHint) {
       return (
         <span
           key={idx}
-          className="text-zinc-400 text-xs italic bg-white/[0.04] px-2 py-0.5 rounded border border-white/5 mx-1 inline-block select-all font-normal"
+          className="text-zinc-400 text-xs italic mx-1 inline-block select-all font-normal"
           title="Підказка рідною мовою (не читати вголос)"
         >
-          {part}
+          {seg.text}
         </span>
       );
     }
-    return <span key={idx}>{highlightTech(part)}</span>;
+    return <span key={idx}>{highlightTech(seg.text)}</span>;
   });
 }
 
-function formatPillarAnchor(text: string): React.ReactNode {
+function formatPillarAnchor(text: string, isBilingualMode = false): React.ReactNode {
+  const buffered = cleanStreamText(text);
   // Check for bold anchor pattern: **Anchor**: rest
-  const boldMatch = text.match(/^\s*(?:[•\-\*]\s*)?\*\*([^*]+)\*\*:\s*(.*)$/);
+  const boldMatch = buffered.match(/^\s*(?:[•\-\*]\s*)?\*\*([^*]+)\*\*:?\s*(.*)$/);
   if (boldMatch) {
     const [, anchor, rest] = boldMatch;
     return (
       <>
-        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5">
           {highlightTech(anchor)}
         </span>
-        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest, isBilingualMode)}</span>
       </>
     );
   }
-  const colonIdx = text.indexOf(':');
+  const colonIdx = buffered.indexOf(':');
   if (colonIdx > 0 && colonIdx <= 45) {
-    const anchor = text.slice(0, colonIdx).replace(/^[•\-\*]\s*/, '').replace(/^\*\*/, '').replace(/\*\*$/, '');
-    const rest = text.slice(colonIdx + 1);
+    const anchor = buffered.slice(0, colonIdx).replace(/^[•\-\*]\s*/, '').replace(/^\*\*/, '').replace(/\*\*$/, '');
+    const rest = buffered.slice(colonIdx + 1);
     return (
       <>
-        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5">
           {highlightTech(anchor)}
         </span>
-        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest, isBilingualMode)}</span>
       </>
     );
   }
-  const dashMatch = text.match(/^([^-—]{3,35})\s*[-—]\s*(.*)$/);
+  const dashMatch = buffered.match(/^([^-—]{3,35})\s*[-—]\s*(.*)$/);
   if (dashMatch) {
     return (
       <>
-        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5">
           {highlightTech(dashMatch[1])}
         </span>
         <span className="text-zinc-400 mx-1">—</span>
-        <span className="text-zinc-200">{renderBilingualPhrase(dashMatch[2])}</span>
+        <span className="text-zinc-200">{renderBilingualPhrase(dashMatch[2], isBilingualMode)}</span>
       </>
     );
   }
-  const words = text.split(' ');
+  const words = buffered.split(' ');
   if (words.length > 3) {
     const anchor = words.slice(0, 3).join(' ');
     const rest = ' ' + words.slice(3).join(' ');
     return (
       <>
-        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5 tracking-tight border border-white/10">
+        <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5">
           {highlightTech(anchor)}
         </span>
-        <span className="text-zinc-200">{renderBilingualPhrase(rest)}</span>
+        <span className="text-zinc-200">{renderBilingualPhrase(rest, isBilingualMode)}</span>
       </>
     );
   }
-  return <span className="text-zinc-200">{renderBilingualPhrase(text)}</span>;
+  return <span className="text-zinc-200">{renderBilingualPhrase(buffered, isBilingualMode)}</span>;
 }
 
 type FeedItem =
@@ -172,14 +184,6 @@ type FeedItem =
 export interface DualStreamCopilotProps {
   onPanicExit?: () => void;
 }
-
-const TARGET_MODIFIERS = [
-  { key: 'code', label: '</> Код', tooltip: 'Одразу чистий робочий код + O(n)', hotkey: '1' },
-  { key: 'shorter', label: '⚡ Коротше', tooltip: 'Стиснути до 3 коротких тез', hotkey: '2' },
-  { key: 'simpler', label: '💡 Простіше', tooltip: 'Пояснити на пальцях без важкого жаргону', hotkey: '3' },
-  { key: 're_angle', label: '🔄 Інший підхід', tooltip: 'Альтернативна архітектура та компроміси', hotkey: '4' },
-  { key: 'under_the_hood', label: '⚙️ Під капотом', tooltip: 'Глибока механіка та структури даних', hotkey: '5' },
-] as const;
 
 const BRIDGE_PHRASES: Record<string, string[]> = {
   uk: [
@@ -225,31 +229,28 @@ const DialogueMessageBubble = React.memo<DialogueMessageBubbleProps>(({
   const isInterviewer = item.speaker === 'interviewer';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+    <div
       className={`flex flex-col ${isInterviewer ? 'items-start' : 'items-end'} group`}
     >
-      <div className="flex items-center gap-1.5 mb-1 px-1">
+      <div className="flex items-center gap-1.5 mb-1.5 px-1 flex-wrap">
         {isInterviewer ? (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-cyan-950/80 text-cyan-300 border border-cyan-500/40 shadow-[0_0_8px_rgba(6,182,212,0.15)]">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+          <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold text-zinc-100">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.85)]" />
             <span>Інтерв&apos;юер</span>
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/40 shadow-[0_0_8px_rgba(16,185,129,0.15)] ml-auto">
+          <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold text-zinc-200 ml-auto">
             <span>Ви</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)]" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           </span>
         )}
         {item.statusText && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-cyan-950/60 text-cyan-300 border border-cyan-500/30 animate-pulse">
-            <span className="w-1 h-1 rounded-full bg-cyan-400" />
+          <span className="liquid-glass-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-zinc-200">
+            <span className="w-1 h-1 rounded-full bg-violet-400" />
             <span>{item.statusText}</span>
           </span>
         )}
-        <span className="text-[10px] text-zinc-500 font-mono">
+        <span className="text-xs text-zinc-400 font-mono tabular-nums">
           {new Date(item.timestamp).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
@@ -263,53 +264,50 @@ const DialogueMessageBubble = React.memo<DialogueMessageBubbleProps>(({
               e.stopPropagation();
               onSelectQA(matchingQA.id);
             }}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer"
+            className="liquid-glass-pill inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold text-emerald-200 hover:text-white hover:border-emerald-400/45 transition cursor-pointer"
             title="Перейти до відповіді ШІ"
           >
-            <Zap className="w-2.5 h-2.5 text-amber-400" />
-            <span>⚡ Відповідь #{qaNumber}</span>
+            <Zap className="w-3 h-3 text-emerald-300" />
+            <span>Відповідь #{qaNumber}</span>
           </button>
         )}
       </div>
 
       <div
         onClick={() => {
-          if (!isInterviewer) return;
           if (matchingQA) {
             onSelectQA(matchingQA.id);
           } else {
             onAskAI(item.text, item.id);
           }
         }}
-        className={`max-w-[88%] text-left px-4 py-3 rounded-2xl border text-sm leading-relaxed transition-all ${
+        className={`max-w-[92%] text-left p-3.5 sm:p-4 rounded-2xl text-sm leading-relaxed transition-all cursor-pointer ${
           isInterviewer
-            ? `bg-[#101014] ${
-                isActive
-                  ? 'border-cyan-400/80 ring-2 ring-cyan-500/40 shadow-[0_0_16px_rgba(6,182,212,0.25)]'
-                  : 'border-white/[0.08] hover:border-white/25 hover:bg-white/[0.03]'
-              } text-zinc-100 rounded-tl-sm cursor-pointer`
-            : 'bg-white/[0.06] border-white/[0.06] text-zinc-300 rounded-tr-sm cursor-default ml-auto'
+            ? isActive
+              ? 'liquid-glass-card liquid-glass-card-active text-white'
+              : 'liquid-glass-card hover:border-white/25 text-zinc-100'
+            : 'liquid-glass-card hover:border-white/25 text-zinc-200 ml-auto'
         }`}
       >
         <p className="whitespace-pre-wrap">{highlightTech(item.text)}</p>
-        {isInterviewer && !matchingQA && (
-          <div className="mt-2 pt-2 border-t border-white/[0.06] flex items-center justify-between">
-            <span className="text-[10px] text-zinc-500 italic">Натисніть для відповіді ШІ</span>
+        {!matchingQA && (
+          <div className="mt-2.5 pt-2.5 border-t border-white/[0.08] flex items-center justify-between gap-2">
+            <span className="text-xs text-zinc-400">Натисніть для відповіді ШІ</span>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onAskAI(item.text, item.id);
               }}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-white/[0.09] text-white border border-white/[0.12] hover:bg-white/[0.16] transition cursor-pointer"
             >
-              <Zap className="w-2.5 h-2.5 text-cyan-400" />
-              <span>⚡ Запитати ШІ</span>
+              <Zap className="w-3 h-3 text-emerald-300" />
+              <span>Запитати ШІ</span>
             </button>
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 });
 DialogueMessageBubble.displayName = 'DialogueMessageBubble';
@@ -349,6 +347,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSoundCheckOpen, setIsSoundCheckOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isCompanionQROpen, setIsCompanionQROpen] = useState(false);
   const [isEyeLineActive, setIsEyeLineActive] = useState(false);
   const [isPanicShieldActive, setIsPanicShieldActive] = useState(false);
@@ -564,7 +563,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     toast.info(next ? hudToasts.conciseOn : hudToasts.detailedOn);
   };
 
-  const handleToggleFreeze = () => {
+  const handleToggleFreeze = useCallback(() => {
     const next = !isFrozenRef.current;
     isFrozenRef.current = next;
     setIsFrozen(next);
@@ -573,33 +572,14 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       pendingNewCountRef.current = 0;
       if (interviewQAs.length > 0) setActiveQAId(interviewQAs[0].id);
     }
-  };
+  }, [interviewQAs, isFrozenRef, pendingNewCountRef, setActiveQAId, setPendingNewCount]);
 
   const handleToggleTriggerModeRef = useRef(handleToggleTriggerMode);
-  const handleToggleConciseRef = useRef(handleToggleConcise);
   const handleManualEnterTriggerRef = useRef(() => handleManualEnterTrigger(liveTranscript));
 
   useEffect(() => {
     handleToggleTriggerModeRef.current = handleToggleTriggerMode;
-    handleToggleConciseRef.current = handleToggleConcise;
     handleManualEnterTriggerRef.current = () => handleManualEnterTrigger(liveTranscript);
-  });
-
-  useInterviewHotkeys({
-    isCapturingRef,
-    isCopilotGeneratingRef,
-    triggerModeRef,
-    isFrozenRef,
-    pendingNewCountRef,
-    activeQAIdRef,
-    interviewQAs,
-    setIsFrozen,
-    setPendingNewCount,
-    setActiveQAId,
-    handleToggleTriggerModeRef,
-    handleManualEnterTriggerRef,
-    handleTriggerScreenshotRef,
-    handleToggleConciseRef,
   });
 
   const handleTriggerBridge = useCallback(() => {
@@ -751,46 +731,260 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const activeQA = interviewQAs[activeIndex] || null;
   const activePatchSlot = activeQA ? patchingSlotMap[activeQA.id] : undefined;
   const isActiveSpeculativeHit = activeQA ? Boolean(speculativeHitMap[activeQA.id]) : false;
+  const isBilingualOutput = Boolean(aiLanguageMode && aiLanguageMode.startsWith('bilingual'));
 
-  // Extra hotkeys: font zoom, emergency bridge, modifiers (1-5), and Ctrl+K focus
+  const [isFullTeleprompter, setIsFullTeleprompter] = useState(false);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [hudOpacity, setHudOpacity] = useState(100);
+  const optionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const vuMeterRef = useRef<HTMLDivElement | null>(null);
+  const hearingVuRef = useRef<HTMLDivElement | null>(null);
+
+  // Update VU meters via CSS variables on DOM refs without triggering React state re-renders
   useEffect(() => {
+    const v = isCapturing ? Math.max(6, Math.min(100, Math.round(liveVolume || interviewerVolume || 12))) : 6;
+    if (vuMeterRef.current) {
+      vuMeterRef.current.style.setProperty('--vu-1', `${Math.max(15, Math.min(100, v * 0.8))}%`);
+      vuMeterRef.current.style.setProperty('--vu-2', `${Math.max(20, Math.min(100, v))}%`);
+      vuMeterRef.current.style.setProperty('--vu-3', `${Math.max(15, Math.min(100, v * 0.9))}%`);
+      vuMeterRef.current.style.setProperty('--vu-4', `${Math.max(12, Math.min(100, v * 0.65))}%`);
+    }
+    if (hearingVuRef.current) {
+      const intV = isCapturing ? Math.max(4, Math.min(100, Math.round(interviewerVolume))) : 0;
+      const candV = isCapturing ? Math.max(4, Math.min(100, Math.round(candidateVolume))) : 0;
+      hearingVuRef.current.style.setProperty('--vu-int', `${intV}%`);
+      hearingVuRef.current.style.setProperty('--vu-cand', `${candV}%`);
+    }
+  }, [isCapturing, liveVolume, interviewerVolume, candidateVolume]);
+
+  useEffect(() => {
+    if (!isOptionsOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target as Node)) {
+        setIsOptionsOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleOutside);
+    return () => window.removeEventListener('mousedown', handleOutside);
+  }, [isOptionsOpen]);
+
+  // Unified zero-mouse keyboard control (1-5, Space, Ctrl+K / '/', Ctrl+M, Tab, F12)
+  useEffect(() => {
+    const anyOverlayOpen =
+      isPaletteOpen || isHistoryOpen || isProfileOpen || isSoundCheckOpen || isCompanionQROpen || isAudioWizardOpen || showTrialLimitModal;
     const onKey = (e: KeyboardEvent) => {
-      // Ctrl+K / Cmd+K: Focus manual question input
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      const target = e.target as HTMLElement | null;
+      const isInput = Boolean(
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      );
+
+      // F12: Panic shield
+      if (e.key === 'F12') {
         e.preventDefault();
-        manualInputRef.current?.focus();
-        manualInputRef.current?.select();
+        setIsPanicShieldActive((p) => !p);
         return;
       }
 
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === '=' || e.key === '+') setFontSize((s) => Math.min(32, s + 2));
-      else if (e.key === '-') setFontSize((s) => Math.max(14, s - 2));
-      else if (e.key.toLowerCase() === 'b') handleTriggerBridge();
-      else if (activeQA && ['1', '2', '3', '4', '5'].includes(e.key)) {
+      // F9: Trigger screenshot analysis
+      if (e.key === 'F9') {
         e.preventDefault();
-        const modMap: Record<string, 'code' | 'shorter' | 'simpler' | 're_angle' | 'under_the_hood'> = {
-          '1': 'code',
-          '2': 'shorter',
-          '3': 'simpler',
+        handleTriggerScreenshotRef.current();
+        return;
+      }
+
+      // Ctrl+K / Cmd+K or '/': Focus manual question input bar immediately
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !isInput)) {
+        e.preventDefault();
+        manualInputRef.current?.focus();
+        return;
+      }
+
+      // Ctrl+M / Cmd+M: Toggle mic / audio capture (does not collide with bare M trigger mode)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm' && !isInput) {
+        e.preventDefault();
+        if (isCapturingRef.current) {
+          stopCapture();
+        } else {
+          startCapture(audioSource);
+        }
+        return;
+      }
+
+      // Esc: unfreeze if frozen, or activate panic shield when idle
+      if (e.key === 'Escape' && !isInput) {
+        if (isFrozenRef.current) {
+          e.preventDefault();
+          handleToggleFreeze();
+          return;
+        }
+        if (!isPanicShieldActive && !anyOverlayOpen) {
+          e.preventDefault();
+          setIsPanicShieldActive(true);
+          return;
+        }
+      }
+
+      if (isPaletteOpen || isInput) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // Space: Freeze / Unfreeze Teleprompter (+N queue)
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleToggleFreeze();
+        if (!isFrozenRef.current) {
+          toast.success('▶️ Трансляцію відновлено.', { id: 'freeze-toast', duration: 1800 });
+        } else {
+          toast.info('⏸️ Екран зафіксовано. Нові відповіді накопичуються в черзі.', { id: 'freeze-toast', duration: 2500 });
+        }
+        return;
+      }
+
+      // Tab: toggle 100% Teleprompter Focus
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        setIsFullTeleprompter((v) => !v);
+        return;
+      }
+
+      // ArrowRight: Jump to next queued QA while frozen
+      if (e.key === 'ArrowRight' && isFrozenRef.current && pendingNewCountRef.current > 0) {
+        e.preventDefault();
+        const currentIdx = interviewQAs.findIndex((q) => q.id === activeQAIdRef.current);
+        if (currentIdx > 0) {
+          const nextQA = interviewQAs[currentIdx - 1];
+          setActiveQAId(nextQA.id);
+          setPendingNewCount((prev) => {
+            const next = Math.max(0, typeof prev === 'number' ? prev - 1 : 0);
+            pendingNewCountRef.current = next;
+            return next;
+          });
+        }
+        return;
+      }
+
+      // Enter outside buttons/links in manual-enter trigger mode
+      if (
+        e.key === 'Enter' &&
+        !(target instanceof HTMLButtonElement) &&
+        !(target instanceof HTMLAnchorElement) &&
+        isCapturingRef.current &&
+        triggerModeRef.current === 'enter'
+      ) {
+        e.preventDefault();
+        handleManualEnterTriggerRef.current();
+        return;
+      }
+
+      if (e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        handleToggleTriggerModeRef.current();
+      } else if (e.key.toLowerCase() === 'q') {
+        e.preventDefault();
+        const next = !isConciseRef.current;
+        isConciseRef.current = next;
+        setIsConcise(next);
+        toast.info(next ? hudToasts.conciseOn : hudToasts.detailedOn);
+      } else if (e.key === '=' || e.key === '+') {
+        setFontSize((s) => Math.min(32, s + 2));
+      } else if (e.key === '-') {
+        setFontSize((s) => Math.max(14, s - 2));
+      } else if (e.key.toLowerCase() === 'b' || e.key === '5') {
+        e.preventDefault();
+        handleTriggerBridge();
+      } else if (activeQA && ['1', '2', '3', '4'].includes(e.key)) {
+        e.preventDefault();
+        const modMap: Record<string, 'shorter' | 'simpler' | 'code' | 're_angle'> = {
+          '1': 'shorter',
+          '2': 'simpler',
+          '3': 'code',
           '4': 're_angle',
-          '5': 'under_the_hood',
         };
         const modKey = modMap[e.key];
         if (modKey) {
+          if (modKey === 'code') setIsCodeExpanded(true);
           handleRefineQA(activeQA.id, modKey);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleTriggerBridge, activeQA, handleRefineQA]);
+  }, [
+    handleTriggerBridge,
+    handleToggleFreeze,
+    activeQA,
+    handleRefineQA,
+    isPaletteOpen,
+    isHistoryOpen,
+    isProfileOpen,
+    isSoundCheckOpen,
+    isCompanionQROpen,
+    isAudioWizardOpen,
+    showTrialLimitModal,
+    isPanicShieldActive,
+    audioSource,
+    isCapturingRef,
+    isFrozenRef,
+    triggerModeRef,
+    pendingNewCountRef,
+    activeQAIdRef,
+    interviewQAs,
+    setActiveQAId,
+    setPendingNewCount,
+    isConciseRef,
+    hudToasts.conciseOn,
+    hudToasts.detailedOn,
+    handleTriggerScreenshotRef,
+    startCapture,
+    stopCapture,
+  ]);
 
-  // New answer arrived → reset teleprompter to top, nudge mobile users to the prompter
+  const paletteCommands = useMemo<PaletteCommand[]>(() => {
+    const hasQA = Boolean(activeQA);
+    const busy = isCopilotGenerating;
+    const refine = (key: 'shorter' | 'simpler' | 'code' | 're_angle' | 'under_the_hood') => () => {
+      if (!activeQA) return;
+      if (key === 'code' || key === 'under_the_hood') setIsCodeExpanded(true);
+      handleRefineQA(activeQA.id, key);
+    };
+    return [
+      { id: 'mod-shorter', group: 'Відповідь', label: '⚡ Коротше', hint: '1', disabled: !hasQA || busy, keywords: 'shorter blitz', run: refine('shorter') },
+      { id: 'mod-simpler', group: 'Відповідь', label: '💡 Простіше', hint: '2', disabled: !hasQA || busy, keywords: 'simpler', run: refine('simpler') },
+      { id: 'mod-code', group: 'Відповідь', label: '</> Код', hint: '3', disabled: !hasQA || busy, keywords: 'code', run: refine('code') },
+      { id: 'mod-reangle', group: 'Відповідь', label: '🔄 Інший підхід', hint: '4', disabled: !hasQA || busy, keywords: 're_angle alternative', run: refine('re_angle') },
+      { id: 'mod-bridge', group: 'Відповідь', label: '💬 Тягнути час', hint: '5', disabled: false, keywords: 'bridge phrase time', run: () => handleTriggerBridge() },
+      { id: 'freeze', group: 'Керування', label: isFrozen ? 'Розморозити відповідь' : 'Заморозити відповідь', hint: 'Space', keywords: 'freeze pause', run: () => handleToggleFreeze() },
+      { id: 'panic', group: 'Керування', label: 'Паніка — сховати екран', hint: 'F12', keywords: 'panic shield hide', run: () => setIsPanicShieldActive(true) },
+      { id: 'ask', group: 'Керування', label: 'Ввести питання вручну', hint: 'Ctrl+K', keywords: 'ask manual input', run: () => { manualInputRef.current?.focus(); manualInputRef.current?.select(); } },
+      isCapturing
+        ? { id: 'stop', group: 'Сесія', label: 'Зупинити запис', hint: 'Ctrl+M', keywords: 'stop capture', run: () => handleStop() }
+        : { id: 'start', group: 'Сесія', label: 'Почати запис', hint: 'Ctrl+M', keywords: 'start capture listen', run: () => handleStartCaptureRequest() },
+      { id: 'soundcheck', group: 'Сесія', label: 'Перевірка звуку', keywords: 'sound check audio mic', run: () => setIsSoundCheckOpen(true) },
+      { id: 'history', group: 'Сесія', label: 'Історія питань', keywords: 'history', run: () => setIsHistoryOpen(true) },
+      { id: 'profile', group: 'Сесія', label: 'Профіль кандидата та резюме', keywords: 'profile resume cv', run: () => setIsProfileOpen(true) },
+      {
+        id: 'clear',
+        group: 'Сесія',
+        label: 'Очистити чат',
+        disabled: interviewQAs.length === 0 && dialogueMessages.length === 0,
+        keywords: 'clear reset chat history',
+        run: () => {
+          setInterviewQAs([]);
+          setDialogueMessages([]);
+          setPendingNewCount(0);
+          pendingNewCountRef.current = 0;
+          toast.success('Чат очищено');
+        },
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQA, isCopilotGenerating, isFrozen, isCapturing, interviewQAs.length, dialogueMessages.length, handleRefineQA, handleTriggerBridge]);
+
+  // New answer arrived → reset teleprompter scrollTop directly (zero page jump)
   useEffect(() => {
     if (!activeQA) return;
-    prompterRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (prompterRef.current) {
+      prompterRef.current.scrollTop = 0;
+    }
     if (typeof window !== 'undefined' && window.innerWidth < 1024) setMobileTab('prompter');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQA?.id]);
@@ -833,14 +1027,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
   const handleSelectQA = useCallback((qaId: string) => {
     setActiveQAId(qaId);
-    prompterRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (prompterRef.current) {
+      prompterRef.current.scrollTop = 0;
+    }
   }, [setActiveQAId]);
 
   const handleAskAIFromMessage = useCallback((text: string, msgId: string) => {
     processAggregatedQuestion(text, true, msgId);
   }, [processAggregatedQuestion]);
 
-  // Smart auto-scroll with pause when scrolled up
+  // Smart auto-scroll with direct scrollTop updates (zero page jump)
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
 
   const handleFeedScroll = useCallback(() => {
@@ -850,12 +1046,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     setIsUserScrolledUp(!isAtBottom);
   }, []);
 
-  const scrollToBottom = useCallback((smooth = true) => {
+  const scrollToBottom = useCallback(() => {
     if (!feedRef.current) return;
-    feedRef.current.scrollTo({
-      top: feedRef.current.scrollHeight,
-      behavior: smooth ? 'smooth' : 'auto',
-    });
+    feedRef.current.scrollTop = feedRef.current.scrollHeight;
     setIsUserScrolledUp(false);
   }, []);
 
@@ -951,7 +1144,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   };
 
   const mainAnswer = activeQA ? activeQA.startHook || activeQA.quickAnswer || '' : '';
-  const volBar = (v: number) => Math.max(4, Math.min(100, Math.round(v)));
 
   if (isAuthChecking) {
     return (
@@ -965,27 +1157,27 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
   // ───────────────────────── Panes ─────────────────────────
   const hearingPane = (
-    <section className="flex flex-col min-h-0 h-full rounded-3xl border border-white/[0.07] bg-gradient-to-b from-white/[0.04] to-white/[0.01] backdrop-blur-xl overflow-hidden">
-      <header className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.06]">
+    <section className="liquid-glass-panel flex flex-col min-h-0 h-full rounded-2xl overflow-hidden">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-white/[0.12] bg-white/[0.03] backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
-          <MessagesSquare className="w-4 h-4 text-zinc-400" />
-          <h2 className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-300">Live Dialogue</h2>
-          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.8)] animate-pulse" />
+          <MessagesSquare className="w-4 h-4 text-cyan-300" />
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-zinc-200">Live Dialogue</h2>
+          <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono text-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
             <span>Intent Gate: Active</span>
           </span>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
+        <div ref={hearingVuRef} className="flex items-center gap-3 text-xs font-mono text-zinc-400">
           <span className="flex items-center gap-1.5" title="Interviewer level">
             <Headphones className="w-3 h-3" />
             <span className="w-14 h-1 rounded-full bg-white/10 overflow-hidden">
-              <span className="block h-full bg-white transition-all duration-100" style={{ width: `${isCapturing ? volBar(interviewerVolume) : 0}%` }} />
+              <span className="block h-full bg-white transition-[width] duration-75" style={{ width: 'var(--vu-int, 0%)' }} />
             </span>
           </span>
           <span className="flex items-center gap-1.5" title="Your mic level">
             <Mic className="w-3 h-3" />
             <span className="w-14 h-1 rounded-full bg-white/10 overflow-hidden">
-              <span className="block h-full bg-zinc-400 transition-all duration-100" style={{ width: `${isCapturing ? volBar(candidateVolume) : 0}%` }} />
+              <span className="block h-full bg-zinc-400 transition-[width] duration-75" style={{ width: 'var(--vu-cand, 0%)' }} />
             </span>
           </span>
         </div>
@@ -993,9 +1185,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
 
       {/* Focus Mode Condensed Live Ticker */}
       {isFocusMode && (
-        <div className="px-4 py-2.5 bg-cyan-950/25 border-b border-cyan-500/20 flex items-center gap-2 text-xs">
-          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-          <span className="text-[10px] font-mono text-cyan-300 uppercase font-bold shrink-0">Фокус-ефір:</span>
+        <div className="px-4 py-2.5 bg-white/[0.08] border-b border-white/[0.12] flex items-center gap-2 text-xs">
+          <span className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" />
+          <span className="text-xs font-mono text-zinc-200 uppercase font-bold shrink-0">Фокус-ефір:</span>
           <p className="text-zinc-200 text-xs truncate italic">
             {liveTranscript || activeQA?.question || 'Очікування мовлення співрозмовника...'}
           </p>
@@ -1008,46 +1200,80 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         className="flex-1 overflow-y-auto px-4 sm:px-5 py-5 space-y-4 scroll-smooth relative"
       >
         {!hasAnything && dialogueMessages.length === 0 && (
-          <div className="h-full min-h-[290px] flex flex-col items-center justify-center text-center gap-3.5 px-4">
-            <div className="w-14 h-14 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center shadow-[0_0_20px_rgba(255,255,255,0.03)]">
-              <Radio className="w-6 h-6 text-zinc-300" />
-            </div>
+          <div className="h-full min-h-[290px] flex flex-col items-center justify-center text-center gap-5 px-4">
             <div>
-              <p className="text-base font-semibold text-white">Live Dialogue is ready</p>
-              <p className="text-sm text-zinc-500 mt-1 max-w-sm">
-                Почніть слухати — кожна репліка інтерв&apos;юера та ваша відповідь з&apos;являться тут у реальному часі.
+              <p className="text-base font-semibold text-white">Готові за 3 кроки</p>
+              <p className="text-sm text-zinc-400 mt-1 max-w-sm">
+                Кожна репліка інтерв&apos;юера та готова відповідь з&apos;являться тут у реальному часі.
               </p>
             </div>
 
-            {/* Smart Intent Gate active indicator banner */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-950/40 border border-cyan-500/25 text-cyan-300 text-xs font-mono shadow-[0_0_15px_rgba(6,182,212,0.1)]">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
-              <span>Smart Intent Gate: Автоматичне розрізнення питань та монологів</span>
-            </div>
+            <ol className="w-full max-w-sm space-y-2 text-left">
+              {[
+                {
+                  n: 1,
+                  title: 'Додайте резюме',
+                  desc: candidateProfile?.cvContext ? `${candidateProfile.role || 'Профіль'} · резюме підключено` : 'ШІ говоритиме від вашого імені',
+                  done: Boolean(candidateProfile?.cvContext),
+                  action: () => setIsProfileOpen(true),
+                },
+                {
+                  n: 2,
+                  title: 'Перевірте звук',
+                  desc: 'Переконайтесь, що чути співрозмовника',
+                  done: false,
+                  action: () => setIsSoundCheckOpen(true),
+                },
+                {
+                  n: 3,
+                  title: 'Почніть запис',
+                  desc: 'Space — старт, далі все автоматично',
+                  done: false,
+                  action: () => handleStartCaptureRequest(),
+                  primary: true,
+                },
+              ].map((step) => (
+                <li key={step.n}>
+                  <button
+                    type="button"
+                    onClick={step.action}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-white/60 ${
+                      step.primary
+                        ? 'border-white/30 bg-white text-zinc-950 hover:bg-zinc-100 shadow-[0_0_24px_rgba(255,255,255,0.16)]'
+                        : 'liquid-glass-card hover:border-white/25 text-white'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md font-mono text-xs font-semibold ${
+                        step.primary ? 'bg-black/10 text-zinc-950' : step.done ? 'bg-emerald-400 text-zinc-950' : 'bg-white/10 text-zinc-200'
+                      }`}
+                    >
+                      {step.done ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : step.n}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold">{step.title}</span>
+                      <span className={`block truncate text-xs ${step.primary ? 'text-zinc-700' : 'text-zinc-400'}`}>{step.desc}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
 
-            <div className="flex flex-wrap justify-center gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => handleStartCaptureRequest()}
-                className="px-4 py-2 rounded-xl bg-white text-black text-xs font-mono font-bold hover:bg-zinc-200 transition cursor-pointer"
-              >
-                Почати запис
-              </button>
-              <button
-                type="button"
-                onClick={handleSampleQuestionClick}
-                className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/10 text-zinc-300 text-xs font-mono hover:bg-white/10 transition cursor-pointer flex items-center gap-1.5"
-              >
-                <Sparkles className="w-3 h-3 text-cyan-400" /> {hudT.sampleQuestionBtn}
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-zinc-400">
+              <button type="button" onClick={handleSampleQuestionClick} className="inline-flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer">
+                <Sparkles className="w-3.5 h-3.5" /> {hudT.sampleQuestionBtn}
               </button>
               <button
                 type="button"
                 onClick={handleSampleStoryClick}
-                className="px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono hover:bg-amber-500/20 transition cursor-pointer flex items-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
                 title="Перевірити як класифікатор буферизує довгу розповідь співрозмовника"
+                className="hover:text-white transition-colors cursor-pointer"
               >
-                <span>🧪 Тест монологу (WAIT)</span>
+                Тест монологу (WAIT)
               </button>
+              <span className="inline-flex items-center gap-1.5">
+                <kbd className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono">Ctrl/⌘ K</kbd> команди
+              </span>
             </div>
           </div>
         )}
@@ -1090,31 +1316,31 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           return (
             <div className="flex flex-col items-start animate-in fade-in duration-150">
               <div className="flex items-center gap-1.5 mb-1 px-1">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-cyan-950/60 text-cyan-300 border border-cyan-500/30">
+                <span className="liquid-glass-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-cyan-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                   Інтерв&apos;юер (наживо...)
                 </span>
                 {liveIntent.decision === 'WAIT_FOR_COMPLETION' && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-amber-950/60 text-amber-300 border border-amber-500/30 animate-pulse">
-                    <span className="w-1 h-1 rounded-full bg-amber-400" />
+                  <span className="liquid-glass-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-amber-200 animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-amber-300" />
                     <span>Слухаю розповідь...</span>
                   </span>
                 )}
                 {liveIntent.decision === 'TRIGGER_NOW' && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-950/60 text-emerald-300 border border-emerald-500/30 animate-pulse">
-                    <span className="w-1 h-1 rounded-full bg-emerald-400" />
-                    <span>⚡ Питання (0ms trigger)</span>
+                  <span className="liquid-glass-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium text-emerald-200 animate-pulse">
+                    <Zap className="w-3 h-3 text-emerald-300" />
+                    <span>Питання (0ms trigger)</span>
                   </span>
                 )}
                 {liveIntent.decision === 'IGNORE_NOISE' && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-zinc-800 text-zinc-400 border border-zinc-700">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white/[0.04] text-zinc-400 border border-white/[0.08]">
                     <span>Фільтр шуму</span>
                   </span>
                 )}
               </div>
-              <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tl-sm border border-dashed border-cyan-500/30 bg-cyan-950/15 text-sm italic text-zinc-400 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
+              <div className="liquid-glass-card max-w-[88%] px-4 py-3 rounded-2xl rounded-tl-sm border-dashed text-sm italic text-zinc-300">
                 {highlightTech(liveTranscript)}
-                <span className="inline-block w-1.5 h-4 bg-cyan-400 ml-1.5 align-middle animate-pulse" />
+                <span className="inline-block w-1.5 h-4 bg-cyan-300 ml-1.5 align-middle animate-pulse" />
               </div>
             </div>
           );
@@ -1123,29 +1349,30 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         {candidateLiveTranscript && (
           <div className="flex flex-col items-end animate-in fade-in duration-150">
             <div className="flex items-center gap-1.5 mb-1 px-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-950/60 text-emerald-300 border border-emerald-500/30">
+              <span className="liquid-glass-pill inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold text-emerald-200">
                 Ви (наживо...)
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
               </span>
             </div>
-            <div className="max-w-[88%] px-4 py-3 rounded-2xl rounded-tr-sm border border-dashed border-emerald-500/30 bg-white/[0.03] text-sm italic text-zinc-400 ml-auto">
+            <div className="liquid-glass-card max-w-[88%] px-4 py-3 rounded-2xl rounded-tr-sm border-dashed text-sm italic text-zinc-300 ml-auto">
               {candidateLiveTranscript}
-              <span className="inline-block w-1.5 h-4 bg-emerald-400 ml-1.5 align-middle animate-pulse" />
+              <span className="inline-block w-1.5 h-4 bg-emerald-300 ml-1.5 align-middle animate-pulse" />
             </div>
           </div>
         )}
 
         {isCapturing && !liveTranscript && !candidateLiveTranscript && dialogueMessages.length === 0 && (
-          <div className="text-center text-xs font-mono text-zinc-500 py-10 flex flex-col items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+          <div className="text-center text-xs font-mono text-zinc-400 py-10 flex flex-col items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.9)]" />
             {hudT.listeningPlaceholder}
             {!hasTabAudio && audioSource === 'tab' && (
               <button
                 type="button"
                 onClick={repickTabAudio}
-                className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-[11px] font-bold cursor-pointer"
+                className="liquid-glass-pill mt-2 px-3 py-1.5 rounded-lg text-amber-200 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
-                ⚠ Enable &quot;Share tab audio&quot;
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-300" />
+                <span>Enable &quot;Share tab audio&quot;</span>
               </button>
             )}
           </div>
@@ -1155,16 +1382,16 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         {isUserScrolledUp && (
           <button
             type="button"
-            onClick={() => scrollToBottom(true)}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#0d0f12]/95 border border-cyan-500/40 text-cyan-200 text-xs font-mono font-semibold shadow-lg backdrop-blur-md flex items-center gap-1.5 hover:bg-cyan-950/60 transition cursor-pointer z-20 animate-in fade-in"
+            onClick={() => scrollToBottom()}
+            className="liquid-glass-dock absolute bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full text-zinc-100 text-xs font-mono font-semibold flex items-center gap-1.5 hover:bg-white/[0.12] transition cursor-pointer z-20 animate-in fade-in"
           >
-            <ChevronDown className="w-3.5 h-3.5 animate-bounce" />
+            <ChevronDown className="w-3.5 h-3.5 animate-bounce text-cyan-300" />
             <span>Нові репліки</span>
           </button>
         )}
       </div>
 
-      <div className="px-4 py-3 border-t border-white/[0.06] bg-[#07080a]">
+      <div className="px-4 py-3 border-t border-white/[0.12] bg-white/[0.03] backdrop-blur-xl">
         {triggerMode === 'enter' && liveTranscript && (
           <button
             type="button"
@@ -1187,12 +1414,27 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           <input
             ref={manualInputRef}
             type="text"
-            placeholder="Запитати ШІ вручну... (Ctrl+K)"
-            className="flex-1 bg-white/[0.04] border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-cyan-500/60 font-mono transition-colors"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (manualInputRef.current && manualInputRef.current.value.trim()) {
+                  processAggregatedQuestion(manualInputRef.current.value.trim(), true);
+                  manualInputRef.current.value = '';
+                }
+              }
+            }}
+            placeholder="Запитати ШІ вручну… (Ctrl+K або /)"
+            className="flex-1 bg-white/[0.05] border border-white/[0.12] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-cyan-400/45 focus:bg-white/[0.08] font-mono transition-all backdrop-blur-md"
           />
           <button
-            type="submit"
-            className="px-3 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-semibold transition cursor-pointer shrink-0"
+            type="button"
+            onClick={() => {
+              if (manualInputRef.current && manualInputRef.current.value.trim()) {
+                processAggregatedQuestion(manualInputRef.current.value.trim(), true);
+                manualInputRef.current.value = '';
+              }
+            }}
+            className="liquid-glass-pill px-3 py-2 rounded-xl hover:bg-white/[0.14] text-zinc-100 text-xs font-mono font-semibold transition cursor-pointer shrink-0"
           >
             Enter ↵
           </button>
@@ -1201,25 +1443,28 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     </section>
   );
 
+  const isAnswerActiveOrStreaming = Boolean(isCopilotGenerating || activeQA?.isStreaming || activeQA || isFocusMode);
+
   const prompterPane = (
-    <section className="flex flex-col min-h-0 h-full rounded-3xl border border-white/[0.09] bg-[#0A0A0D] shadow-[0_24px_60px_rgba(0,0,0,0.6)] overflow-hidden relative">
-      <header className="flex items-center justify-between gap-2 px-5 py-3.5 border-b border-white/[0.06]">
+    <section className="liquid-glass-panel flex flex-col min-h-0 h-full rounded-2xl overflow-hidden relative">
+      <header className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-white/[0.10] bg-white/[0.025] backdrop-blur-xl">
         <div className="flex items-center gap-2.5 min-w-0">
-          <ScrollText className="w-4 h-4 text-zinc-400 shrink-0" />
-          <h2 className="text-[11px] font-mono font-bold uppercase tracking-[0.2em] text-zinc-300">Teleprompter</h2>
+          <ScrollText className="w-4 h-4 text-emerald-300 shrink-0" />
+          <h2 className="font-display text-xs font-bold uppercase tracking-[0.16em] text-white">AI TELEPROMPTER</h2>
           {isCopilotGenerating && (
-            <span className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" /> generating…
+            <span className="liquid-glass-pill px-2 py-0.5 rounded-full inline-flex items-center gap-1.5 text-xs font-mono text-cyan-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.85)]" />
+              <span>generating…</span>
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1 text-zinc-400">
+        <div className="flex items-center gap-1.5 text-zinc-400">
           {interviewQAs.length > 1 && (
             <>
               <button type="button" onClick={() => goToQA(1)} disabled={activeIndex >= interviewQAs.length - 1} className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30 cursor-pointer" title="Previous answer">
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-[10px] font-mono tabular-nums">
+              <span className="text-xs font-mono tabular-nums text-zinc-300">
                 {interviewQAs.length - activeIndex}/{interviewQAs.length}
               </span>
               <button type="button" onClick={() => goToQA(-1)} disabled={activeIndex <= 0} className="p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-30 cursor-pointer" title="Next answer">
@@ -1228,67 +1473,37 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               <span className="w-px h-4 bg-white/10 mx-1" />
             </>
           )}
-          {/* Focus Mode Quick Switcher */}
           <button
             type="button"
-            onClick={() => setIsFocusMode((prev) => !prev)}
-            className={`px-2 py-1 rounded-lg cursor-pointer transition flex items-center gap-1.5 text-xs font-mono font-medium ${
-              isFocusMode
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-[0_0_12px_rgba(6,182,212,0.25)] font-bold'
-                : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white border border-white/[0.08]'
+            onClick={handleToggleFreeze}
+            className={`px-2.5 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1.5 text-xs font-mono border ${
+              isFrozen
+                ? 'bg-cyan-500/20 text-cyan-100 border-cyan-300/35 shadow-[0_0_16px_rgba(34,211,238,0.2)]'
+                : 'liquid-glass-pill hover:bg-white/[0.14] text-zinc-200'
             }`}
-            title="Focus Mode (78% Prompter Width)"
+            title="Freeze / Unfreeze Teleprompter (Space)"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Focus</span>
-          </button>
-
-          {/* Typography Controls (A- / A+) */}
-          <div className="flex items-center gap-0.5 bg-white/[0.03] border border-white/[0.08] rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => setFontSize((s) => Math.max(14, s - 2))}
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-xs font-mono font-bold text-zinc-400 hover:text-white cursor-pointer"
-              title="Зменшити шрифт (A-)"
-            >
-              A-
-            </button>
-            <span className="text-[10px] font-mono w-4 text-center text-zinc-400 tabular-nums">{fontSize}</span>
-            <button
-              type="button"
-              onClick={() => setFontSize((s) => Math.min(30, s + 2))}
-              className="px-1.5 py-0.5 rounded hover:bg-white/10 text-xs font-mono font-bold text-zinc-400 hover:text-white cursor-pointer"
-              title="Збільшити шрифт (A+)"
-            >
-              A+
-            </button>
-          </div>
-
-          <button type="button" onClick={handleToggleFreeze} className={`ml-0.5 p-1.5 rounded-lg cursor-pointer transition ${isFrozen ? 'bg-cyan-500/20 text-cyan-300' : 'hover:bg-white/10'}`} title="Freeze (Space)">
             <Snowflake className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={handleTriggerBridge}
-            className={`p-1.5 rounded-lg cursor-pointer transition flex items-center gap-1 ${
-              isBridgeActive ? 'bg-amber-500/25 text-amber-300 border border-amber-500/35' : 'hover:bg-amber-500/15 text-amber-400'
-            }`}
-            title="Emergency Bridge Phrase [B] (Виграти час)"
-          >
-            <Zap className="w-3.5 h-3.5" />
-            <span className="text-[10px] font-mono hidden md:inline">Bridge [B]</span>
+            <span className="hidden sm:inline">{isFrozen ? 'Frozen' : 'Freeze'}</span>
+            {pendingNewCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded bg-cyan-300 text-zinc-950 font-bold text-xs tabular-nums">
+                +{pendingNewCount}
+              </span>
+            )}
           </button>
           {isPiPSupported && (
             <button
               type="button"
               onClick={togglePiP}
-              className={`p-1.5 rounded-lg cursor-pointer transition flex items-center gap-1 ${
-                isPiPOpen ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'hover:bg-white/10 text-zinc-300'
+              className={`px-2 py-1 rounded-lg cursor-pointer transition-all flex items-center gap-1 border ${
+                isPiPOpen
+                  ? 'bg-white/15 text-white border-white/30'
+                  : 'liquid-glass-pill hover:bg-white/[0.14] text-zinc-200'
               }`}
-              title="Always-on-Top Window (Document Picture-in-Picture) - поверх Zoom/Teams"
+              title="Always-on-Top Window (Document Picture-in-Picture)"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span className="text-[10px] font-mono hidden md:inline">PiP</span>
+              <span className="text-xs font-mono hidden md:inline">PiP</span>
             </button>
           )}
         </div>
@@ -1301,28 +1516,29 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       )}
 
       {isFrozen && (
-        <div className="px-5 py-2 bg-cyan-950/40 border-b border-cyan-500/20 flex items-center justify-between text-[11px] font-mono text-cyan-200">
-          <span className="flex items-center gap-2 font-bold uppercase tracking-wider">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> {hudAnswer.frozenBanner}
+        <div className="px-4 py-2 bg-cyan-950/35 border-b border-cyan-400/20 flex items-center justify-between text-xs font-mono text-cyan-100">
+          <span className="flex items-center gap-2 font-semibold uppercase tracking-wider">
+            <Snowflake className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+            <span>{hudAnswer.frozenBanner}</span>
           </span>
           {pendingNewCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">
-              +{pendingNewCount} {hudAnswer.newInQueue}
+            <span className="px-2 py-0.5 rounded-full bg-cyan-300 text-zinc-950 font-bold text-xs tabular-nums">
+              +{pendingNewCount} в черзі
             </span>
           )}
         </div>
       )}
 
-      <div ref={prompterRef} className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 scroll-smooth">
+      <div ref={prompterRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
         {/* Emergency Bridge Banner */}
         {isBridgeActive && bridgePhrase && (
-          <div className="mb-5 p-4 rounded-2xl bg-amber-500/15 border border-amber-500/35 text-amber-100 flex items-start gap-3 shadow-xl animate-in fade-in duration-150">
-            <Zap className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div className="space-y-1">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold block">
-                ⚡ Speak Now · Фраза для виграшу часу (Bridge):
+          <div className="liquid-glass-card mb-4 p-4 rounded-2xl border-cyan-400/30 text-zinc-100 flex items-start gap-3">
+            <MessageCircle className="w-4 h-4 text-cyan-300 shrink-0 mt-1" />
+            <div className="space-y-1.5 flex-1">
+              <span className="text-xs font-mono uppercase tracking-widest text-cyan-300 font-bold block">
+                Тягнути час · Bridge Phrase [5]
               </span>
-              <p className="text-sm sm:text-base font-semibold text-white leading-relaxed font-sans">
+              <p className="text-[calc(var(--hud-font,16px)*1.1)] leading-[1.58] font-medium text-white border-l-2 border-cyan-300 pl-3 font-sans">
                 {bridgePhrase}
               </p>
             </div>
@@ -1336,17 +1552,18 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="space-y-6"
-              style={{ fontSize }}
+              transition={{ type: 'spring', stiffness: 350, damping: 28, mass: 0.6 }}
+              className="space-y-4"
+              style={{ ['--hud-font' as string]: `${fontSize}px` }}
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-[11px] font-mono text-zinc-500 leading-relaxed flex-1" style={{ fontSize: 12 }}>
-                  Q · {activeQA.question}
+                <p className="text-xs font-mono text-zinc-300 leading-relaxed flex-1">
+                  Q · {stripRawMarkdownAsterisks(cleanStreamText(activeQA.question))}
                 </p>
                 {activeQA.isContinuationMerged && (
-                  <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 border border-amber-500/30 text-[10px] font-mono font-bold text-amber-300">
-                    ⚡ Уточнено
+                  <span className="liquid-glass-pill shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold text-cyan-200">
+                    <Zap className="w-3 h-3 text-cyan-300" />
+                    <span>Уточнено</span>
                   </span>
                 )}
               </div>
@@ -1354,33 +1571,33 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               {/* Context Badge from <<<META>>> and TTFT */}
               <div className="flex items-center gap-2 flex-wrap">
                 {activeQA.meta && (
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/[0.04] border border-white/10 text-[11px] font-mono text-zinc-300">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <div className="liquid-glass-pill inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono text-zinc-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
                     <span className="font-semibold text-white">{activeQA.meta.domain}</span>
-                    <span className="text-zinc-600">•</span>
+                    <span className="text-zinc-500">•</span>
                     <span className="text-zinc-300">{activeQA.meta.level}</span>
-                    <span className="text-zinc-600">•</span>
-                    <span className="text-cyan-300 uppercase tracking-wider font-semibold">{activeQA.meta.language}</span>
+                    <span className="text-zinc-500">•</span>
+                    <span className="text-zinc-200 uppercase tracking-wider font-semibold">{activeQA.meta.language}</span>
                   </div>
                 )}
                 {isActiveSpeculativeHit ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-[11px] font-mono font-bold text-amber-300 shadow-[0_0_12px_rgba(245,158,11,0.2)]">
-                    <Zap className="w-3 h-3 text-amber-400" />
-                    ⚡ 0ms Speculative Hit
+                  <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold text-emerald-200 border-emerald-400/35 tabular-nums">
+                    <Zap className="w-3 h-3 text-emerald-300" />
+                    <span>0ms Speculative Hit</span>
                   </span>
                 ) : activeQA.ttftMs !== undefined ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-700/60 text-[11px] font-mono font-semibold text-emerald-300">
-                    <Zap className="w-3 h-3 text-emerald-400" />
-                    TTFT {activeQA.ttftMs}ms
+                  <span className="liquid-glass-pill inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-mono font-semibold text-emerald-200 tabular-nums">
+                    <Zap className="w-3 h-3 text-emerald-300" />
+                    <span>TTFT {activeQA.ttftMs}ms</span>
                   </span>
                 ) : activeQA.isStreaming ? (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-950/70 border border-cyan-700/60 text-[11px] font-mono font-semibold text-cyan-300 animate-pulse">
+                  <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold text-cyan-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
                     STREAMING...
                   </span>
                 ) : null}
                 {activePatchSlot && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/15 border border-violet-400/35 text-[11px] font-mono font-semibold text-violet-200 animate-pulse">
+                  <span className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold text-violet-200">
                     <Sparkles className="w-3 h-3 text-violet-300" />
                     {activePatchSlot === 'deep_dive'
                       ? 'Patching Phase 3 · Hook & Pillars Frozen'
@@ -1392,63 +1609,65 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
               </div>
 
               {activeQA.nativeTranslation && (
-                <div className="space-y-1.5">
-                  <GlowBadge tone="indigo">{luxT.translation}</GlowBadge>
-                  <p className="font-semibold leading-[1.4] tracking-tight text-indigo-100">{activeQA.nativeTranslation}</p>
+                <div className="liquid-glass-card rounded-2xl p-4 space-y-1">
+                  <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold block">
+                    {luxT.translation}
+                  </span>
+                  <p className="text-zinc-300 text-xs italic leading-relaxed">{cleanStreamText(activeQA.nativeTranslation)}</p>
                 </div>
               )}
 
-              {/* Phase 1: HOOK / Opening Phrase (Rule of 2 Seconds) */}
+              {/* Phase 1: HOOK (dynamically scales via --hud-font) */}
               {mainAnswer && (
-                <div className="pl-4 py-3 border-l-4 border-l-amber-400/90 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.04] shadow-[0_4px_24px_rgba(245,158,11,0.06)] relative group">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="liquid-glass-card liquid-glass-card-active rounded-2xl p-4 sm:p-5 relative group">
+                  <div className="flex items-center justify-between mb-2.5">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold flex items-center gap-1.5">
-                        <Zap className="w-3.5 h-3.5 text-amber-400" /> Фаза 1 · Голосовий старт (Hook)
+                      <span className="text-xs font-mono uppercase tracking-widest text-emerald-300/95 font-bold flex items-center gap-1.5">
+                        <Zap className="w-3.5 h-3.5 text-emerald-300" /> PHASE 1 · Скажіть вголос
                       </span>
                       {activePatchSlot === 'deep_dive' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.12] text-xs font-mono text-zinc-300">
                           <Lock className="w-2.5 h-2.5" /> Frozen
                         </span>
                       )}
                       {activePatchSlot === 'hook_and_pillars' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.10] border border-white/[0.15] text-xs font-mono text-zinc-100">
                           Patching...
                         </span>
                       )}
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleCopy(mainAnswer, 'main')}
-                      className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                      onClick={() => handleCopy(cleanStreamText(mainAnswer), 'main')}
+                      className="p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
                       title="Копіювати"
                     >
-                      {copiedId === 'main' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedId === 'main' ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                   </div>
-                  <div className="text-[17px] sm:text-[19px] font-medium text-white leading-relaxed tracking-tight font-sans">
-                    {renderBilingualPhrase(mainAnswer)}
+                  <div className="border-l-2 border-emerald-400/80 pl-3.5 text-[calc(var(--hud-font,16px)*1.12)] leading-[1.58] font-medium text-white font-sans">
+                    {renderBilingualPhrase(mainAnswer, isBilingualOutput)}
                     {activeQA.isStreaming && (!activeQA.hints || activeQA.hints.length === 0) && (
-                      <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                      <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-emerald-300 animate-pulse align-middle" />
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Phase 2: PILLARS / Key Points (Spacious bullets with bold anchor keywords & voice karaoke) */}
+              {/* Phase 2: PILLARS (scales via --hud-font, optical glass cards) */}
               {activeQA.hints && activeQA.hints.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2 px-0.5">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-cyan-400" /> Фаза 2 · Ключові тези (Pillars)
+                <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono uppercase tracking-widest text-cyan-300/95 font-bold flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-cyan-300" /> PHASE 2 · Ключові тези
                     </span>
                     {activePatchSlot === 'deep_dive' && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.06] border border-white/[0.12] text-xs font-mono text-zinc-300">
                         <Lock className="w-2.5 h-2.5" /> Frozen
                       </span>
                     )}
                     {activePatchSlot === 'hook_and_pillars' && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.10] border border-white/[0.15] text-xs font-mono text-zinc-100">
                         Patching...
                       </span>
                     )}
@@ -1461,29 +1680,29 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                         <li
                           key={i}
                           onClick={() => togglePillarCompletion(activeQA.id, i)}
-                          className={`p-3 sm:p-3.5 rounded-xl border flex items-start gap-3 transition-all cursor-pointer select-none ${
+                          className={`p-3.5 rounded-xl border flex items-start gap-3 transition-all cursor-pointer select-none ${
                             isCompleted
-                              ? 'bg-emerald-500/[0.07] border-emerald-500/30 text-emerald-100/90'
+                              ? 'bg-white/[0.02] border-white/[0.06] text-zinc-400'
                               : isActive
-                              ? 'bg-cyan-500/[0.09] border-cyan-500/40 text-white shadow-[0_0_12px_rgba(6,182,212,0.15)]'
-                              : 'bg-white/[0.03] hover:bg-white/[0.05] border-white/[0.08] text-zinc-300'
+                              ? 'bg-white/[0.08] border-cyan-400/40 text-white shadow-[0_0_24px_-8px_rgba(34,211,238,0.28)]'
+                              : 'bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/25 border-white/[0.10] text-zinc-200'
                           }`}
                         >
                           <span
-                            className={`shrink-0 mt-0.5 w-5 h-5 rounded-md text-[10px] font-mono font-bold flex items-center justify-center transition-colors ${
+                            className={`shrink-0 mt-0.5 w-5 h-5 rounded-md text-xs font-mono font-bold flex items-center justify-center transition-colors ${
                               isCompleted
-                                ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-300'
+                                ? 'bg-emerald-400 text-zinc-950'
                                 : isActive
-                                ? 'bg-cyan-500/25 border border-cyan-400/50 text-cyan-200 ring-2 ring-cyan-500/40 animate-pulse'
-                                : 'bg-zinc-800/80 border border-white/10 text-zinc-400'
+                                ? 'bg-cyan-400/20 border border-cyan-300/45 text-cyan-100'
+                                : 'bg-white/[0.08] border border-white/[0.12] text-zinc-300'
                             }`}
                           >
-                            {isCompleted ? '✓' : i + 1}
+                            {isCompleted ? <Check className="w-3 h-3 stroke-[2.75]" /> : i + 1}
                           </span>
-                          <div className={`leading-[1.55] text-sm sm:text-base flex-1 ${isCompleted ? 'line-through opacity-75' : ''}`}>
-                            {formatPillarAnchor(hint)}
+                          <div className={`text-[var(--hud-font,16px)] leading-[1.55] text-zinc-100 flex-1 ${isCompleted ? 'line-through opacity-70' : ''}`}>
+                            {formatPillarAnchor(hint, isBilingualOutput)}
                             {activeQA.isStreaming && i === activeQA.hints.length - 1 && !activeQA.codeSnippet && (
-                              <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
+                              <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-300 animate-pulse align-middle" />
                             )}
                           </div>
                         </li>
@@ -1493,32 +1712,32 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 </div>
               )}
 
-              {/* Phase 3: DEEP DIVE & Collapsible Code Example */}
+              {/* Phase 3: DEEP DIVE (13.5px monospace with line numbers and 1-click Copy button) */}
               {((activeQA.codeSnippet && activeQA.codeSnippet.trim()) || activePatchSlot === 'deep_dive') && (
-                <div className="rounded-2xl border border-white/[0.08] bg-[#050608] overflow-hidden">
-                  <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06] flex items-center justify-between">
+                <div className="liquid-glass-card rounded-2xl p-4 overflow-hidden space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setIsCodeExpanded((prev) => !prev)}
-                        className="flex items-center gap-2 text-xs font-mono font-semibold text-emerald-400 hover:text-emerald-300 cursor-pointer"
+                        className="flex items-center gap-2 text-xs font-mono font-semibold text-zinc-200 hover:text-white cursor-pointer"
                       >
-                        <Code2 className="w-3.5 h-3.5" />
-                        <span>Фаза 3 · Код / Реалізація</span>
+                        <Code2 className="w-3.5 h-3.5 text-sky-300" />
+                        <span>PHASE 3 · Код / Реалізація</span>
                         {activeQA.codeSnippet?.trim() && (
-                          <span className="text-[10px] text-zinc-500 font-normal">
-                            ({activeQA.codeSnippet.trim().split('\n').length} рядків)
+                          <span className="text-xs text-zinc-400 font-normal tabular-nums">
+                            ({cleanStreamText(activeQA.codeSnippet).trim().split('\n').length} рядків)
                           </span>
                         )}
                         {isCodeExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                       </button>
                       {activePatchSlot === 'deep_dive' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 text-[9px] font-mono text-violet-300 animate-pulse">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-zinc-200">
                           Patching slot...
                         </span>
                       )}
                       {activePatchSlot === 'hook_and_pillars' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/10 text-[9px] font-mono text-zinc-400">
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-mono text-zinc-400">
                           <Lock className="w-2.5 h-2.5" /> Frozen
                         </span>
                       )}
@@ -1527,51 +1746,65 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                       {activeQA.codeSnippet?.trim() && (
                         <button
                           type="button"
-                          onClick={() => handleCopy(activeQA.codeSnippet!, 'code')}
-                          className="text-[10px] font-mono text-zinc-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                          onClick={() => handleCopy(cleanStreamText(activeQA.codeSnippet!), 'code')}
+                          className="liquid-glass-pill text-xs font-mono text-zinc-200 hover:text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 cursor-pointer"
                         >
-                          {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                           <span>{copiedId === 'code' ? 'Copied' : hudAnswer.copy}</span>
                         </button>
                       )}
                     </div>
                   </div>
                   {(isCodeExpanded || activePatchSlot === 'deep_dive') && (
-                    <div className="p-4 text-zinc-200 font-mono overflow-x-auto leading-relaxed max-h-[380px] scrollbar-thin text-xs sm:text-sm divide-y divide-white/[0.03]">
-                      {activeQA.codeSnippet && activeQA.codeSnippet.trim() ? (
-                        activeQA.codeSnippet.trim().split('\n').map((lineText, idx) => {
-                          const lineExplanation = activeQA.lineExplanations?.[idx];
-                          return (
-                            <div key={idx} className="group">
-                              <div
-                                onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
-                                className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
-                                title="Клікніть для пояснення рядка (explain_line)"
-                              >
-                                <span className="shrink-0 select-none text-[11px] font-mono text-zinc-600 group-hover:text-cyan-400 w-6 text-right">
-                                  {idx + 1}
-                                </span>
-                                <code className="flex-1 whitespace-pre">{lineText || ' '}</code>
-                              </div>
-                              {lineExplanation && (
-                                <div className="my-1.5 ml-9 mr-2 p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-xs text-cyan-200 leading-relaxed animate-in fade-in">
-                                  <span className="font-mono text-[10px] text-cyan-300 font-bold mr-1.5 uppercase">⚡ Пояснення (explain_line):</span>
-                                  {lineExplanation}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="space-y-2 py-1 animate-pulse">
-                          <div className="h-3.5 rounded bg-white/[0.06] w-3/4" />
-                          <div className="h-3.5 rounded bg-white/[0.05] w-5/6" />
-                          <div className="h-3.5 rounded bg-white/[0.04] w-2/3" />
+                    <div className="rounded-2xl bg-[#04060c]/90 border border-white/[0.12] overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+                      {/* macOS / Linear Window Bar */}
+                      <div className="flex items-center justify-between px-3.5 py-2 bg-white/[0.03] border-b border-white/[0.08]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-rose-400/75" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-400/75" />
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/75" />
+                          <span className="ml-2 text-xs font-mono text-zinc-400">solution.ts</span>
                         </div>
-                      )}
-                      {activeQA.isStreaming && (
-                        <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.9)] animate-pulse align-middle" />
-                      )}
+                        <span className="text-xs font-mono text-zinc-400">Click line to explain</span>
+                      </div>
+                      <div className="p-3 text-zinc-100 font-mono text-[13.5px] overflow-x-auto leading-[1.6] max-h-[380px] custom-scrollbar">
+                        {activeQA.codeSnippet && activeQA.codeSnippet.trim() ? (
+                          cleanStreamText(activeQA.codeSnippet).trim().split('\n').map((lineText, idx) => {
+                            const lineExplanation = activeQA.lineExplanations?.[idx];
+                            return (
+                              <div key={idx} className="group">
+                                <div
+                                  onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
+                                  className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
+                                  title="Клікніть для пояснення рядка (explain_line)"
+                                >
+                                  <span className="shrink-0 select-none text-xs font-mono tabular-nums text-zinc-500 group-hover:text-cyan-300 w-7 text-right">
+                                    {idx + 1}
+                                  </span>
+                                  <code className="flex-1 whitespace-pre text-[13.5px] font-mono">{lineText || ' '}</code>
+                                </div>
+                                {lineExplanation && (
+                                  <div className="liquid-glass-pill my-1.5 ml-10 mr-2 p-2.5 rounded-xl text-xs text-zinc-100 leading-relaxed">
+                                    <span className="inline-flex items-center gap-1 font-mono text-xs text-cyan-300 font-bold mr-1.5 uppercase">
+                                      <Zap className="w-3 h-3" /> Пояснення:
+                                    </span>
+                                    {lineExplanation}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <div className="space-y-2 py-1 animate-pulse">
+                            <div className="h-3.5 rounded bg-white/[0.08] w-3/4" />
+                            <div className="h-3.5 rounded bg-white/[0.06] w-5/6" />
+                            <div className="h-3.5 rounded bg-white/[0.05] w-2/3" />
+                          </div>
+                        )}
+                        {activeQA.isStreaming && (
+                          <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-300 animate-pulse align-middle" />
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1582,93 +1815,100 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 activeQA.codeSnippet?.includes('Повторить запрос') ||
                 activeQA.startHook?.includes('ШІ тимчасово') ||
                 activeQA.startHook?.includes('AI connection timed out')) && (
-                <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 to-amber-950/20 p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-[0_0_20px_rgba(245,158,11,0.15)] animate-in fade-in">
-                  <div className="flex items-center gap-2 text-xs text-amber-200">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <div className="liquid-glass-card border-amber-400/35 rounded-2xl p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-amber-100">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                     <span>Мережевий запит до ШІ тимчасово затримався. Повторіть генерацію в 1 клік:</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => processAggregatedQuestion(activeQA.question, true)}
-                    className="shrink-0 px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-zinc-950 font-bold text-xs flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition cursor-pointer shadow-lg shadow-amber-500/20"
+                    className="shrink-0 px-4 py-2 rounded-xl bg-white hover:bg-zinc-100 text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow"
                   >
-                    <span>🔄 Повторити запит (1 клік)</span>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Повторити запит (1 клік)</span>
                   </button>
                 </div>
               )}
 
               {/* Phase 4: Follow-Up Trap Shield (<<<PHASE_4:TRAP>>>) */}
               {activeQA.followUpTrap && (activeQA.followUpTrap.question || activeQA.followUpTrap.answer) && (
-                <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/[0.08] to-transparent p-4 space-y-2">
+                <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 space-y-2.5">
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
-                      Фаза 4 · Пастка інтервʼюера (Follow-Up Shield)
+                    <span className="w-2 h-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.85)]" />
+                    <span className="text-xs font-mono font-bold tracking-wider uppercase text-violet-200">
+                      PHASE 4 · Пастка інтервʼюера (Follow-Up Shield)
                     </span>
                   </div>
                   {activeQA.followUpTrap.question && (
-                    <div className="text-xs sm:text-sm font-medium text-amber-200/90 leading-relaxed">
-                      <strong className="text-amber-300 font-semibold mr-1">Q:</strong>
-                      {activeQA.followUpTrap.question}
+                    <div className="text-[var(--hud-font,16px)] leading-[1.55] font-medium text-white">
+                      <strong className="text-zinc-400 font-mono text-xs font-semibold mr-1.5">Q:</strong>
+                      {stripRawMarkdownAsterisks(cleanStreamText(activeQA.followUpTrap.question))}
                     </div>
                   )}
                   {activeQA.followUpTrap.answer && (
-                    <div className="text-xs sm:text-sm text-zinc-300 leading-relaxed bg-black/30 p-2.5 rounded-xl border border-white/[0.05]">
-                      <strong className="text-emerald-400 font-semibold mr-1">A:</strong>
-                      {activeQA.followUpTrap.answer}
+                    <div className="text-[var(--hud-font,16px)] leading-[1.55] text-zinc-200 bg-white/[0.04] p-3.5 rounded-xl border border-white/[0.10]">
+                      <strong className="text-zinc-400 font-mono text-xs font-semibold mr-1.5">A:</strong>
+                      {stripRawMarkdownAsterisks(cleanStreamText(activeQA.followUpTrap.answer))}
                     </div>
                   )}
                 </div>
               )}
 
               {activeQA.deliveryTip && (
-                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-violet-500/[0.06] border border-violet-500/20 text-violet-200 text-xs">
-                  <Lightbulb className="w-4 h-4 mt-0.5 shrink-0 text-violet-400" />
+                <div className="liquid-glass-card flex items-start gap-2.5 p-4 rounded-2xl text-zinc-200 text-xs">
+                  <Lightbulb className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
                   <span className="leading-relaxed">
                     <strong className="text-white font-semibold">Delivery Tip: </strong>
-                    {activeQA.deliveryTip}
+                    {stripRawMarkdownAsterisks(cleanStreamText(activeQA.deliveryTip))}
                   </span>
                 </div>
               )}
-
-              <div className="pt-4 border-t border-white/[0.06] flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 mr-1" style={{ fontSize: 10 }}>
-                  1-Click Модифікатори:
-                </span>
-                {TARGET_MODIFIERS.map((mod) => (
-                  <button
-                    key={mod.key}
-                    type="button"
-                    disabled={isCopilotGenerating}
-                    onClick={() => {
-                      if (mod.key === 'code' || mod.key === 'under_the_hood') {
-                        setIsCodeExpanded(true);
-                      }
-                      handleRefineQA(activeQA.id, mod.key);
-                    }}
-                    title={mod.tooltip}
-                    className="px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/20 text-zinc-200 hover:text-white transition-all disabled:opacity-40 cursor-pointer font-mono text-xs flex items-center gap-1 shadow-sm active:scale-95"
-                  >
-                    <span>{mod.label}</span>
-                    <kbd className="text-[9px] font-mono text-zinc-500 bg-white/[0.04] px-1 rounded ml-1">{mod.hotkey}</kbd>
-                  </button>
-                ))}
-              </div>
             </motion.article>
           ) : isCopilotGenerating ? (
-            <div className="space-y-3 animate-pulse">
-              <div className="h-5 rounded bg-white/[0.07] w-11/12" />
-              <div className="h-5 rounded bg-white/[0.07] w-9/12" />
-              <div className="h-5 rounded bg-white/[0.05] w-10/12" />
+            <div className="liquid-glass-card rounded-2xl p-4 space-y-3 animate-pulse">
+              <div className="h-5 rounded bg-white/[0.09] w-11/12" />
+              <div className="h-5 rounded bg-white/[0.09] w-9/12" />
+              <div className="h-5 rounded bg-white/[0.06] w-10/12" />
             </div>
           ) : (
-            <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center text-zinc-600 gap-2">
-              <ScrollText className="w-8 h-8" />
-              <p className="text-sm">The answer will appear here</p>
+            <div className="h-full min-h-[260px] flex flex-col items-center justify-center text-center text-zinc-400 gap-2">
+              <ScrollText className="w-8 h-8 text-cyan-300/70" />
+              <p className="text-sm text-zinc-300">Очікую запитання — відповідь з&apos;явиться тут у 3 фазах</p>
             </div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* In 100% Focus mode, provide compact manual question bar without needing the left column */}
+      {isFullTeleprompter && (
+        <div className="px-4 py-2.5 border-t border-white/[0.10] bg-white/[0.025] backdrop-blur-xl">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const inp = e.currentTarget.elements.namedItem('focusPrompt') as HTMLInputElement | null;
+              if (inp && inp.value.trim()) {
+                processAggregatedQuestion(inp.value.trim(), true);
+                inp.value = '';
+              }
+            }}
+            className="flex items-center gap-2 max-w-2xl mx-auto"
+          >
+            <input
+              name="focusPrompt"
+              type="text"
+              placeholder="Запитати ШІ вручну у Фокус-режимі..."
+              className="flex-1 bg-white/[0.05] border border-white/[0.12] rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-400 focus:outline-none focus:border-cyan-400/45 font-mono"
+            />
+            <button
+              type="submit"
+              className="liquid-glass-pill px-3 py-2 rounded-xl hover:bg-white/[0.14] text-zinc-100 text-xs font-mono font-semibold transition cursor-pointer shrink-0"
+            >
+              Enter ↵
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* Floating Return to Current Live Answer Pill */}
       {interviewQAs.length > 0 && activeQA && activeQA.id !== interviewQAs[0].id && (
@@ -1676,19 +1916,25 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           type="button"
           onClick={() => {
             setActiveQAId(interviewQAs[0].id);
-            prompterRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            if (prompterRef.current) {
+              prompterRef.current.scrollTop = 0;
+            }
           }}
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-[#0d0f12]/95 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-bold shadow-[0_8px_32px_rgba(16,185,129,0.3)] backdrop-blur-md flex items-center gap-2 hover:bg-emerald-950/80 hover:scale-105 active:scale-95 transition-all cursor-pointer z-30 animate-in fade-in"
+          className="liquid-glass-dock absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full border-emerald-400/35 text-white text-xs font-mono font-semibold flex items-center gap-2 hover:bg-white/[0.14] transition-all cursor-pointer z-30"
         >
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>🟢 Повернутися до поточної відповіді</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.95)]" />
+          <span>Повернутися до поточної відповіді</span>
         </button>
       )}
     </section>
   );
 
   return (
-    <SubpageStripesContainer pattern="horizon" glowIntensity={0.05} className="font-sans relative selection:bg-white/20 selection:text-white">
+    <SubpageStripesContainer
+      pattern="horizon"
+      glowIntensity={0.08}
+      className="stealth-bg font-sans relative selection:bg-cyan-400/25 selection:text-white overflow-x-hidden"
+    >
       <StealthDisguise
         isActive={isPanicShieldActive}
         onDeactivate={() => {
@@ -1696,40 +1942,357 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
           onPanicExit?.();
         }}
       />
-      <EyelineNotch
-        isCapturing={isCapturing}
-        sttStatus={sttStatus}
-        isFrozen={isFrozen}
-        isGenerating={isCopilotGenerating}
-        level={liveVolume}
-        activeQA={activeQA ?? null}
-        aiLanguageMode={aiLanguageMode}
-        onAiLanguageChange={handleAiLanguageChange}
-        onToggleFreeze={handleToggleFreeze}
-        onManualReconnect={handleManualReconnect}
-        onPanic={() => setIsPanicShieldActive((p) => !p)}
-        onScreenshot={handleTriggerScreenshot}
-        targetStack={candidateProfile?.role || 'React / Next.js'}
-        onExitSession={() => {
-          if (isCapturing) {
-            handleStop();
-          }
-          router.push('/');
-        }}
-      />
-      {isEyeLineActive && (
-        <EyeLineTeleprompter activeQA={activeQA} onClose={() => setIsEyeLineActive(false)} isCapturing={isCapturing} />
-      )}
+
+      {/* TOP DYNAMIC ISLAND CAPSULE — Apple Spatial Glass Bar */}
+      <header className="fixed top-2 inset-x-0 z-40 px-2 sm:px-4 pointer-events-none select-none">
+        <div className="pointer-events-auto max-w-[1520px] mx-auto px-3 sm:px-4 py-1.5 rounded-2xl bg-[#090b11]/82 backdrop-blur-2xl border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_16px_44px_rgba(0,0,0,0.75)] flex items-center justify-between gap-2">
+          {/* LEFT: Logo Quick Exit + Stack/Profile Selector + Audio Equalizer */}
+          <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <Link
+              href="/"
+              onClick={() => {
+                if (isCapturing) handleStop();
+              }}
+              className="flex items-center gap-2 px-2 py-1 rounded-xl hover:bg-white/[0.08] transition-colors shrink-0"
+              title="На головну Ghostboard"
+            >
+              <GhostDetectiveLogo size="mini" />
+              <span className="hidden md:inline font-display text-xs font-bold tracking-tight text-white">
+                Ghostboard
+              </span>
+            </Link>
+
+            <span className="hidden sm:block h-4 w-px bg-white/12" />
+
+            {/* Profile / Stack Quick Pill */}
+            <button
+              type="button"
+              onClick={() => setIsProfileOpen(true)}
+              title="Змінити стек / профіль кандидата"
+              className="liquid-glass-pill hidden sm:inline-flex items-center gap-1.5 py-1 px-2.5 rounded-xl hover:bg-white/[0.12] text-xs font-mono text-zinc-100 max-w-[180px] cursor-pointer transition-colors"
+            >
+              <User className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span className="truncate">{candidateProfile?.role || 'Full-Stack'}</span>
+            </button>
+
+            <div
+              ref={vuMeterRef}
+              className="flex items-end gap-0.5 h-4 px-1"
+              title="Рівень аудіо"
+            >
+              <span className="w-1 bg-emerald-400 rounded-full transition-all duration-75" style={{ height: 'var(--vu-1, 20%)' }} />
+              <span className="w-1 bg-cyan-400 rounded-full transition-all duration-75" style={{ height: 'var(--vu-2, 35%)' }} />
+              <span className="w-1 bg-cyan-300 rounded-full transition-all duration-75" style={{ height: 'var(--vu-3, 25%)' }} />
+              <span className="w-1 bg-white rounded-full transition-all duration-75" style={{ height: 'var(--vu-4, 15%)' }} />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = audioSource === 'tab' ? 'mic' : 'tab';
+                setAudioSource(next);
+              }}
+              title="Перемкнути режим каналів (Інтерв'юер / 2 Канали)"
+              className="liquid-glass-pill min-h-7 py-1 px-2.5 rounded-xl hover:bg-white/[0.12] text-xs font-mono font-medium text-zinc-100 flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              {audioSource === 'tab' ? (
+                <>
+                  <GitMerge className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                  <span className="hidden lg:inline">2 Канали</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                  <span className="hidden lg:inline">Інтерв&apos;юер</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* CENTER: Live Sound + Latency Capsule */}
+          <div className="flex items-center justify-center min-w-0">
+            <button
+              type="button"
+              onClick={handleToggleFreeze}
+              title="Клікніть або натисніть Space для заморозки / розморозки суфлера"
+              className={`min-h-7 py-1 px-3 rounded-full text-xs font-mono flex items-center gap-2 truncate cursor-pointer transition-all border ${
+                isFrozen
+                  ? 'bg-cyan-500/20 border-cyan-300/35 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.2)]'
+                  : 'liquid-glass-pill hover:border-white/30 text-zinc-100'
+              }`}
+            >
+              {isFrozen ? (
+                <>
+                  <Snowflake className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+                  <span>Frozen (Space)</span>
+                  {pendingNewCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-cyan-300 text-zinc-950 font-bold text-xs tabular-nums">
+                      +{pendingNewCount}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="inline-flex items-center gap-2 tabular-nums">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className={`absolute inline-flex h-full w-full rounded-full ${isCapturing ? 'bg-emerald-400 animate-ping opacity-75' : 'bg-zinc-500 opacity-0'}`} />
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${isCapturing ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]' : 'bg-emerald-400/75'}`} />
+                  </span>
+                  <span>{isCapturing ? 'Слухаю' : 'Готовий'}</span>
+                  <span className="text-zinc-500">·</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold">
+                    <Zap className="w-3 h-3" />
+                    {activeQA?.ttftMs ? `${activeQA.ttftMs}ms` : '180ms'}
+                  </span>
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* RIGHT: Mode + Focus (Tab) + Panic (F12) + Tidy Options Popover */}
+          <div className="flex items-center gap-1.5 shrink-0" ref={optionsMenuRef}>
+            <button
+              type="button"
+              onClick={() => handleToggleTriggerModeRef.current()}
+              title="Режим тригера відповіді (Авто / Enter) [M]"
+              className="liquid-glass-pill hidden xl:inline-flex min-h-7 py-1 px-2.5 rounded-xl hover:bg-white/[0.12] text-xs font-mono font-medium text-zinc-200 items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <span>{triggerMode === 'auto' ? 'Авто' : 'По Enter'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFullTeleprompter((v) => !v)}
+              title="Перемкнути 100% ширину суфлера (Tab)"
+              className={`min-h-7 py-1 px-2.5 rounded-xl border text-xs font-mono font-medium transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                isFullTeleprompter
+                  ? 'bg-white text-zinc-950 border-white font-semibold shadow-[0_0_18px_rgba(255,255,255,0.22)]'
+                  : 'liquid-glass-pill hover:bg-white/[0.12] text-zinc-100'
+              }`}
+            >
+              {isFullTeleprompter ? (
+                <PanelLeftClose className="w-3.5 h-3.5 text-zinc-900" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5 text-zinc-300" />
+              )}
+              <span className="hidden sm:inline">Фокус (Tab)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsPanicShieldActive((p) => !p)}
+              title="Миттєво сховати HUD [F12]"
+              className="liquid-glass-pill min-h-7 py-1 px-2.5 rounded-xl hover:bg-rose-500/20 hover:border-rose-400/40 text-xs font-mono font-medium text-zinc-100 hover:text-white transition-all cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
+              <span className="hidden sm:inline">Паніка (F12)</span>
+            </button>
+
+            {/* Options Dropdown Popover */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsOptionsOpen((o) => !o)}
+                aria-expanded={isOptionsOpen}
+                className={`min-h-7 py-1 px-2.5 rounded-xl border text-xs font-mono font-medium transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  isOptionsOpen
+                    ? 'bg-white/15 text-white border-white/30 backdrop-blur-xl'
+                    : 'liquid-glass-pill hover:bg-white/[0.12] text-zinc-100'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-300" />
+                <span className="hidden sm:inline">Опції</span>
+              </button>
+
+              {isOptionsOpen && (
+                <div className="liquid-glass-dock absolute right-0 top-11 w-80 sm:w-[340px] rounded-2xl p-4 space-y-3.5 z-50 border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_28px_70px_rgba(0,0,0,0.9)]">
+                  {/* Stacked Header — Zero Collision with long Role names */}
+                  <div className="border-b border-white/[0.10] pb-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-display text-sm font-semibold text-white">
+                        Опції телепромптера
+                      </span>
+                      <span className="text-xs font-mono text-zinc-400">
+                        {candidateProfile?.level?.toUpperCase() || 'SENIOR'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(true);
+                        setIsOptionsOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/15 border border-cyan-400/20 text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-xs font-mono text-cyan-300 truncate">
+                        {candidateProfile?.role || 'Full-Stack Developer'}
+                      </span>
+                      <span className="text-[11px] font-mono text-zinc-300 shrink-0">Змінити →</span>
+                    </button>
+                  </div>
+
+                  {/* Мова відповідей */}
+                  <div className="space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-300 block">Мова відповідей</span>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { id: 'auto', label: 'Авто' },
+                        { id: 'bilingual_uk', label: 'Bilingual (EN+UA)' },
+                        { id: 'uk', label: 'Українська' },
+                        { id: 'en', label: 'English' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => handleAiLanguageChange(opt.id)}
+                          className={`py-1.5 px-2.5 rounded-xl border text-xs font-mono transition-all cursor-pointer ${
+                            aiLanguageMode === opt.id
+                              ? 'bg-white text-zinc-950 border-white font-semibold shadow-sm'
+                              : 'bg-white/[0.04] border-white/[0.10] text-zinc-200 hover:bg-white/[0.09]'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Режим тригера + Прозорість */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="text-xs text-zinc-300">Авто-відповідь AI</span>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTriggerModeRef.current()}
+                      className="px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-mono text-white cursor-pointer"
+                    >
+                      {triggerMode === 'auto' ? 'Авто (Silent)' : 'Вручну (Enter)'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-300">Прозорість HUD</span>
+                      <span className="font-mono tabular-nums text-zinc-200">{hudOpacity}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={50}
+                      max={100}
+                      step={5}
+                      value={hudOpacity}
+                      onChange={(e) => setHudOpacity(Number(e.target.value))}
+                      className="w-full accent-cyan-300 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Розмір шрифту */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-300">Розмір тексту</span>
+                      <span className="font-mono tabular-nums text-zinc-200">{fontSize}px</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setFontSize((s) => Math.max(14, s - 2))}
+                        className="flex-1 py-1.5 rounded-xl border border-white/[0.12] bg-white/[0.05] text-xs font-mono text-zinc-100 hover:bg-white/[0.12] transition-colors cursor-pointer"
+                      >
+                        A-
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFontSize((s) => Math.min(30, s + 2))}
+                        className="flex-1 py-1.5 rounded-xl border border-white/[0.12] bg-white/[0.05] text-xs font-mono text-zinc-100 hover:bg-white/[0.12] transition-colors cursor-pointer"
+                      >
+                        A+
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Secondary Actions */}
+                  <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-white/[0.10]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleTriggerScreenshot();
+                        setIsOptionsOpen(false);
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-100 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-sky-300" />
+                      <span>Скріншот</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(true);
+                        setIsOptionsOpen(false);
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-100 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <User className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>Профіль</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSoundCheckOpen(true);
+                        setIsOptionsOpen(false);
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-100 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Headphones className="w-3.5 h-3.5 text-cyan-300" />
+                      <span>Звук</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsHistoryOpen(true);
+                        setIsOptionsOpen(false);
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-100 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <History className="w-3.5 h-3.5 text-violet-300" />
+                      <span>Історія</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCompanionQROpen(true);
+                        setIsOptionsOpen(false);
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-100 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <QrCode className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Companion</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isCapturing) handleStop();
+                        router.push('/');
+                      }}
+                      className="px-2.5 py-2 rounded-xl border border-white/[0.10] bg-white/[0.04] hover:bg-white/[0.10] text-xs text-zinc-200 inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Вихід</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
 
       {/* Mobile tab switcher */}
       <div className="lg:hidden relative z-10 px-4 pt-16">
-        <div className="grid grid-cols-2 p-1 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs font-mono">
+        <div className="liquid-glass-pill grid grid-cols-2 p-1 rounded-xl text-xs font-mono">
           {(['hearing', 'prompter'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setMobileTab(tab)}
-              className={`py-2 rounded-lg transition cursor-pointer ${mobileTab === tab ? 'bg-white text-black font-bold' : 'text-zinc-400'}`}
+              className={`py-2 rounded-lg transition cursor-pointer ${mobileTab === tab ? 'bg-white text-zinc-950 font-bold shadow' : 'text-zinc-300'}`}
             >
               {tab === 'hearing' ? 'Dialogue' : 'Teleprompter'}
             </button>
@@ -1737,30 +2300,50 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         </div>
       </div>
 
-      <main className="relative z-10 mx-auto w-full max-w-[1500px] px-3 sm:px-6 pt-14 sm:pt-16 pb-28 h-[calc(100vh-2rem)] min-h-[520px]">
-        <div className={`hidden lg:grid h-full gap-4 transition-all duration-300 ease-out ${
-          isFocusMode
-            ? 'grid-cols-[minmax(0,2.6fr)_minmax(0,9.4fr)]'
-            : 'grid-cols-[minmax(0,5fr)_minmax(0,7fr)]'
-        }`}>
-          {hearingPane}
-          {prompterPane}
+      <main
+        className="relative z-10 mx-auto w-full max-w-[1560px] px-3 sm:px-6 pt-4 lg:pt-16 pb-24 h-[calc(100vh-1rem)] min-h-[520px]"
+        style={{ opacity: hudOpacity / 100 }}
+      >
+        <div className="hidden lg:flex h-full gap-4">
+          {!isFullTeleprompter && (
+            <div
+              className={`${
+                isAnswerActiveOrStreaming ? 'w-[26%]' : 'w-[38%]'
+              } h-full min-w-[260px] transition-all duration-200 ease-out`}
+            >
+              {hearingPane}
+            </div>
+          )}
+          <div
+            className={`${
+              isFullTeleprompter ? 'w-full' : isAnswerActiveOrStreaming ? 'w-[74%]' : 'w-[62%]'
+            } h-full transition-all duration-200 ease-out`}
+          >
+            {prompterPane}
+          </div>
         </div>
         <div className="lg:hidden h-full">{mobileTab === 'hearing' ? hearingPane : prompterPane}</div>
       </main>
 
       <StealthCommandDock
         isCapturing={isCapturing}
+        isFrozen={isFrozen}
+        pendingNewCount={pendingNewCount}
         triggerMode={triggerMode}
         audioSource={audioSource}
         sessionDuration={sessionDuration}
         hasActiveQA={!!activeQA}
         isRefining={isCopilotGenerating}
-        onRefineQA={(key) => activeQA && handleRefineQA(activeQA.id, key)}
+        onToggleFreeze={handleToggleFreeze}
+        onTriggerBridge={handleTriggerBridge}
+        onRefineQA={(key) => {
+          if (key === 'code') setIsCodeExpanded(true);
+          if (activeQA) handleRefineQA(activeQA.id, key);
+        }}
         onToggleAudioSource={() => {
           const next = audioSource === 'tab' ? 'mic' : 'tab';
           setAudioSource(next);
-          toast.info(next === 'tab' ? '🌐 Meeting tab + Microphone' : '🎙️ System microphone only');
+          toast.info(next === 'tab' ? '2 Канали: Meeting tab + Microphone' : 'Інтервʼюер: Microphone only');
         }}
         onAnswerNow={() => handleManualEnterTriggerRef.current()}
         onStartCapture={handleStartCaptureRequest}
@@ -1803,7 +2386,9 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         candidateLiveTranscript={candidateLiveTranscript}
       />
 
-      <TrialLimitModal
+      <CommandPalette isOpen={isPaletteOpen} onClose={() => setIsPaletteOpen(false)} commands={paletteCommands} />
+
+      <TrialLimitBanner
         isOpen={showTrialLimitModal}
         onClose={() => setShowTrialLimitModal(false)}
         onUpgradeToPro={() => router.push('/pricing')}

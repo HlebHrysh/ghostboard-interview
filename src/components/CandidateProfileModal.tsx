@@ -777,9 +777,9 @@ export default function CandidateProfileModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-2xl animate-in fade-in duration-200">
-      {/* Outer Obsidian Modal Window */}
-      <div className="relative w-full max-w-4xl bg-black border border-white/[0.12] rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.9),0_0_30px_rgba(255,255,255,0.03)] text-zinc-100 max-h-[92dvh] flex flex-col overflow-hidden ring-1 ring-white/[0.05]">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-2xl animate-in fade-in duration-200">
+      {/* Outer Apple Spatial Glass Modal Window */}
+      <div className="spatial-glass-window relative w-full max-w-4xl bg-[#090b10]/92 backdrop-blur-3xl border border-white/[0.12] rounded-3xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_30px_90px_rgba(0,0,0,0.9)] text-zinc-100 max-h-[92dvh] flex flex-col overflow-hidden">
         
         {/* Subtle Kinetic Pinstripe Canvas Layer */}
         <div
@@ -792,7 +792,7 @@ export default function CandidateProfileModal({
         />
 
         {/* Modal Header */}
-        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[#07070b]/90 backdrop-blur-xl flex-shrink-0">
+        <div className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-white/[0.02] backdrop-blur-xl flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-zinc-200 shadow-inner">
               <User className="w-4 h-4 text-white" />
@@ -802,7 +802,7 @@ export default function CandidateProfileModal({
                 <h3 className="text-base sm:text-lg font-semibold text-white tracking-tight">
                   Interview Context & Resume Configuration
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-white/10 text-zinc-300 border border-white/10">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-mono uppercase bg-white/10 text-zinc-200 border border-white/15">
                   {profile.level || 'middle'}
                 </span>
               </div>
@@ -834,7 +834,7 @@ export default function CandidateProfileModal({
             <button
               type="button"
               onClick={() => setParseBannerInfo(null)}
-              className="text-[11px] font-mono text-zinc-400 hover:text-white underline cursor-pointer"
+              className="text-xs font-mono text-zinc-400 hover:text-white underline cursor-pointer"
             >
               Dismiss
             </button>
@@ -842,8 +842,8 @@ export default function CandidateProfileModal({
         )}
 
         {/* Fluid Animated Sliding Pill Dock */}
-        <div className="relative z-10 px-6 py-2.5 bg-[#050508]/90 border-b border-white/[0.08] flex-shrink-0">
-          <div className="flex bg-[#0a0a0f] p-1 rounded-xl border border-white/[0.07] gap-1 relative">
+        <div className="relative z-10 px-6 py-2.5 bg-white/[0.015] border-b border-white/[0.08] flex-shrink-0">
+          <div className="flex bg-black/40 p-1 rounded-2xl border border-white/[0.08] gap-1 relative">
             {[
               { id: 'role', label: 'Target Role', icon: Code2, count: profile.techStack.length },
               { id: 'projects', label: 'Pet Projects', icon: FolderGit2, count: profile.petProjects.length },
@@ -857,22 +857,22 @@ export default function CandidateProfileModal({
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as 'role' | 'projects' | 'context' | 'persona')}
-                  className={`relative flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-2 z-10 ${
+                  className={`relative flex-1 py-2 px-3 rounded-xl text-xs font-medium transition-colors cursor-pointer flex items-center justify-center gap-2 z-10 ${
                     isActive ? 'text-white font-semibold' : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
                   {isActive && (
                     <motion.div
                       layoutId="active-modal-tab"
-                      transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                      className="absolute inset-0 bg-white/[0.12] rounded-lg border border-white/20 shadow-sm z-[-1]"
+                      transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                      className="absolute inset-0 bg-white/[0.12] rounded-xl border border-white/20 shadow-sm z-[-1]"
                     />
                   )}
                   <Icon className="w-3.5 h-3.5 shrink-0" />
                   <span>{tab.label}</span>
                   {tab.count !== undefined && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                      isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-zinc-500'
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono ${
+                      isActive ? 'bg-white/20 text-white' : 'bg-white/5 text-zinc-400'
                     }`}>
                       {tab.count}
                     </span>
@@ -881,7 +881,7 @@ export default function CandidateProfileModal({
                     <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
                   )}
                   {tab.badge && (
-                    <span className="text-[9px] font-mono px-1 py-0.2 bg-white/10 text-zinc-300 rounded border border-white/10">
+                    <span className="text-xs font-mono px-1.5 py-0.5 bg-white/10 text-zinc-200 rounded border border-white/15">
                       {tab.badge}
                     </span>
                   )}
@@ -1028,7 +1028,7 @@ export default function CandidateProfileModal({
                           }`}
                         >
                           <div className="font-semibold">{lvl.label}</div>
-                          <div className="text-[10px] text-zinc-400 font-mono mt-0.5">{lvl.sub}</div>
+                          <div className="text-xs text-zinc-400 font-mono mt-0.5">{lvl.sub}</div>
                         </button>
                       );
                     })}
@@ -1199,7 +1199,7 @@ export default function CandidateProfileModal({
                               <div className="truncate">
                                 <span className="text-xs font-semibold text-zinc-200 mr-2">{proj.name || 'Untitled Project'}</span>
                                 {proj.keyHighlight && (
-                                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5">
+                                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-white/5 text-zinc-400 border border-white/5">
                                     {proj.keyHighlight.slice(0, 45)}...
                                   </span>
                                 )}
@@ -1574,7 +1574,7 @@ export default function CandidateProfileModal({
                             </div>
                             <div>
                               <div className="text-xs font-semibold">{item.label}</div>
-                              <div className="text-[10px] text-zinc-400">{item.desc}</div>
+                              <div className="text-xs text-zinc-400">{item.desc}</div>
                             </div>
                           </button>
                         );
@@ -1609,7 +1609,7 @@ export default function CandidateProfileModal({
                           customNuances: 'Від першого лиця, з реальними кейсами з досвіду',
                           aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Від першого лиця, з реальними кейсами з досвіду' }
                         })}
-                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-xs text-zinc-300 font-sans cursor-pointer"
                       >
                         🗣️ Від першого лиця
                       </button>
@@ -1620,7 +1620,7 @@ export default function CandidateProfileModal({
                           customNuances: 'Коротко, без води, конкретні факти та тези',
                           aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Коротко, без води, конкретні факти та тези' }
                         })}
-                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-xs text-zinc-300 font-sans cursor-pointer"
                       >
                         ⚡ Коротко і по суті
                       </button>
@@ -1631,7 +1631,7 @@ export default function CandidateProfileModal({
                           customNuances: 'Упор на архітектуру, надійність та компроміси (trade-offs)',
                           aiDirectives: { ...(profile.aiDirectives || DEFAULT_AI_DIRECTIVES), customNuances: 'Упор на архітектуру, надійність та компроміси (trade-offs)' }
                         })}
-                        className="px-2 py-0.5 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-[10px] text-zinc-300 font-sans cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/10 border border-white/10 text-xs text-zinc-300 font-sans cursor-pointer"
                       >
                         🏗️ Архітектура та трейдоффи
                       </button>

@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import {
   Sparkles,
   ArrowRight,
@@ -712,36 +714,55 @@ export function ArenaViewUpgraded() {
               </p>
             </div>
 
-            {/* Setup Mode Switcher */}
-            <div className="flex justify-center">
-              <div className="p-1 rounded-2xl bg-zinc-950 border border-white/15 flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setSetupMode('presets')}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-                    setupMode === 'presets'
-                      ? 'bg-white text-black shadow-lg'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  ⚡ {a.modePresets || 'Готові технічні треки'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSetupMode('vacancy')}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
-                    setupMode === 'vacancy'
-                      ? 'bg-white text-black shadow-lg'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  🎯 {a.modeVacancy || 'Симуляція по вакансії'}
-                </button>
+            {/* Setup Mode Switcher + AI Interviewer PiP Preview */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <div className="p-1 rounded-2xl spatial-glass-window border border-white/15 flex items-center gap-1">
+                {[
+                  { id: 'presets' as const, label: `⚡ ${a.modePresets || 'Готові технічні треки'}` },
+                  { id: 'vacancy' as const, label: `🎯 ${a.modeVacancy || 'Симуляція по вакансії'}` },
+                ].map((mode) => {
+                  const active = setupMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setSetupMode(mode.id)}
+                      className={`relative px-5 py-2.5 rounded-xl text-xs font-mono font-bold transition-colors cursor-pointer z-10 ${
+                        active ? 'text-black' : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {active && (
+                        <motion.span
+                          layoutId="arena-setup-mode"
+                          transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                          className="absolute inset-0 rounded-xl bg-white shadow-lg -z-10"
+                        />
+                      )}
+                      {mode.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="w-full sm:w-56">
+                <SpatialVideoCapsule
+                  compact
+                  layoutGroupId="arena-ghost-preview"
+                  aspectClassName="aspect-[16/9]"
+                  videos={[
+                    {
+                      id: 'arena-interviewer',
+                      src: '/videos/ghost.mp4',
+                      label: 'AI Interviewer',
+                      caption: 'Technical Interview Simulator',
+                    },
+                  ]}
+                />
               </div>
             </div>
 
             {/* Candidate Identity Strip */}
-            <div className="p-5 rounded-2xl bg-zinc-950 border border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="bento-card p-5 rounded-3xl bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="w-full sm:w-auto">
                 <label className="text-[11px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
                   {a.candidateNameLabel || 'Імʼя кандидата для скоркарду'}
@@ -792,13 +813,13 @@ export function ArenaViewUpgraded() {
                       className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between select-none ${
                         selectedTrack === track.id
                           ? 'bg-white/10 border-white shadow-[0_0_25px_rgba(255,255,255,0.12)]'
-                          : 'bg-zinc-950/80 border-white/10 hover:border-white/20'
+                          : 'bento-card bg-white/[0.03] border-white/[0.1] hover:border-white/25'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-2xl">{track.icon}</span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 border border-white/10">
+                          <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-white/10 text-zinc-200 border border-white/15">
                             {track.badge}
                           </span>
                         </div>
@@ -809,7 +830,7 @@ export function ArenaViewUpgraded() {
                       </div>
                       <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap gap-1">
                         {track.tech.slice(0, 3).map((t, idx) => (
-                          <span key={idx} className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-zinc-400">
+                          <span key={idx} className="text-xs font-mono px-2 py-0.5 rounded bg-white/[0.06] text-zinc-300 border border-white/[0.08]">
                             {t}
                           </span>
                         ))}
@@ -834,7 +855,7 @@ export function ArenaViewUpgraded() {
 
             {/* Mode B: Vacancy Paste */}
             {setupMode === 'vacancy' && (
-              <div className="p-6 rounded-3xl bg-zinc-950 border border-white/10 space-y-4">
+              <div className="spatial-glass-window p-6 rounded-3xl bg-white/[0.03] border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-300">
                     {a.vacancyHeading || 'Вставте текст вакансії або перелік вимог:'}
@@ -845,7 +866,7 @@ export function ArenaViewUpgraded() {
                         key={i}
                         type="button"
                         onClick={() => setVacancyText(v.text)}
-                        className="text-[10px] font-mono px-2 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 transition-colors"
+                        className="text-xs font-mono px-2.5 py-1 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-zinc-200 transition-colors"
                       >
                         {v.title}
                       </button>
@@ -883,7 +904,7 @@ export function ArenaViewUpgraded() {
         {stage === 'battle' && activeQuestion && (
           <div className="flex flex-col gap-6 animate-in fade-in duration-200">
             {/* Top Bar: Progress & Timers */}
-            <div className="flex items-center justify-between p-4 rounded-2xl bg-zinc-950 border border-white/10">
+            <div className="spatial-glass-window flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-white/10 text-white">
                   Раунд {currentIndex + 1} з {questions.length}
@@ -910,7 +931,7 @@ export function ArenaViewUpgraded() {
             </div>
 
             {/* Question Card & Voice Wave */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-zinc-950 border-2 border-white/15 relative overflow-hidden shadow-2xl">
+            <div className="spatial-glass-window p-6 sm:p-8 rounded-3xl bg-white/[0.03] border border-white/[0.14] relative overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15),0_25px_70px_rgba(0,0,0,0.65)]">
               <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
                 <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
                   <Cpu className="w-4 h-4 text-zinc-300" />

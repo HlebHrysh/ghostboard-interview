@@ -6,6 +6,11 @@
 
 import type { StructuredAnswerOutput } from './streamClient';
 import type { SessionQAItem } from '../components/HistoryDrawer';
+import { getResolvedBaseUrl, IS_DEV_MODE } from './apiClient';
+
+function defaultCompanionBaseUrl(): string {
+  return IS_DEV_MODE ? 'http://localhost:3001' : getResolvedBaseUrl();
+}
 
 export type SyncActionType =
   | 'ADD_OR_UPDATE_QA'
@@ -99,7 +104,7 @@ export function formatCompanionUrl(
   sessionId: string,
   pairingToken?: string
 ): string {
-  const cleanBase = (serverBaseUrl || 'http://localhost:3001').replace(/\/+$/, '');
+  const cleanBase = (serverBaseUrl || defaultCompanionBaseUrl()).replace(/\/+$/, '');
   const cleanSessionId = encodeURIComponent(sessionId.trim());
   const token = encodeURIComponent((pairingToken || sessionId).trim());
   return `${cleanBase}/companion/${cleanSessionId}?token=${token}`;
@@ -294,7 +299,7 @@ export async function requestPairingSession(
   serverBaseUrl: string,
   authToken?: string | null
 ): Promise<PairingSessionResult> {
-  const cleanBase = (serverBaseUrl || 'http://localhost:3001').replace(/\/+$/, '');
+  const cleanBase = (serverBaseUrl || defaultCompanionBaseUrl()).replace(/\/+$/, '');
   const url = `${cleanBase}/api/companion/pair`;
 
   const headers: Record<string, string> = {
@@ -349,7 +354,7 @@ export async function sendCompanionSync(
   payload: InterviewSyncPayload,
   authToken?: string | null
 ): Promise<boolean> {
-  const cleanBase = (serverBaseUrl || 'http://localhost:3001').replace(/\/+$/, '');
+  const cleanBase = (serverBaseUrl || defaultCompanionBaseUrl()).replace(/\/+$/, '');
   const url = `${cleanBase}/api/ai/interview-sync`;
 
   const headers: Record<string, string> = {
@@ -384,7 +389,7 @@ export class CompanionSyncManager {
   private streamDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private lastStreamedPayload: InterviewSyncPayload | null = null;
 
-  constructor(serverBaseUrl = 'http://localhost:3001', authToken: string | null = null) {
+  constructor(serverBaseUrl = defaultCompanionBaseUrl(), authToken: string | null = null) {
     this.serverBaseUrl = serverBaseUrl;
     this.authToken = authToken;
   }
@@ -487,7 +492,7 @@ export class CompanionSyncManager {
     micStatus?: string;
     audioLatencyMs?: number;
   }): Promise<boolean> {
-    const cleanBase = (this.serverBaseUrl || 'http://localhost:3000').replace(/\/+$/, '');
+    const cleanBase = (this.serverBaseUrl || getResolvedBaseUrl()).replace(/\/+$/, '');
     const url = `${cleanBase}/api/desktop/heartbeat`;
 
     const headers: Record<string, string> = {

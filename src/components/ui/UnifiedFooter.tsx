@@ -13,7 +13,7 @@ export const UnifiedFooter: React.FC = () => {
   const f = m.footer;
 
   return (
-    <footer className="w-full bg-black border-t border-white/[0.08] text-zinc-400 py-14 px-4 sm:px-8 select-none">
+    <footer className="w-full bg-[#050609]/80 backdrop-blur-2xl border-t border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] text-zinc-400 py-14 px-4 sm:px-8 select-none">
       <div className="max-w-7xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 pb-12 border-b border-white/[0.06]">
           {/* Brand Column */}
@@ -21,20 +21,20 @@ export const UnifiedFooter: React.FC = () => {
             <Link href="/" className="flex items-center gap-3 w-fit group">
               <GhostDetectiveLogo size="md" />
               <div>
-                <span className="font-mono font-black text-base tracking-[0.25em] text-white group-hover:text-zinc-200 transition-colors">
+                <span className="font-display font-extrabold text-base tracking-[0.22em] text-white group-hover:text-zinc-200 transition-colors">
                   GHOSTBOARD
                 </span>
-                <span className="block text-[10px] font-mono text-zinc-500 uppercase tracking-widest">
+                <span className="block text-[11px] font-mono text-zinc-400 uppercase tracking-widest mt-0.5">
                   {f.tagline}
                 </span>
               </div>
             </Link>
-            <p className="text-sm text-zinc-400 max-w-md font-sans leading-relaxed">
+            <p className="text-sm text-zinc-300 max-w-md font-sans leading-relaxed">
               {f.desc}
             </p>
 
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-zinc-300 text-xs font-mono">
-              <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.09] text-zinc-200 text-xs font-mono">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>{f.ramBadge}</span>
             </div>
           </div>
@@ -61,9 +61,9 @@ export const UnifiedFooter: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <Link href="/mock-interview" className="text-zinc-300 hover:text-white transition-colors flex items-center gap-1">
+                <Link href="/mock-interview" className="text-zinc-300 hover:text-white transition-colors flex items-center gap-1.5">
                   <span>{t.nav.arena}</span>
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-white/[0.08] text-zinc-300 border border-white/15 font-bold">SCORECARD</span>
+                  <span className="text-[11px] px-1.5 py-0.2 rounded bg-white/[0.08] text-zinc-200 border border-white/15 font-semibold">SCORECARD</span>
                 </Link>
               </li>
               <li>

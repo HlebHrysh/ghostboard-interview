@@ -1,40 +1,66 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useId, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  Volume2,
+  CheckCircle2,
+  Crosshair,
+  GitMerge,
   Mic,
+  Play,
   RefreshCw,
   ShieldAlert,
-  Headphones,
-  Check,
-  Radio,
-  Sliders,
-  Play,
   Square,
 } from 'lucide-react';
-import { Card, SectionTitle, Button, Pill, StatusDot, stopDrag } from '../ui/primitives';
-import { VuTrack } from '../ui/VuMeter';
 import {
-  listAudioDevices,
-  type AudioDevice,
-} from '../lib/tauriBridge';
-import {
-  LISTEN_MODE_META,
   LISTEN_MODE_ORDER,
   startListening,
   stopListening,
   useAudioStatus,
 } from '../lib/audioSession';
 import type { DesktopSettings, ListenMode } from '../lib/desktopSettings';
+import { listAudioDevices, type AudioDevice } from '../lib/tauriBridge';
+import { SectionTitle, SPRING, stopDrag } from '../ui/primitives';
+import { STUDIO_VIDEO_CLIPS, VideoPreviewCapsule } from '../ui/VideoPreviewCapsule';
+import { VuBars, VuTrack } from '../ui/VuMeter';
 
 interface AudioStudioTabProps {
   settings: DesktopSettings;
   updateSettings: (patch: Partial<DesktopSettings>) => void;
 }
 
+const MODE_CARD_INFO: Record<
+  ListenMode,
+  {
+    title: string;
+    subtitle: string;
+    recommended?: boolean;
+    icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  interviewer: {
+    title: "Тільки Інтерв'юер",
+    subtitle: 'System Loopback — мікрофон фізично вимкнено, чує лише голос співрозмовника.',
+    recommended: true,
+    icon: Crosshair,
+  },
+  dual: {
+    title: '2 Канали (Loopback + Mic)',
+    subtitle: "Інтерв'юер запускає ШІ, ваш голос записується в історію контексту.",
+    icon: GitMerge,
+  },
+  mic: {
+    title: 'Тільки Мікрофон',
+    subtitle: 'Режим для динаміків без навушників або живих зустрічей.',
+    icon: Mic,
+  },
+};
+
 export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
   settings,
   updateSettings,
 }) => {
+  const loopbackSelectId = useId();
+  const micSelectId = useId();
+
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTestCapturing, setIsTestCapturing] = useState(false);
@@ -42,6 +68,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
 
   const audioStatus = useAudioStatus();
 
+  // Manual / initial device scan ONLY — zero 2-second polling spam
   const refreshDevices = useCallback(async () => {
     setIsRefreshing(true);
     setRefreshError(null);
@@ -50,7 +77,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
       setDevices(list);
     } catch (err) {
       console.warn('[AudioStudio] listAudioDevices error:', err);
-      setRefreshError('Не вдалося отримати список пристроїв');
+      setRefreshError('Не вдалося отримати перелік аудіопристроїв');
     } finally {
       setIsRefreshing(false);
     }
@@ -61,7 +88,10 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
   }, [refreshDevices]);
 
   const loopbackDevices = devices.filter(
-    (d) => d.isLoopbackCapable || d.name.toLowerCase().includes('monitor') || d.name.toLowerCase().includes('loopback')
+    (d) =>
+      d.isLoopbackCapable ||
+      d.name.toLowerCase().includes('monitor') ||
+      d.name.toLowerCase().includes('loopback')
   );
   const micDevices = devices.filter(
     (d) => !d.isLoopbackCapable || d.name.toLowerCase().includes('mic')
@@ -92,233 +122,201 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
     };
   }, [isTestCapturing]);
 
+  const activeVuChannel = settings.listenMode === 'mic' ? 'candidate' : 'interviewer';
+  const isCapturingNow = Boolean(audioStatus?.ok || isTestCapturing);
+
   return (
-    <div className="space-y-6 pb-6 select-none">
+    <div className="space-y-5 pb-4">
       <SectionTitle
-        eyebrow="АУДІОСТУДІЯ"
-        title="Аудіо та Канали"
-        hint="Сувора фізична ізоляція каналів: гарантія того, що ваш голос не викличе випадкову генерацію ШІ"
+        title="Аудіо та ізоляція каналів"
         right={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={refreshDevices}
+          <button
+            type="button"
+            onClick={() => void refreshDevices()}
             disabled={isRefreshing}
-            className="flex items-center gap-1.5 cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#111114] px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:border-white/20 hover:text-white disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-            <span>Оновити пристрої</span>
-          </Button>
+            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Оновити пристрої
+          </button>
         }
       />
 
-      {/* ─────────────────────────────────────────────────────────────
-          1. STRICT 3-WAY AUDIO ISOLATION SELECTOR
-      ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Режим ізоляції джерел звуку
-        </div>
+      {/* 3-Position Strict Channel Isolation Switcher */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {LISTEN_MODE_ORDER.map((mode) => {
+          const info = MODE_CARD_INFO[mode];
+          const Icon = info.icon;
+          const active = settings.listenMode === mode;
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {LISTEN_MODE_ORDER.map((mode) => {
-            const isSelected = settings.listenMode === mode;
-            const isInterviewer = mode === 'interviewer';
-            const isDual = mode === 'dual';
+          return (
+            <motion.button
+              key={mode}
+              type="button"
+              whileHover={{ scale: 1.015 }}
+              whileTap={{ scale: 0.98 }}
+              transition={SPRING}
+              onClick={() => void handleModeChange(mode)}
+              className={`rounded-2xl border p-3.5 text-left transition-all cursor-pointer space-y-2 ${
+                active
+                  ? 'border-emerald-500/45 bg-[#15171c] shadow-[inset_0_1px_0_0_rgba(167,243,208,0.22)]'
+                  : 'border-white/[0.08] bg-[#111114] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:border-white/20'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border ${
+                    active
+                      ? 'border-emerald-500/35 bg-emerald-500/15 text-emerald-300'
+                      : 'border-white/10 bg-[#09090b] text-zinc-400'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+                {info.recommended && (
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[9.5px] font-medium text-emerald-300">
+                    Рекомендовано
+                  </span>
+                )}
+              </div>
 
-            return (
-              <div
-                key={mode}
+              <div>
+                <div className="text-xs font-semibold text-white">{info.title}</div>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-zinc-400">
+                  {info.subtitle}
+                </p>
+              </div>
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* Physical Hardware Isolation Note */}
+      <div className="flex items-start gap-2.5 rounded-xl border border-white/[0.08] bg-[#111114] px-3.5 py-2.5 text-xs text-zinc-300">
+        {settings.listenMode === 'interviewer' ? (
+          <>
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+            <span>
+              <strong>Ізоляція 100%:</strong> ваш голос та звуки клавіатури фізично не потрапляють у Deepgram. ШІ реагує виключно на мовлення інтерв’юера.
+            </span>
+          </>
+        ) : (
+          <>
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <span>
+              <strong>Активний мікрофон:</strong> використовуйте гарнітуру або комбінацію{' '}
+              <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[10.5px]">Ctrl+M</code> під час роздумів вголос.
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Device Selectors + Soundcheck Grid */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3 rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <div className="text-xs font-semibold text-white">Апаратні пристрої захоплення</div>
+
+          {refreshError && <p className="text-[11px] text-amber-300">{refreshError}</p>}
+
+          <div className="space-y-1.5">
+            <label htmlFor={loopbackSelectId} className="block text-[11px] font-medium text-zinc-400">
+              Системне джерело (PipeWire Monitor / WASAPI Loopback)
+            </label>
+            <select
+              id={loopbackSelectId}
+              value={settings.loopbackDevice || ''}
+              onChange={(e) => updateSettings({ loopbackDevice: e.target.value || null })}
+              disabled={settings.listenMode === 'mic'}
+              className="gb-input h-9 text-xs disabled:opacity-45"
+            >
+              <option value="">Автоматичний системний вихід (Default Monitor)</option>
+              {loopbackDevices.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor={micSelectId} className="block text-[11px] font-medium text-zinc-400">
+              Мікрофон (для Dual або Solo Mic режиму)
+            </label>
+            <select
+              id={micSelectId}
+              value={settings.micDevice || ''}
+              onChange={(e) => updateSettings({ micDevice: e.target.value || null })}
+              disabled={settings.listenMode === 'interviewer'}
+              className="gb-input h-9 text-xs disabled:opacity-45"
+            >
+              <option value="">Системний мікрофон за замовчуванням</option>
+              {micDevices.map((d) => (
+                <option key={d.name} value={d.name}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Live rAF VU Soundcheck */}
+          <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-zinc-200">Перевірка сигналу (60fps ref)</span>
+                <VuBars channel={activeVuChannel} bars={8} />
+              </div>
+
+              <button
+                type="button"
                 data-tauri-drag-region="false"
                 onMouseDown={stopDrag}
-                onClick={() => handleModeChange(mode)}
-                className={`relative rounded-xl border p-4 transition-all cursor-pointer flex flex-col justify-between ${
-                  isSelected
-                    ? 'border-white bg-white/[0.06] ring-1 ring-white/20 shadow-md'
-                    : 'border-white/[0.08] bg-[#111114] hover:border-white/20 hover:bg-white/[0.02]'
+                onClick={() => void toggleTestCapture()}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                  isTestCapturing
+                    ? 'border border-rose-500/35 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                    : 'bg-white text-zinc-950 hover:bg-zinc-100'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-semibold text-white">
-                      {mode === 'interviewer' && "🎯 Тільки Інтерв'юер"}
-                      {mode === 'dual' && '🔀 Роздільні канали'}
-                      {mode === 'mic' && '🎙️ Тільки Мікрофон'}
-                    </span>
-                    {isSelected && (
-                      <div className="w-4 h-4 rounded-full bg-white text-zinc-950 flex items-center justify-center">
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      </div>
-                    )}
-                  </div>
+                {isTestCapturing ? (
+                  <>
+                    <Square className="h-3 w-3 fill-current" />
+                    Зупинити тест
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3 w-3 fill-current" />
+                    Перевірити звук
+                  </>
+                )}
+              </button>
+            </div>
 
-                  <p className="text-[11px] leading-relaxed text-zinc-400">
-                    {mode === 'interviewer' && (
-                      <>
-                        <strong className="text-emerald-300">[Рекомендовано]</strong> Мікрофон фізично
-                        вимкнений. Ваш голос ніколи не потрапить у розпізнавання ШІ.
-                      </>
-                    )}
-                    {mode === 'dual' && (
-                      <>
-                        Системний звук — це <code>[Інтерв'юер]</code> (активує ШІ), а мікрофон — це{' '}
-                        <code>[Ви]</code> (лише записується в чат).
-                      </>
-                    )}
-                    {mode === 'mic' && (
-                      <>
-                        Один мікрофон кімнати для випадків, коли інтерв'ю йде через динаміки
-                        ноутбука або для тесту звуку.
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-zinc-500">
-                  <span>{mode === 'interviewer' ? 'Loopback only' : mode === 'dual' ? 'Dual Source' : 'Microphone only'}</span>
-                  {isInterviewer && <span className="text-emerald-400 font-semibold">100% захист</span>}
-                </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
+                <span>ІНТЕРВ’ЮЕР (LOOPBACK)</span>
+                <span>{isCapturingNow && settings.listenMode !== 'mic' ? 'ACTIVE' : 'IDLE'}</span>
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <VuTrack channel="interviewer" label="Рівень системного аудіо інтерв'юера" />
+            </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. HARDWARE DEVICE ROUTING
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* System Loopback Output Monitor */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-              <Volume2 className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Системний Loopback (Звук співрозмовника)</span>
-            </label>
-            {settings.listenMode === 'mic' && (
-              <Pill tone="neutral" className="h-4 px-1 text-[9px]">ВИМКНЕНО</Pill>
+            {settings.listenMode !== 'interviewer' && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
+                  <span>МІКРОФОН (КАНДИДАТ)</span>
+                  <span>{isCapturingNow ? 'ACTIVE' : 'IDLE'}</span>
+                </div>
+                <VuTrack channel="candidate" label="Рівень сигналу мікрофона" />
+              </div>
             )}
           </div>
-
-          <select
-            className="gb-input font-mono text-xs cursor-pointer disabled:opacity-40"
-            disabled={settings.listenMode === 'mic'}
-            value={settings.loopbackDevice || ''}
-            onChange={(e) => updateSettings({ loopbackDevice: e.target.value || null })}
-          >
-            <option value="">За замовчуванням (Default Loopback Monitor)</option>
-            {loopbackDevices.map((d) => (
-              <option key={d.name} value={d.name}>
-                {d.name} {d.isDefault ? '(За замовчуванням)' : ''}
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-zinc-500 leading-relaxed">
-            Перехоплює звук із навушників або динаміків. Працює з Zoom, Google Meet, Teams, Telegram.
-          </p>
         </div>
 
-        {/* Microphone Device */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-              <Mic className="w-3.5 h-3.5 text-zinc-400" />
-              <span>Мікрофон (Ваш голос)</span>
-            </label>
-            {settings.listenMode === 'interviewer' && (
-              <Pill tone="ok" className="h-4 px-1 text-[9px]">ІЗОЛЬОВАНО (MUTED)</Pill>
-            )}
-          </div>
-
-          <select
-            className="gb-input font-mono text-xs cursor-pointer disabled:opacity-40"
-            disabled={settings.listenMode === 'interviewer'}
-            value={settings.micDevice || ''}
-            onChange={(e) => updateSettings({ micDevice: e.target.value || null })}
-          >
-            <option value="">За замовчуванням (Default Microphone)</option>
-            {micDevices.map((d) => (
-              <option key={d.name} value={d.name}>
-                {d.name} {d.isDefault ? '(За замовчуванням)' : ''}
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-zinc-500 leading-relaxed">
-            {settings.listenMode === 'interviewer'
-              ? "Потік мікрофона апаратно вимкнений у режимі 'Тільки Інтерв'юер'."
-              : 'Використовується для запису ваших реплік у діалог або в режимі одного мікрофона.'}
-          </p>
-        </div>
-      </div>
-
-      {/* ─────────────────────────────────────────────────────────────
-          3. LIVE SOUNDCHECK (Zero-lag VU-Track, rAF + CSS variable)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-xs font-semibold text-white flex items-center gap-2">
-              <span>🔊 Живий тест звуку</span>
-              {isTestCapturing && <StatusDot tone="ok" ping />}
-            </div>
-            <p className="text-[11px] text-zinc-400 mt-0.5">
-              Перевірте рівні гучності в реальному часі без відкриття інтерв'ю-вікна
-            </p>
-          </div>
-
-          <Button
-            variant={isTestCapturing ? 'danger' : 'ghost'}
-            size="sm"
-            onClick={toggleTestCapture}
-            className="flex items-center gap-1.5 cursor-pointer font-mono"
-          >
-            {isTestCapturing ? (
-              <>
-                <Square className="w-3.5 h-3.5 fill-current" />
-                <span>Зупинити тест</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Запустити тест</span>
-              </>
-            )}
-          </Button>
-        </div>
-
-        <div className="space-y-3 pt-1">
-          {/* Interviewer VU Track */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-zinc-300">Канал 1: Звук співрозмовника (Loopback)</span>
-              <span className="text-zinc-500">
-                {settings.listenMode === 'mic' ? 'Muted' : isTestCapturing ? 'Active' : 'Standby'}
-              </span>
-            </div>
-            <VuTrack channel="interviewer" label="Interviewer sound level" />
-          </div>
-
-          {/* Candidate Mic VU Track */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-mono">
-              <span className="text-zinc-300">Канал 2: Ваш мікрофон (Candidate Mic)</span>
-              <span className="text-zinc-500">
-                {settings.listenMode === 'interviewer'
-                  ? 'Muted (Safe)'
-                  : isTestCapturing
-                  ? 'Active'
-                  : 'Standby'}
-              </span>
-            </div>
-            <VuTrack channel="candidate" label="Candidate microphone level" />
+        <div className="lg:col-span-2 space-y-3">
+          <VideoPreviewCapsule clip={STUDIO_VIDEO_CLIPS.headphones} />
+          <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-3 text-[11px] leading-relaxed text-zinc-400">
+            Підказка: у браузерному дзвінку або Zoom виводьте звук на навушники — Loopback зчитує потік прямо з аудіо-шини ОС без фонового шуму кімнати.
           </div>
         </div>
-
-        {audioStatus?.error && (
-          <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs font-mono">
-            Помилка аудіо: {audioStatus.error}
-          </div>
-        )}
       </div>
     </div>
   );

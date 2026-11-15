@@ -98,12 +98,26 @@ function isProdUrl(url: string | null | undefined): boolean {
   return Boolean(url && url.includes('ghostboard.ai'));
 }
 
+function isLocalUrl(url: string | null | undefined): boolean {
+  return Boolean(url && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i.test(url));
+}
+
+function getEnvConfiguredUrl(): string | null {
+  const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
+  const raw =
+    typeof meta !== 'undefined'
+      ? meta.env?.VITE_API_URL || meta.env?.VITE_BACKEND_URL || meta.env?.GHOSTBOARD_API_URL
+      : undefined;
+  if (!raw || !raw.trim()) return null;
+  return raw.trim().replace(/\/+$/, '');
+}
+
 /**
  * Autodetects the available backend URL.
  * Dev mode order: VITE_API_URL (non-production) → same-origin Vite proxy (/api) → :3000 → :3001.
  * In dev mode production (https://ghostboard.ai) is NEVER used; if nothing answers we flag the
  * backend as offline and return the local default WITHOUT caching it, so the next call re-probes.
- * Release builds keep the cached → production fallback.
+ * Release builds resolve VITE_API_URL / GHOSTBOARD_API_URL or fall back strictly to production cloud.
  */
 export async function detectBackendUrl(forceRefresh = false): Promise<string> {
   if (activeBaseUrl && !forceRefresh) {
@@ -115,72 +129,68 @@ export async function detectBackendUrl(forceRefresh = false): Promise<string> {
   }
 
   detectionPromise = (async () => {
-    const meta = import.meta as unknown as { env?: Record<string, string | undefined> };
-    const envUrl = typeof meta !== 'undefined' ? (meta.env?.VITE_API_URL || meta.env?.VITE_BACKEND_URL) : undefined;
-    if (envUrl && envUrl.trim()) {
-      const clean = envUrl.trim().replace(/\/+$/, '');
-      if (!(IS_DEV_MODE && isProdUrl(clean)) && (await probeHealth(clean, 1000))) {
-        activeBaseUrl = clean;
-        backendOffline = false;
-        persistBaseUrl(clean);
-        return clean;
-      }
-    }
-
-    // Same-origin Vite dev proxy (auto-routes /api to whichever of :3000/:3001 is alive; no CORS)
-    if (
-      IS_DEV_MODE &&
-      typeof window !== 'undefined' &&
-      window.location?.hostname === 'localhost' &&
-      window.location.port === '5173' &&
-      (await probeHealth(window.location.origin, 700))
-    ) {
-      activeBaseUrl = window.location.origin;
+    const envUrl = getEnvConfiguredUrl();
+    const envAllowed = envUrl && !(IS_DEV_MODE && isProdUrl(envUrl)) && (IS_DEV_MODE || !isLocalUrl(envUrl));
+    if (envAllowed && (await probeHealth(envUrl, 1000))) {
+      activeBaseUrl = envUrl;
       backendOffline = false;
-      persistBaseUrl(activeBaseUrl);
-      return activeBaseUrl;
+      persistBaseUrl(envUrl);
+      return envUrl;
     }
 
-    for (const candidate of ['http://localhost:3000', 'http://localhost:3001']) {
-      if (await probeHealth(candidate, 500)) {
-        activeBaseUrl = candidate;
-        backendOffline = false;
-        persistBaseUrl(candidate);
-        return candidate;
-      }
-    }
-
-    // Browser-only Vite dev fallback
-    if (typeof window !== 'undefined' && !isTauriEnvironment() && window.location?.hostname === 'localhost') {
-      const proxyCandidate = window.location.origin;
-      if (proxyCandidate && (await probeHealth(proxyCandidate, 500))) {
-        activeBaseUrl = proxyCandidate;
+    if (IS_DEV_MODE) {
+      // Same-origin Vite dev proxy (auto-routes /api to whichever of :3000/:3001 is alive; no CORS)
+      if (
+        typeof window !== 'undefined' &&
+        window.location?.hostname === 'localhost' &&
+        window.location.port === '5173' &&
+        (await probeHealth(window.location.origin, 700))
+      ) {
+        activeBaseUrl = window.location.origin;
         backendOffline = false;
         persistBaseUrl(activeBaseUrl);
         return activeBaseUrl;
       }
-    }
 
-    if (IS_DEV_MODE) {
+      for (const candidate of ['http://localhost:3000', 'http://localhost:3001']) {
+        if (await probeHealth(candidate, 500)) {
+          activeBaseUrl = candidate;
+          backendOffline = false;
+          persistBaseUrl(candidate);
+          return candidate;
+        }
+      }
+
+      // Browser-only Vite dev fallback
+      if (typeof window !== 'undefined' && !isTauriEnvironment() && window.location?.hostname === 'localhost') {
+        const proxyCandidate = window.location.origin;
+        if (proxyCandidate && (await probeHealth(proxyCandidate, 500))) {
+          activeBaseUrl = proxyCandidate;
+          backendOffline = false;
+          persistBaseUrl(activeBaseUrl);
+          return activeBaseUrl;
+        }
+      }
+
       // Nothing reachable: stay offline, do not cache, never use production.
       backendOffline = true;
       activeBaseUrl = null;
       return DEV_FALLBACK_URL;
     }
 
-    // Release: previously saved working URL
+    // Release: previously saved working non-local URL
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage) {
       try {
         const cached = localStorage.getItem(STORAGE_URL_KEY);
-        if (cached && (await probeHealth(cached, 800))) {
+        if (cached && !isLocalUrl(cached) && (await probeHealth(cached, 800))) {
           activeBaseUrl = cached;
           return activeBaseUrl;
         }
       } catch {}
     }
 
-    // Release: production cloud fallback
-    activeBaseUrl = PROD_CLOUD_URL;
+    // Release: configured cloud URL or default production cloud fallback
+    activeBaseUrl = (envAllowed ? envUrl : null) || PROD_CLOUD_URL;
     persistBaseUrl(activeBaseUrl);
     return activeBaseUrl;
   })();
@@ -199,18 +209,26 @@ function persistBaseUrl(url: string) {
 }
 
 /**
- * Returns currently resolved base URL synchronously (defaults to cached or localhost:3000).
- * In dev mode a cached production URL is ignored.
+ * Returns currently resolved base URL synchronously.
+ * In dev mode defaults to localhost:3000 and ignores cached production URLs.
+ * In release mode defaults to VITE_API_URL / production cloud and ignores cached localhost URLs.
  */
 export function getResolvedBaseUrl(): string {
   if (activeBaseUrl) return activeBaseUrl;
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && localStorage) {
     try {
       const cached = localStorage.getItem(STORAGE_URL_KEY);
-      if (cached && !(IS_DEV_MODE && isProdUrl(cached))) return cached;
+      if (cached) {
+        if (IS_DEV_MODE && !isProdUrl(cached)) return cached;
+        if (!IS_DEV_MODE && !isLocalUrl(cached)) return cached;
+      }
     } catch {}
   }
-  return DEV_FALLBACK_URL;
+  const envUrl = getEnvConfiguredUrl();
+  if (IS_DEV_MODE) {
+    return envUrl && !isProdUrl(envUrl) ? envUrl : DEV_FALLBACK_URL;
+  }
+  return (envUrl && !isLocalUrl(envUrl) ? envUrl : null) || PROD_CLOUD_URL;
 }
 
 /**

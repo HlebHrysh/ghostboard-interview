@@ -153,29 +153,27 @@ impl EotDetector {
     ) {
         self.evict_expired(timestamp_ms);
 
-        let clean = text.trim();
+        let clean = deduplicate_stt_transcript(text.trim());
         if clean.is_empty() {
             return;
         }
 
         if is_final {
             self.history.push_back(TranscriptEntry {
-                text: clean.to_string(),
+                text: clean.clone(),
                 is_final,
                 speech_final,
                 timestamp_ms,
             });
 
-            if self.pending_text.is_empty() {
-                self.pending_text = clean.to_string();
-            } else {
-                self.pending_text.push(' ');
-                self.pending_text.push_str(clean);
+            append_deduplicated_segment(&mut self.pending_text, &clean);
+            if is_greeting_or_noise(&self.pending_text) && !is_question_heuristic(&self.pending_text) {
+                self.pending_text.clear();
             }
         } else {
             // For interim tokens, temporarily update pending_text if empty
             if self.pending_text.is_empty() {
-                self.pending_text = clean.to_string();
+                self.pending_text = clean;
             }
         }
     }
@@ -321,18 +319,148 @@ fn has_word_or_prefix(text: &str, pattern: &str) -> bool {
     false
 }
 
+/// Deduplicates repeated STT word/phrase loops (e.g. "how does how does", "can you explain can you explain").
+pub fn deduplicate_stt_transcript(raw: &str) -> String {
+    let tokens: Vec<&str> = raw.split_whitespace().collect();
+    if tokens.len() < 2 {
+        return tokens.join(" ");
+    }
+
+    fn norm_word(w: &str) -> String {
+        w.trim_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase()
+    }
+
+    let mut out: Vec<&str> = Vec::with_capacity(tokens.len());
+    let mut i = 0;
+    while i < tokens.len() {
+        let mut skipped = false;
+        let max_window = 8usize.min((tokens.len() - i) / 2);
+        for k in (1..=max_window).rev() {
+            let mut matched = true;
+            for j in 0..k {
+                let a = norm_word(tokens[i + j]);
+                let b = norm_word(tokens[i + k + j]);
+                if a.is_empty() || a != b {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                for j in 0..k {
+                    out.push(tokens[i + j]);
+                }
+                let mut next_idx = i + k;
+                while next_idx + k <= tokens.length_or_len() {
+                    let mut rep = true;
+                    for j in 0..k {
+                        if norm_word(tokens[i + j]) != norm_word(tokens[next_idx + j]) {
+                            rep = false;
+                            break;
+                        }
+                    }
+                    if rep {
+                        next_idx += k;
+                    } else {
+                        break;
+                    }
+                }
+                i = next_idx;
+                skipped = true;
+                break;
+            }
+        }
+        if !skipped {
+            out.push(tokens[i]);
+            i += 1;
+        }
+    }
+
+    out.join(" ")
+}
+
+trait SliceLenExt {
+    fn length_or_len(&self) -> usize;
+}
+impl<T> SliceLenExt for [T] {
+    fn length_or_len(&self) -> usize {
+        self.len()
+    }
+}
+
+/// Appends an incoming STT segment to an accumulator buffer while deduplicating overlaps and repeated loops.
+pub fn append_deduplicated_segment(buffer: &mut String, segment: &str) {
+    let clean_seg = deduplicate_stt_transcript(segment.trim());
+    if clean_seg.is_empty() {
+        return;
+    }
+    if buffer.trim().is_empty() {
+        *buffer = clean_seg;
+        return;
+    }
+
+    fn norm_phrase(s: &str) -> String {
+        s.chars()
+            .map(|c| if c.is_alphanumeric() || c.is_whitespace() { c.to_ascii_lowercase() } else { ' ' })
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    let buf_norm = norm_phrase(buffer);
+    let seg_norm = norm_phrase(&clean_seg);
+    if seg_norm.is_empty() || buf_norm == seg_norm || buf_norm.ends_with(&seg_norm) {
+        return;
+    }
+    if seg_norm.starts_with(&buf_norm) {
+        *buffer = clean_seg;
+        return;
+    }
+
+    let buf_words: Vec<&str> = buffer.split_whitespace().collect();
+    let seg_words: Vec<&str> = clean_seg.split_whitespace().collect();
+    let max_overlap = 6usize.min(buf_words.len()).min(seg_words.len());
+    let mut overlap = 0usize;
+    for k in (1..=max_overlap).rev() {
+        let suffix = norm_phrase(&buf_words[buf_words.len() - k..].join(" "));
+        let prefix = norm_phrase(&seg_words[..k].join(" "));
+        if !suffix.is_empty() && suffix == prefix {
+            overlap = k;
+            break;
+        }
+    }
+
+    let combined = if overlap > 0 {
+        let remainder = seg_words[overlap..].join(" ");
+        if remainder.is_empty() {
+            buffer.clone()
+        } else {
+            format!("{} {}", buffer.trim(), remainder)
+        }
+    } else {
+        format!("{} {}", buffer.trim(), clean_seg)
+    };
+
+    *buffer = deduplicate_stt_transcript(&combined);
+}
+
 /// Checks whether the text ends on an unfinished dangling preposition, conjunction, or incomplete clause.
 pub fn is_dangling_ending(text: &str) -> bool {
     let clean = text.trim().to_lowercase();
     let trimmed = clean.trim_end_matches(|c: char| c == '.' || c == ',' || c == '…' || c == '-' || c.is_whitespace());
 
     const DANGLING_ENDINGS: &[&str] = &[
-        "і", "та", "або", "але", "тому", "тому що", "бо", "якщо", "коли", "щоб",
-        "який", "яка", "яке", "які", "про", "для", "на", "в", "у", "з", "із",
-        "це все-таки", "основна", "наприклад", "тобто",
-        "and", "or", "but", "because", "if", "when", "that", "which", "with",
-        "for", "to", "in", "on", "of", "such as",
-        "и", "или", "но", "потому что", "если", "когда", "чтобы", "который", "которая"
+        "і", "й", "та", "або", "чи", "але", "проте", "однак", "тому", "тому що", "бо", "оскільки",
+        "якщо", "коли", "щоб", "хоча", "який", "яка", "яке", "які", "про", "для", "на", "в", "у",
+        "з", "із", "зі", "від", "до", "за", "під", "над", "між", "через", "при",
+        "це все-таки", "основна", "наприклад", "тобто", "буде", "будет", "will be",
+        "and", "or", "but", "because", "since", "although", "though", "while", "if", "when", "where",
+        "that", "which", "with", "without", "for", "to", "in", "into", "on", "of", "from", "by",
+        "about", "as", "such as", "like", "whether",
+        "и", "или", "но", "однако", "потому", "потому что", "так как", "если", "когда", "чтобы",
+        "хотя", "который", "которая", "которое", "которые", "о", "об", "во", "со", "из", "от",
+        "под", "между", "например", "то есть"
     ];
 
     for &ending in DANGLING_ENDINGS {
@@ -360,15 +488,17 @@ pub fn is_first_person_storytelling(text: &str) -> bool {
 /// Checks whether the utterance starts with an interrogative or imperative prompt keyword.
 pub fn has_question_opener(text: &str) -> bool {
     const OPENERS: &[&str] = &[
-        "як", "чому", "навіщо", "що таке", "що буде", "у чому різниця", "в чому різниця",
+        "як", "чому", "навіщо", "що таке", "що буде", "що це", "а чому", "а як", "а які",
+        "які мінуси", "які плюси", "у чому різниця", "в чому різниця",
         "яка різниця", "як працює", "як би ти", "як би ви", "розкажи", "розкажіть",
         "поясни", "поясніть", "назви", "назвіть", "опиши", "опишіть", "порівняй",
-        "спроектуй", "напиши",
+        "спроектуй", "напиши", "напишіть",
         "how", "why", "what is", "what are", "what happens", "what's the difference",
         "explain", "describe", "tell me", "walk me through", "compare", "design",
-        "implement", "when would you", "can you", "could you",
-        "как", "почему", "зачем", "что такое", "что будет", "в чем разница",
-        "расскажи", "расскажите", "объясни", "объясните"
+        "implement", "write", "show", "when would you", "can you", "could you",
+        "как", "почему", "зачем", "что такое", "что будет", "что это", "а какие",
+        "какие минусы", "какие плюсы", "в чем разница",
+        "расскажи", "расскажите", "объясни", "объясните", "напиши"
     ];
     OPENERS.iter().any(|&p| has_word_or_prefix(text, p))
 }
@@ -377,9 +507,11 @@ pub fn has_question_opener(text: &str) -> bool {
 pub fn has_question_anywhere(text: &str) -> bool {
     const ANYWHERE: &[&str] = &[
         "як ти вважаєш", "як ви вважаєте", "чи використовував", "чи працював",
-        "чи знаєш", "що думаєш про", "what do you think", "have you used",
-        "have you worked with", "do you know", "how do you handle", "how does",
-        "как ты думаешь", "работал ли ты", "использовал ли"
+        "чи знаєш", "що думаєш про", "які мінуси", "які плюси", "напиши код",
+        "what do you think", "have you used", "have you worked with",
+        "do you know", "how do you handle", "how does", "write code", "show code",
+        "pros and cons", "trade-offs",
+        "как ты думаешь", "работал ли ты", "использовал ли", "какие минусы"
     ];
     let lower = text.to_lowercase();
     ANYWHERE.iter().any(|&p| lower.contains(p))
@@ -397,25 +529,38 @@ pub fn has_tech_keyword(text: &str) -> bool {
         "promise", "async", "thread", "process", "mutex", "deadlock", "garbage collect",
         "memory leak", "index", "b-tree", "acid", "cap", "sharding", "replication",
         "partition", "load balanc", "rate limit", "cache", "microservice", "monolith",
-        "solid", "oop", "fp", "big o", "hash map", "binary tree", "gil", "mro",
+        "solid", "oop", "fp", "big o", "hash map", "binary tree", "gil", "mro", "code",
         "індекс", "потік", "процес", "пам'ят", "кеш", "транзакц", "база даних",
-        "архітектур", "алгоритм", "складність"
+        "архітектур", "алгоритм", "складність", "код", "мінуси", "плюси"
     ];
     let lower = text.to_lowercase();
     TECH.iter().any(|&p| has_word_or_prefix(&lower, p))
 }
 
-/// Checks whether the text is a pure greeting or microphone audio test noise.
+/// Checks whether the text is a pure greeting, microphone audio test noise, or background webinar chatter.
 pub fn is_greeting_or_noise(text: &str) -> bool {
     let clean = text.trim().to_lowercase();
     let trimmed = clean.trim_matches(|c: char| c == '!' || c == '.' || c == ',' || c == '?' || c.is_whitespace());
     const NOISE_WORDS: &[&str] = &[
-        "привіт", "добрий день", "доброго дня", "вітаю", "алло", "раз два", "як мене чути",
+        "привіт", "привіт усім", "добрий день", "доброго дня", "вітаю", "алло", "раз два", "як мене чути",
         "чи добре чути", "зараз розшарю", "секунду", "угу", "ага", "так-так", "окей", "добре",
         "дякую", "hello", "hi there", "can you hear me", "let me share", "one second",
         "uh huh", "yeah", "okay", "thanks", "здравствуйте", "привет", "как слышно"
     ];
-    NOISE_WORDS.contains(&trimmed)
+    if NOISE_WORDS.contains(&trimmed) {
+        return true;
+    }
+    const WEBINAR_PATTERNS: &[&str] = &[
+        "вітаю всіх на нашому вебінарі", "сьогодні на стрімі", "підписуйтесь на канал",
+        "пишіть плюсики в чат", "поставте плюс у чаті", "запис вебінару буде",
+        "поки всі збираються", "напишіть у чаті з якого ви міста",
+        "welcome everyone to today's webinar", "drop a plus in the chat",
+        "don't forget to like and subscribe", "while we wait for others to join",
+        "recording will be sent after the webinar", "type in the chat where you are joining from",
+        "всем привет на нашем вебинаре", "поставьте плюсики в чат",
+        "подписывайтесь на канал", "запись эфира будет доступна"
+    ];
+    WEBINAR_PATTERNS.iter().any(|&p| clean.contains(p))
 }
 
 /// Extracts the actual question from an utterance preceded by storytelling context.
@@ -475,14 +620,15 @@ pub fn extract_focused_question(latest_chunk: &str, rolling_context: &str) -> St
 /// 3. Penalizes pure first-person company storytelling unless question opener or ? is present.
 /// 4. Accurately scores interrogative openers, questions anywhere, and tech topics.
 pub fn is_question_heuristic(text: &str) -> bool {
-    let clean = text.trim();
+    let dedup = deduplicate_stt_transcript(text.trim());
+    let clean = dedup.trim();
     let words: Vec<&str> = clean.split_whitespace().collect();
     let word_count = words.len();
     if word_count < MIN_QUESTION_WORD_COUNT {
         return false;
     }
 
-    if is_greeting_or_noise(clean) && !clean.contains('?') {
+    if is_greeting_or_noise(clean) {
         return false;
     }
 
@@ -494,6 +640,11 @@ pub fn is_question_heuristic(text: &str) -> bool {
     let is_story = is_first_person_storytelling(clean);
     let ends_with_dangling = is_dangling_ending(clean);
 
+    // Strictly buffer segments ending on dangling conjunctions/prepositions
+    if ends_with_dangling && !ends_with_qm {
+        return false;
+    }
+
     let mut score: i32 = 0;
     if ends_with_qm { score += 55; }
     else if has_qm { score += 30; }
@@ -502,14 +653,13 @@ pub fn is_question_heuristic(text: &str) -> bool {
     if has_tech { score += 25; }
     if word_count >= 4 && word_count <= 45 { score += 10; }
 
-    if ends_with_dangling && !ends_with_qm { score -= 45; }
     if is_story && !ends_with_qm && !has_opener && !has_anywhere { score -= 50; }
     if word_count < 2 && !has_tech { score -= 40; }
 
     if score >= 45
         || (ends_with_qm && word_count >= 2)
-        || (has_opener && word_count >= 3 && !ends_with_dangling)
-        || (has_tech && (has_opener || has_anywhere || ends_with_qm))
+        || (has_opener && word_count >= 2 && !ends_with_dangling)
+        || (has_tech && !ends_with_dangling && (has_opener || has_anywhere || ends_with_qm))
     {
         return true;
     }
@@ -665,6 +815,26 @@ mod tests {
         let story = "У нашій компанії ми розробляємо фінансовий продукт. Команда складається з 15 інженерів. Як влаштований MRO в Python?";
         let focused = extract_focused_question(story, "");
         assert!(focused.contains("Як влаштований MRO в Python?"));
+
+        // Technical prompt ending on dangling conjunction is buffered (returns false until completed):
+        assert!(!is_question_heuristic("Explain how PostgreSQL handles MVCC when"));
+        let mut acc = String::new();
+        append_deduplicated_segment(&mut acc, "Explain how PostgreSQL handles MVCC when");
+        append_deduplicated_segment(&mut acc, "when two transactions update the same row");
+        assert_eq!(
+            acc,
+            "Explain how PostgreSQL handles MVCC when two transactions update the same row"
+        );
+        assert!(is_question_heuristic(&acc));
+
+        // Repeated STT loops are deduplicated:
+        assert_eq!(
+            deduplicate_stt_transcript("how does how does PostgreSQL handle handle MVCC?"),
+            "how does PostgreSQL handle MVCC?"
+        );
+
+        // Webinar chatter is filtered as noise:
+        assert!(!is_question_heuristic("Вітаю всіх на нашому вебінарі, пишіть плюсики в чат"));
     }
 }
 

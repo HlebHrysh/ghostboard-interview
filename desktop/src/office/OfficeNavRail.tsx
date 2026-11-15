@@ -1,17 +1,17 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import {
-  Rocket,
-  Headphones,
   Cpu,
   FileText,
-  Shield,
+  Headphones,
+  LogIn,
   LogOut,
-  Zap,
+  Rocket,
+  Shield,
 } from 'lucide-react';
-import { Pill, StatusDot, stopDrag } from '../ui/primitives';
-import { useEnvironmentInfo, OS_LABEL } from '../lib/platform';
-import type { UserProfileData } from '../lib/apiClient';
-import { getResolvedBaseUrl } from '../lib/apiClient';
+import { SPRING, stopDrag } from '../ui/primitives';
+import { getResolvedBaseUrl, type UserProfileData } from '../lib/apiClient';
+import { OS_LABEL, useEnvironmentInfo } from '../lib/platform';
 
 export type OfficeTab = 'launch' | 'audio' | 'ai' | 'context' | 'stealth';
 
@@ -19,7 +19,9 @@ interface OfficeNavRailProps {
   activeTab: OfficeTab;
   onSelectTab: (tab: OfficeTab) => void;
   user: UserProfileData | null;
+  stealthArmed: boolean;
   onLogout: () => void;
+  onOpenAuth?: () => void;
   onQuickQaLogin?: () => void;
   isQaLoggingIn?: boolean;
 }
@@ -41,36 +43,68 @@ export const OfficeNavRail: React.FC<OfficeNavRailProps> = ({
   activeTab,
   onSelectTab,
   user,
+  stealthArmed,
   onLogout,
-  onQuickQaLogin,
-  isQaLoggingIn = false,
+  onOpenAuth,
 }) => {
   const envInfo = useEnvironmentInfo();
-  const currentBaseUrl = getResolvedBaseUrl();
-  const isCloud = currentBaseUrl.includes('ghostboard.ai');
-  const serverDisplay = isCloud ? 'Cloud' : 'Direct Rust AI';
+  const baseUrl = getResolvedBaseUrl();
+  const isCloud = baseUrl.includes('ghostboard.ai') || baseUrl.includes('https://');
+  const isDemo = !user || user.id === 'usr_demo' || user.email === 'demo@ghostboard.ai';
 
   return (
-    <aside className="w-[220px] shrink-0 border-r border-white/[0.08] bg-[#0c0d10] flex flex-col justify-between p-3 select-none">
-      <div className="space-y-4">
-        {/* Brand Header */}
-        <div className="px-2 pt-1 pb-2">
+    <aside
+      data-tauri-drag-region
+      className="w-[232px] shrink-0 border-r border-white/[0.08] bg-[#09090b]/95 flex flex-col justify-between p-3.5 select-none shadow-[inset_-1px_0_0_rgba(255,255,255,0.03)]"
+    >
+      <div className="space-y-5">
+        {/* Apple Settings / Linear Brand Header + STEALTH ARMED indicator */}
+        <div className="px-1.5 pt-1 space-y-2.5">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center text-zinc-950 font-black text-xs shadow-sm">
-                G
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/15 bg-[#141418] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16)] overflow-hidden">
+                <img
+                  src="./ghost-transparent.png"
+                  alt="Ghostboard"
+                  draggable={false}
+                  className="h-5 w-5 object-contain"
+                />
               </div>
-              <span className="text-xs font-bold tracking-tight text-white uppercase">Ghostboard</span>
+              <div className="leading-none">
+                <span className="block font-display text-[13px] font-semibold tracking-tight text-white">
+                  Ghostboard
+                </span>
+                <span className="block text-[10px] font-mono text-zinc-500 mt-0.5">
+                  OFFICE v2
+                </span>
+              </div>
             </div>
-            <Pill tone="ok" className="h-5 px-1.5 text-[9px] font-mono">
-              <StatusDot tone="ok" ping />
-              <span>ARMED</span>
-            </Pill>
+          </div>
+
+          {/* STEALTH ARMED indicator */}
+          <div
+            className={`flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-[10px] font-mono uppercase tracking-[0.09em] ${
+              stealthArmed
+                ? 'border-emerald-500/25 bg-emerald-500/[0.08] text-emerald-300'
+                : 'border-amber-500/25 bg-amber-500/[0.08] text-amber-300'
+            }`}
+          >
+            <span className="flex items-center gap-1.5 font-medium">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  stealthArmed ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              {stealthArmed ? 'STEALTH ARMED' : 'STEALTH OFF'}
+            </span>
+            <span className="text-[9.5px] opacity-75">
+              {envInfo?.hyprland ? 'HYPR' : (envInfo?.platform || OS_LABEL.linux).toUpperCase().slice(0, 5)}
+            </span>
           </div>
         </div>
 
-        {/* 5 Navigation Tabs */}
-        <nav className="space-y-1">
+        {/* 5 Primary Navigation Tabs with layoutId spring capsule */}
+        <nav aria-label="Розділи Ghostboard Office" className="space-y-1">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -81,16 +115,31 @@ export const OfficeNavRail: React.FC<OfficeNavRailProps> = ({
                 data-tauri-drag-region="false"
                 onMouseDown={stopDrag}
                 onClick={() => onSelectTab(item.id)}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left ${
+                className={`relative z-10 w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs transition-colors text-left cursor-pointer ${
                   isActive
-                    ? 'bg-white text-zinc-950 shadow-sm font-semibold'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
+                    ? 'text-zinc-950 font-semibold'
+                    : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]'
                 }`}
               >
-                <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-zinc-950' : 'text-zinc-400'}`} />
-                <div className="min-w-0 flex-1 truncate">
+                {isActive && (
+                  <motion.span
+                    layoutId="office-nav-active"
+                    transition={SPRING}
+                    className="absolute inset-0 -z-10 rounded-xl bg-white shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_8px_22px_rgba(0,0,0,0.45)]"
+                  />
+                )}
+                <Icon
+                  className={`w-4 h-4 shrink-0 transition-colors ${
+                    isActive ? 'text-zinc-950' : 'text-zinc-500'
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
                   <div className="truncate leading-tight">{item.label}</div>
-                  <div className={`text-[10px] truncate ${isActive ? 'text-zinc-700' : 'text-zinc-500'}`}>
+                  <div
+                    className={`text-[10px] truncate mt-0.5 ${
+                      isActive ? 'text-zinc-600' : 'text-zinc-500'
+                    }`}
+                  >
                     {item.sub}
                   </div>
                 </div>
@@ -100,63 +149,56 @@ export const OfficeNavRail: React.FC<OfficeNavRailProps> = ({
         </nav>
       </div>
 
-      {/* Footer: User Account Pill, Backend dot & Environment */}
+      {/* Bottom Compact Account Card */}
       <div className="space-y-2 pt-3 border-t border-white/[0.08]">
-        {/* Connection & OS Status */}
-        <div className="px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/[0.06] text-[10px] font-mono text-zinc-400 space-y-1">
-          <div className="flex items-center justify-between">
+        <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-2">
+          <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
             <span className="flex items-center gap-1.5">
-              <StatusDot tone="ok" />
-              <span>Ядро:</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Ядро ШІ
             </span>
-            <span className="text-emerald-300 font-semibold truncate max-w-[100px]">{serverDisplay}</span>
+            <span className="text-zinc-200 font-medium">
+              {isDemo ? 'Rust Local' : isCloud ? 'Cloud Sync' : 'Local Dev'}
+            </span>
           </div>
-          {envInfo && (
-            <div className="flex items-center justify-between text-zinc-500 pt-0.5 border-t border-white/[0.04]">
-              <span>Платформа:</span>
-              <span className="text-zinc-300 font-semibold uppercase">{envInfo.platform || OS_LABEL.linux}</span>
-            </div>
-          )}
-        </div>
 
-        {/* User Account Info */}
-        <div className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-2">
-          <div className="min-w-0 flex-1 truncate">
-            <p className="text-[11px] font-medium text-zinc-200 truncate font-mono">
-              {user?.email || 'Автономний режим'}
-            </p>
-            <div className="flex items-center gap-1 mt-0.5">
-              <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-white/10 text-zinc-300 uppercase">
+          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-white/[0.06]">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11.5px] font-medium text-zinc-100 truncate">
+                {isDemo ? 'Автономний режим' : user?.email || 'Користувач'}
+              </p>
+              <span className="inline-block mt-0.5 rounded bg-white/[0.08] px-1.5 py-0.5 text-[9.5px] font-mono uppercase text-zinc-300">
                 {user?.plan || 'PRO'}
               </span>
             </div>
-          </div>
-          <button
-            type="button"
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            onClick={onLogout}
-            title="Вийти з акаунта"
-            className="p-1.5 rounded-md text-zinc-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
-        </div>
 
-        {/* Quick QA Seed Button if in dev / guest mode */}
-        {(!user || user.email === 'guest@ghostboard.local' || user.id === 'usr_demo') && onQuickQaLogin && (
-          <button
-            type="button"
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            onClick={onQuickQaLogin}
-            disabled={isQaLoggingIn}
-            className="w-full py-1.5 px-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 text-[10px] font-mono font-medium flex items-center justify-center gap-1.5 transition cursor-pointer"
-          >
-            <Zap className={`w-3 h-3 text-cyan-400 ${isQaLoggingIn ? 'animate-spin' : ''}`} />
-            <span>1-Click QA Seed</span>
-          </button>
-        )}
+            {isDemo && onOpenAuth ? (
+              <button
+                type="button"
+                data-tauri-drag-region="false"
+                onMouseDown={stopDrag}
+                onClick={onOpenAuth}
+                title="Увійти в акаунт"
+                className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.05] px-2 py-1 text-[10.5px] font-medium text-zinc-200 hover:bg-white/[0.12] hover:text-white transition-colors cursor-pointer"
+              >
+                <LogIn className="w-3 h-3" />
+                Увійти
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-tauri-drag-region="false"
+                onMouseDown={stopDrag}
+                onClick={onLogout}
+                title="Вийти з акаунта"
+                aria-label="Вийти з акаунта"
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </aside>
   );

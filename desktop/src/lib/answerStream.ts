@@ -113,6 +113,9 @@ export function buildAnswerPayload(req: AnswerRequest): {
     primaryStack?: string;
     experienceLevel?: string;
     customBio?: string;
+    cvContext?: string;
+    resumeContext?: string;
+    customContext?: string;
     techStack?: string[];
   };
   outputLanguage: string;
@@ -140,6 +143,8 @@ export function buildAnswerPayload(req: AnswerRequest): {
           primaryStack: req.profile.primaryStack || req.profile.techStack?.join(', '),
           experienceLevel: req.profile.experienceLevel,
           customBio: req.profile.customBio,
+          cvContext: req.profile.cvContext || req.profile.summary || req.profile.customBio,
+          customContext: req.customInstructions,
           techStack: req.profile.techStack,
         }
       : undefined,
@@ -213,6 +218,162 @@ function describeHttpError(status: number, body: string): string {
   if (status === 429) return `Ліміт запитів перевищено${detail ? `: ${detail}` : ''}`;
   if (status >= 500) return `Сервер ШІ тимчасово недоступний (${status})${detail ? `: ${detail}` : ''}`;
   return `Помилка запиту (${status})${detail ? `: ${detail}` : ''}`;
+}
+
+interface DualStreamConsumeOptions {
+  response: Response;
+  question: string;
+  outputLanguage: string;
+  slotMode: PatchTargetSlot | undefined;
+  baseSlots: StructuredAnswerSlots | null;
+  startedAt: number;
+  initialTtftMs: number | null;
+  abortSignal: AbortSignal;
+  handlers: AnswerStreamHandlers;
+  emitProgress: (delta: string, totalRaw: string) => string;
+  defaultModel: string;
+}
+
+async function consumeDualStreamResponse({
+  response,
+  question,
+  outputLanguage,
+  slotMode,
+  baseSlots,
+  startedAt,
+  initialTtftMs,
+  abortSignal,
+  handlers,
+  emitProgress,
+  defaultModel,
+}: DualStreamConsumeOptions): Promise<boolean> {
+  if (!response.body) return false;
+  let accumulated = '';
+  let ttftMs = initialTtftMs;
+  let model = defaultModel;
+  const isSse = (response.headers.get('content-type') || '').includes('text/event-stream');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let eventName = 'message';
+  let dataLines: string[] = [];
+  let finished = false;
+  let streamError: string | null = null;
+
+  const pushToken = (token: string) => {
+    if (!token) return;
+    if (ttftMs === null) {
+      ttftMs = Math.round(performance.now() - startedAt);
+      handlers.onFirstToken?.(ttftMs);
+    }
+    accumulated += token;
+    emitProgress(token, accumulated);
+  };
+
+  const dispatch = () => {
+    if (dataLines.length === 0) return;
+    const data = dataLines.join('\n');
+    const name = eventName;
+    eventName = 'message';
+    dataLines = [];
+    if (data === '[DONE]' || data === '<<<END>>>') {
+      finished = true;
+      return;
+    }
+    if (name === 'telemetry') {
+      try {
+        const t = JSON.parse(data) as { model?: string };
+        if (t.model) model = t.model;
+      } catch {
+        /* telemetry is optional */
+      }
+      return;
+    }
+    if (name === 'complete') {
+      try {
+        const c = JSON.parse(data) as { model?: string };
+        if (c.model) model = c.model;
+      } catch {
+        /* optional */
+      }
+      finished = true;
+      return;
+    }
+    if (name === 'error') {
+      try {
+        const e = JSON.parse(data) as { error?: string; message?: string };
+        streamError = e.error || e.message || 'Помилка потоку ШІ';
+      } catch {
+        streamError = data || 'Помилка потоку ШІ';
+      }
+      finished = true;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(data) as { text?: string; model?: string; type?: string };
+      if (parsed.type === 'TTFT') return;
+      if (parsed.model) model = parsed.model;
+      if (typeof parsed.text === 'string') pushToken(parsed.text);
+    } catch {
+      pushToken(data);
+    }
+  };
+
+  while (!finished) {
+    const { value, done } = await reader.read();
+    if (value) {
+      const chunk = decoder.decode(value, { stream: !done });
+      if (!isSse) {
+        pushToken(chunk);
+      } else {
+        buffer += chunk;
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line === '') {
+            dispatch();
+          } else if (line.startsWith(':')) {
+            continue;
+          } else if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).replace(/^ /, ''));
+          }
+        }
+      }
+    }
+    if (done) break;
+  }
+  if (isSse) {
+    if (buffer.startsWith('data:')) dataLines.push(buffer.slice(5).replace(/^ /, ''));
+    dispatch();
+  }
+  reader.cancel().catch(() => {});
+
+  if (abortSignal.aborted) return true;
+  if (streamError || !cleanStreamText(accumulated).trim()) {
+    const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(question, outputLanguage));
+    handlers.onToken('', fallbackCard);
+    handlers.onDone({
+      text: fallbackCard,
+      ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
+      totalMs: Math.round(performance.now() - startedAt),
+      model: 'Ghostboard Emergency Fallback',
+    });
+    return true;
+  }
+
+  const finalMerged = applySlotMergeToBuffer(accumulated, slotMode, baseSlots);
+  if (finalMerged.mergedSlots) {
+    handlers.onSlotMerge?.(finalMerged.rawTagged, finalMerged.mergedSlots);
+  }
+  handlers.onDone({
+    text: finalMerged.cleanedText,
+    ttftMs,
+    totalMs: Math.round(performance.now() - startedAt),
+    model,
+  });
+  return true;
 }
 
 /**
@@ -357,30 +518,22 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
           });
 
           if (response.ok && response.body) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder('utf-8');
-            let fallbackAcc = '';
-            while (true) {
-              const { value, done } = await reader.read();
-              if (value) {
-                const chunk = decoder.decode(value, { stream: !done });
-                fallbackAcc += chunk;
-                emitProgress(chunk, fallbackAcc);
-              }
-              if (done) break;
-            }
-            if (fallbackAcc.trim()) {
-              completed = true;
-              unlisten();
-              const finalFallbackText = applySlotMergeToBuffer(fallbackAcc, slotMode, baseSlots).cleanedText;
-              handlers.onDone({
-                text: finalFallbackText,
-                ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
-                totalMs: Math.round(performance.now() - startedAt),
-                model: 'Next.js Fallback',
-              });
-              return;
-            }
+            completed = true;
+            unlisten();
+            const handled = await consumeDualStreamResponse({
+              response,
+              question: payload.question,
+              outputLanguage: payload.outputLanguage,
+              slotMode,
+              baseSlots,
+              startedAt,
+              initialTtftMs: ttftMs,
+              abortSignal: controller.signal,
+              handlers,
+              emitProgress,
+              defaultModel: 'Next.js Fallback',
+            });
+            if (handled) return;
           }
         } catch {}
 
@@ -433,125 +586,18 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
         return;
       }
 
-      const isSse = (response.headers.get('content-type') || '').includes('text/event-stream');
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      let eventName = 'message';
-      let dataLines: string[] = [];
-      let finished = false;
-      let streamError: string | null = null;
-
-      const pushToken = (token: string) => {
-        if (!token) return;
-        if (ttftMs === null) {
-          ttftMs = Math.round(performance.now() - startedAt);
-          handlers.onFirstToken?.(ttftMs);
-        }
-        accumulated += token;
-        emitProgress(token, accumulated);
-      };
-
-      const dispatch = () => {
-        if (dataLines.length === 0) return;
-        const data = dataLines.join('\n');
-        const name = eventName;
-        eventName = 'message';
-        dataLines = [];
-        if (data === '[DONE]' || data === '<<<END>>>') {
-          finished = true;
-          return;
-        }
-        if (name === 'telemetry') {
-          try {
-            const t = JSON.parse(data) as { model?: string };
-            if (t.model) model = t.model;
-          } catch {
-            /* telemetry is optional */
-          }
-          return;
-        }
-        if (name === 'complete') {
-          try {
-            const c = JSON.parse(data) as { model?: string };
-            if (c.model) model = c.model;
-          } catch {
-            /* optional */
-          }
-          finished = true;
-          return;
-        }
-        if (name === 'error') {
-          try {
-            const e = JSON.parse(data) as { error?: string; message?: string };
-            streamError = e.error || e.message || 'Помилка потоку ШІ';
-          } catch {
-            streamError = data || 'Помилка потоку ШІ';
-          }
-          finished = true;
-          return;
-        }
-        try {
-          const parsed = JSON.parse(data) as { text?: string; model?: string; type?: string };
-          if (parsed.type === 'TTFT') return;
-          if (parsed.model) model = parsed.model;
-          if (typeof parsed.text === 'string') pushToken(parsed.text);
-        } catch {
-          pushToken(data);
-        }
-      };
-
-      while (!finished) {
-        const { value, done } = await reader.read();
-        if (value) {
-          const chunk = decoder.decode(value, { stream: !done });
-          if (!isSse) {
-            pushToken(chunk);
-          } else {
-            buffer += chunk;
-            const lines = buffer.split(/\r?\n/);
-            buffer = lines.pop() ?? '';
-            for (const line of lines) {
-              if (line === '') {
-                dispatch();
-              } else if (line.startsWith(':')) {
-                continue;
-              } else if (line.startsWith('event:')) {
-                eventName = line.slice(6).trim();
-              } else if (line.startsWith('data:')) {
-                dataLines.push(line.slice(5).replace(/^ /, ''));
-              }
-            }
-          }
-        }
-        if (done) break;
-      }
-      if (isSse) {
-        if (buffer.startsWith('data:')) dataLines.push(buffer.slice(5).replace(/^ /, ''));
-        dispatch();
-      }
-      reader.cancel().catch(() => {});
-
-      if (streamError || !accumulated.trim()) {
-        const fallbackCard = cleanStreamText(buildEmergencyCoachingCard(req.question, resolveLanguage(req.language, req.question)));
-        handlers.onToken('', fallbackCard);
-        handlers.onDone({
-          text: fallbackCard,
-          ttftMs: ttftMs ?? Math.round(performance.now() - startedAt),
-          totalMs: Math.round(performance.now() - startedAt),
-          model: 'Ghostboard Emergency Fallback',
-        });
-        return;
-      }
-      const finalMerged = applySlotMergeToBuffer(accumulated, slotMode, baseSlots);
-      if (finalMerged.mergedSlots) {
-        handlers.onSlotMerge?.(finalMerged.rawTagged, finalMerged.mergedSlots);
-      }
-      handlers.onDone({
-        text: finalMerged.cleanedText,
-        ttftMs,
-        totalMs: Math.round(performance.now() - startedAt),
-        model,
+      await consumeDualStreamResponse({
+        response,
+        question: req.question,
+        outputLanguage: resolveLanguage(req.language, req.question),
+        slotMode,
+        baseSlots,
+        startedAt,
+        initialTtftMs: ttftMs,
+        abortSignal: controller.signal,
+        handlers,
+        emitProgress,
+        defaultModel: 'Gemini 3.5 Flash-Lite',
       });
     } catch {
       if (controller.signal.aborted) return;

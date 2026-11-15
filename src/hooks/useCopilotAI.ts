@@ -3,9 +3,14 @@ import { toast } from 'sonner';
 import { InterviewQAItem } from '@/types/interview';
 import { normalizeTechnicalSpeech, hasTechnicalKeyword, isFillerOrNoise } from '@/lib/techSpeechNormalizer';
 import { CandidateProfile } from '@/components/CandidateProfileModal';
-import { parseStructuredGhostboardOutput, mergeContinuationQuestion } from '@/lib/aiPromptCore';
+import { parseStructuredGhostboardOutput, mergeContinuationQuestion, buildEmergencyCoachingCard } from '@/lib/aiPromptCore';
 import { matchSpokenTranscriptToPillars } from '@/lib/voiceAnchorTracker';
-import { evaluateSpeechIntent } from '@/lib/speechIntentGate';
+import {
+  evaluateSpeechIntent,
+  deduplicateSttTranscript,
+  accumulateUtteranceSegments,
+  isDanglingThought,
+} from '@/lib/speechIntentGate';
 import {
   PatchTargetSlot,
   SpeculativeHookEntry,
@@ -171,6 +176,27 @@ function getMsg(lang: string | undefined): CopilotMessages {
   return MESSAGES[lang || ''] || MESSAGES.en;
 }
 
+export type ListenIsolationMode = 'interviewer_only' | 'both' | 'mic_only';
+
+/**
+ * Hardware audio isolation guard: when `interviewer_only` is active, immediately calls
+ * `track.stop()` on every active microphone track so the user's voice in the room cannot be captured.
+ */
+export function enforceMicrophoneIsolation(
+  mode: ListenIsolationMode,
+  micStream?: MediaStream | null
+): void {
+  if (mode === 'interviewer_only' && micStream) {
+    try {
+      micStream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
+    } catch {}
+  }
+}
+
 interface UseCopilotAIOptions {
   speechLanguageRef: React.MutableRefObject<string>;
   outputLanguageRef: React.MutableRefObject<string>;
@@ -181,6 +207,8 @@ interface UseCopilotAIOptions {
   isFrozenRef: React.MutableRefObject<boolean>;
   sessionModeRef: React.MutableRefObject<'interview' | 'meeting'>;
   sessionDuration: number;
+  listenModeRef?: React.MutableRefObject<ListenIsolationMode>;
+  micStreamRef?: React.MutableRefObject<MediaStream | null>;
 }
 
 export function useCopilotAI({
@@ -193,6 +221,8 @@ export function useCopilotAI({
   isFrozenRef,
   sessionModeRef,
   sessionDuration,
+  listenModeRef,
+  micStreamRef,
 }: UseCopilotAIOptions) {
   const [interviewQAs, setInterviewQAs] = useState<InterviewQAItem[]>([]);
   const interviewQAsRef = useRef<InterviewQAItem[]>([]);
@@ -205,6 +235,7 @@ export function useCopilotAI({
   const interviewerStoryBufferRef = useRef<string>('');
   const interviewerStoryClausesRef = useRef<Array<{ text: string; timestamp: number }>>([]);
   const lastInterviewerChunkTimeRef = useRef<number>(0);
+  const lastInterviewerSpeechTimeRef = useRef<number>(0);
   const lastAutoVoiceTriggerTimeRef = useRef<number>(0);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isCopilotGeneratingRef = useRef<boolean>(false);
@@ -222,6 +253,16 @@ export function useCopilotAI({
   const speculativeAbortRef = useRef<AbortController | null>(null);
   const speculativeInFlightQuestionRef = useRef<string | null>(null);
   const refineAbortRef = useRef<AbortController | null>(null);
+  const mainStreamAbortRef = useRef<AbortController | null>(null);
+
+  const abortInFlight = useCallback(() => {
+    if (mainStreamAbortRef.current) {
+      mainStreamAbortRef.current.abort();
+      mainStreamAbortRef.current = null;
+    }
+    isCopilotGeneratingRef.current = false;
+    setIsCopilotGenerating(false);
+  }, []);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -292,7 +333,10 @@ export function useCopilotAI({
       try {
         const res = await fetch('/api/ai/dual-stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-ghostboard-client': 'studio-session',
+          },
           signal: controller.signal,
           body: JSON.stringify({
             question: cleanQ,
@@ -305,6 +349,7 @@ export function useCopilotAI({
             isConcise: isConciseRef.current,
             directorModifier: 'normal',
             patchSlot: 'speculative_hook',
+            maxOutputTokens: 90,
           }),
         });
 
@@ -351,10 +396,10 @@ export function useCopilotAI({
   ) => {
     if (isCopilotGeneratingRef.current && !overrideText) return;
 
-    const rawFragments = pendingFragmentsRef.current.join(' ').trim();
-    const textToAnalyze = overrideText || rawFragments;
+    const rawFragments = accumulateUtteranceSegments(pendingFragmentsRef.current);
+    const textToAnalyze = overrideText ? deduplicateSttTranscript(overrideText) : rawFragments;
 
-    if (!textToAnalyze || textToAnalyze.length < 4) return;
+    if (!textToAnalyze || textToAnalyze.length < 3) return;
     const cleanText = normalizeTechnicalSpeech(textToAnalyze);
     const lower = cleanText.toLowerCase();
 
@@ -367,14 +412,16 @@ export function useCopilotAI({
       'чи можна', 'чи варто', 'чи треба', 'чи маєте', 'чи знаєте', 'чи працювали', 'чи стикалися', 'чи доводилося', 'чи використовували',
       'розкажіть', 'розкажи', 'поясніть', 'поясни', 'опишіть', 'опиши', 'наведіть', 'наведи', 'підкажіть', 'скажіть', 'поділіться',
       'різниця', 'відрізняється', 'як би ви', 'як би ти', 'який досвід', 'досвід з', 'досвід роботи', 'архітектур', 'патерн', 'проблем', 'стек',
+      'мінуси', 'плюси', 'напиши код', 'напишіть код',
       'как', 'почему', 'что такое', 'что', 'когда', 'где', 'какой', 'какая', 'какие', 'чем', 'зачем', 'для чего', 'кто', 'сколько',
       'можно ли', 'стоит ли', 'нужно ли', 'сталкивались ли', 'доводилось ли', 'использовали ли', 'знаете ли', 'был ли опыт',
       'расскажите', 'расскажи', 'объясните', 'объясни', 'опишите', 'опиши', 'приведите', 'приведи', 'подскажите', 'скажите', 'поделитесь',
-      'в чем разница', 'в чём разница', 'чем отличается', 'как бы вы', 'как бы ты', 'какой опыт', 'опыт работы',
+      'в чем разница', 'в чём разница', 'чем отличается', 'как бы вы', 'как бы ты', 'какой опыт', 'опыт работы', 'минусы', 'плюсы',
       'how', 'why', 'what', 'when', 'where', 'which', 'who',
       'can you', 'could you', 'would you', 'do you', 'did you', 'have you',
       'tell me', 'tell us', 'explain', 'describe', 'difference', 'compare',
-      'experience with', 'architecture', 'under the hood', 'best practice'
+      'experience with', 'architecture', 'under the hood', 'best practice',
+      'write code', 'show code', 'implement', 'trade-off', 'tradeoffs', 'pros', 'cons', 'scale'
     ];
 
     const hasQuestionSign = cleanText.includes('?');
@@ -392,7 +439,7 @@ export function useCopilotAI({
     const isAnswerDeclaration = !hasQuestionSign && answerOpeners.some((op) => lower.startsWith(op) || lower.includes(op));
     if (isAnswerDeclaration && !overrideText && !isManualEnter) return;
 
-    const isQuestionPrompt = isManualEnter || overrideText || (hasQuestionSign && wordCount >= 2) || (hasTriggerWord && wordCount >= 3) || (hasTechTerm && wordCount >= 3);
+    const isQuestionPrompt = isManualEnter || overrideText || (hasQuestionSign && wordCount >= 1) || (hasTriggerWord && wordCount >= 2) || (hasTechTerm && wordCount >= 2);
     
     if (!isQuestionPrompt) {
       if (pendingFragmentsRef.current.length > 30) {
@@ -406,18 +453,26 @@ export function useCopilotAI({
     let targetQuestion = cleanText;
     let isContinuationMerged = false;
     let previousQuestionText: string | undefined = undefined;
+    let replacedPrematureId: string | undefined = undefined;
 
-    if (!overrideText && !isManualEnter) {
+    if (!isManualEnter) {
       const elapsedSinceLastCall = now - lastQATimestampRef.current;
       if (elapsedSinceLastCall < 2500 && interviewQAsRef.current.length > 0) {
         const lastQA = interviewQAsRef.current[0];
         const merged = mergeContinuationQuestion(lastQA.question, cleanText);
         if (merged.addedConstraint) {
+          if (mainStreamAbortRef.current) {
+            mainStreamAbortRef.current.abort();
+            mainStreamAbortRef.current = null;
+          }
           targetQuestion = merged.mergedQuestion;
           isContinuationMerged = true;
           previousQuestionText = lastQA.question;
+          if (elapsedSinceLastCall <= 1500 || lastQA.isStreaming) {
+            replacedPrematureId = lastQA.id;
+          }
         }
-      } else if (elapsedSinceLastCall < 4000) {
+      } else if (!overrideText && elapsedSinceLastCall < 4000) {
         if (lastQATextRef.current && (lower === lastQATextRef.current || (lower.length > 10 && lastQATextRef.current.includes(lower)))) {
           return;
         }
@@ -428,7 +483,7 @@ export function useCopilotAI({
     interviewerStoryClausesRef.current = [];
     interviewerStoryBufferRef.current = '';
     lastQATimestampRef.current = now;
-    lastQATextRef.current = lower;
+    lastQATextRef.current = targetQuestion.toLowerCase();
     isCopilotGeneratingRef.current = true;
     setIsCopilotGenerating(true);
 
@@ -480,7 +535,7 @@ export function useCopilotAI({
       : null;
 
     const previousActiveQAId = activeQAIdRef.current;
-    const qaId = `qa_${now}`;
+    const qaId = replacedPrematureId || `qa_${now}`;
     const initialQA: InterviewQAItem = {
       id: qaId,
       sourceMessageId,
@@ -504,7 +559,10 @@ export function useCopilotAI({
       setSpeculativeHitMap((prev) => ({ ...prev, [qaId]: true }));
     }
 
-    setInterviewQAs((prev) => [initialQA, ...prev]);
+    setInterviewQAs((prev) => [
+      initialQA,
+      ...(replacedPrematureId ? prev.filter((q) => q.id !== replacedPrematureId) : prev),
+    ]);
 
     if (isFrozenRef.current) {
       setPendingNewCount((prev) => {
@@ -531,11 +589,21 @@ export function useCopilotAI({
     let accumulatedText = '';
     let measuredTtft: number | undefined = hitSpecEntry ? 0 : undefined;
 
+    if (mainStreamAbortRef.current) {
+      mainStreamAbortRef.current.abort();
+    }
+    const streamController = new AbortController();
+    mainStreamAbortRef.current = streamController;
+    const streamTimeoutId = setTimeout(() => streamController.abort(), 25000);
+
     try {
       const res = await fetch('/api/ai/dual-stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(25000),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ghostboard-client': 'studio-session',
+        },
+        signal: streamController.signal,
         body: JSON.stringify({
           question: targetQuestion,
           previousQuestion: previousQuestionText,
@@ -565,7 +633,7 @@ export function useCopilotAI({
           onChunk: (chunkText) => {
             accumulatedText += chunkText;
 
-            if (!hitSpecEntry && accumulatedText.trim().startsWith('<<<IGNORE>>>')) {
+            if (accumulatedText.trim().startsWith('<<<IGNORE>>>') || accumulatedText.includes('<<<IGNORE>>>')) {
               ignoredByGuardrail = true;
               return 'stop';
             }
@@ -632,7 +700,7 @@ export function useCopilotAI({
           },
         });
 
-        if (ignoredByGuardrail || (!hitSpecEntry && accumulatedText.trim().startsWith('<<<IGNORE>>>'))) {
+        if (ignoredByGuardrail || accumulatedText.trim().startsWith('<<<IGNORE>>>') || accumulatedText.includes('<<<IGNORE>>>')) {
           if (toastId) toast.dismiss(toastId);
           setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
           if (activeQAIdRef.current === qaId) {
@@ -719,28 +787,77 @@ export function useCopilotAI({
             window.dispatchEvent(new CustomEvent('ghostboard:show_paywall'));
           }
           toast.error(errData.error || 'Trial limit reached', { id: 'copilot-gen' });
-        } else if (toastId || res.status >= 500 || res.status === 429) {
-          toast.error(errData.error || msg.answerFailed, { id: 'copilot-gen' });
+          setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
+        } else {
+          const fallbackRaw = buildEmergencyCoachingCard(targetQuestion, outputLanguageRef.current);
+          const fallbackStructured = parseStructuredGhostboardOutput(fallbackRaw);
+          const emergencyQA: InterviewQAItem = {
+            id: qaId,
+            sourceMessageId,
+            timestamp: now,
+            timecode: formatTime(sessionDurationRef.current),
+            question: targetQuestion,
+            startHook: fallbackStructured.hook,
+            quickAnswer: fallbackStructured.hook,
+            hints: fallbackStructured.pillars.length > 0 ? fallbackStructured.pillars : msg.defaultHints,
+            pillars: fallbackStructured.pillars,
+            deepDive: fallbackStructured.deepDive || undefined,
+            codeSnippet: fallbackStructured.deepDive || undefined,
+            followUpTrap: fallbackStructured.followUpTrap,
+            isContinuationMerged,
+            completedPillarIndices: [],
+            activePillarIndex: 0,
+            meta: fallbackStructured.meta || cachedParsedMeta,
+            tag: '#InterviewQA',
+            ttftMs: Math.round(performance.now() - requestStartMs),
+            isStreaming: false,
+          };
+          setInterviewQAs((prev) => prev.map((q) => (q.id === qaId ? emergencyQA : q)));
+          if (toastId) toast.dismiss(toastId);
         }
-        // Remove empty placeholder QA on error
-        setInterviewQAs((prev) => prev.filter((q) => q.id !== qaId));
       }
     } catch (err) {
+      if (mainStreamAbortRef.current !== streamController) {
+        return;
+      }
       console.error('Interview copilot error:', err);
-      const timedOut = err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError');
-      toast.error(timedOut ? msg.timeout : msg.genFailed, { id: 'copilot-gen' });
+      const fallbackRaw = buildEmergencyCoachingCard(targetQuestion, outputLanguageRef.current);
+      const fallbackStructured = parseStructuredGhostboardOutput(fallbackRaw);
+      setInterviewQAs((prev) =>
+        prev.map((q) =>
+          q.id === qaId && (!q.quickAnswer || q.isStreaming)
+            ? {
+                ...q,
+                startHook: q.startHook || fallbackStructured.hook,
+                quickAnswer: q.quickAnswer || fallbackStructured.hook,
+                hints: q.pillars?.length ? q.pillars : fallbackStructured.pillars,
+                pillars: q.pillars?.length ? q.pillars : fallbackStructured.pillars,
+                deepDive: q.deepDive || fallbackStructured.deepDive || undefined,
+                codeSnippet: q.codeSnippet || fallbackStructured.deepDive || undefined,
+                followUpTrap: q.followUpTrap || fallbackStructured.followUpTrap,
+                meta: q.meta || fallbackStructured.meta || cachedParsedMeta,
+                isStreaming: false,
+              }
+            : q
+        )
+      );
+      if (toastId) toast.dismiss(toastId);
     } finally {
-      isCopilotGeneratingRef.current = false;
-      setIsCopilotGenerating(false);
-      hudBroadcastRef.current?.postMessage({
-        type: 'STATUS',
-        isProcessing: false,
-        isListening: true,
-      });
-      if (pendingFragmentsRef.current.length > 0 && triggerModeRef.current === 'auto') {
-        setTimeout(() => {
-          processAggregatedQuestion();
-        }, 500);
+      clearTimeout(streamTimeoutId);
+      if (mainStreamAbortRef.current === streamController) {
+        mainStreamAbortRef.current = null;
+        isCopilotGeneratingRef.current = false;
+        setIsCopilotGenerating(false);
+        hudBroadcastRef.current?.postMessage({
+          type: 'STATUS',
+          isProcessing: false,
+          isListening: true,
+        });
+        if (pendingFragmentsRef.current.length > 0 && triggerModeRef.current === 'auto') {
+          setTimeout(() => {
+            processAggregatedQuestion();
+          }, 500);
+        }
       }
     }
   };
@@ -752,11 +869,24 @@ export function useCopilotAI({
     speaker: 'interviewer' | 'candidate' = 'interviewer'
   ) => {
     if (!text || !text.trim()) return;
-    const clean = text.trim();
+    const clean = deduplicateSttTranscript(text.trim());
+    if (!clean) return;
+
+    const currentMode: ListenIsolationMode = listenModeRef?.current || 'both';
+    if (currentMode === 'interviewer_only' && micStreamRef?.current) {
+      enforceMicrophoneIsolation('interviewer_only', micStreamRef.current);
+    }
 
     // 🛡️ CRITICAL GUARDRAIL: Only ever process speech from verified 'interviewer' (Tab/Screen audio) for AI questions.
     // Candidate microphone speech is strictly rejected from entering AI question generation!
-    if (speaker !== 'interviewer') {
+    if (speaker !== 'interviewer' || currentMode === 'mic_only') {
+      if (currentMode === 'interviewer_only') {
+        return;
+      }
+      // Acoustic Echo Gate: suppress candidate mic bleed if interlocutor had active speech within the last 250ms
+      if (Date.now() - lastInterviewerSpeechTimeRef.current <= 250) {
+        return;
+      }
       // 🎤 Live Voice Karaoke: match candidate spoken words against active AI pillars
       const activeQA = interviewQAsRef.current.find(
         (q) => q.id === (activeQAIdRef.current || interviewQAsRef.current[0]?.id)
@@ -795,6 +925,18 @@ export function useCopilotAI({
         }
       }
       return;
+    }
+
+    const speechNow = Date.now();
+    lastInterviewerSpeechTimeRef.current = speechNow;
+
+    // Task 3.3: If the speaker resumes talking within 1500ms after a short pause, abort the premature in-flight stream
+    if (
+      isCopilotGeneratingRef.current &&
+      lastQATimestampRef.current > 0 &&
+      speechNow - lastQATimestampRef.current <= 1500
+    ) {
+      abortInFlight();
     }
 
     // Avoid duplicate insertions
@@ -837,16 +979,27 @@ export function useCopilotAI({
 
     if (isFinal || speechFinal) {
       const now = Date.now();
-      const silenceMs = lastInterviewerChunkTimeRef.current > 0 ? Math.max(0, now - lastInterviewerChunkTimeRef.current) : 350;
+      const silenceMs = lastInterviewerChunkTimeRef.current > 0 ? Math.max(0, now - lastInterviewerChunkTimeRef.current) : 250;
       lastInterviewerChunkTimeRef.current = now;
 
       // Maintain rolling 30-second context window of unspoken/untriggered interviewer clauses
       interviewerStoryClausesRef.current = interviewerStoryClausesRef.current.filter(
         (c) => now - c.timestamp <= 30000
       );
-      interviewerStoryBufferRef.current = interviewerStoryClausesRef.current.map((c) => c.text).join(' ');
+      interviewerStoryBufferRef.current = accumulateUtteranceSegments(
+        interviewerStoryClausesRef.current.map((c) => c.text)
+      );
 
-      const evaluation = evaluateSpeechIntent(clean, interviewerStoryBufferRef.current, silenceMs);
+      // If previous buffered clause ended on a dangling conjunction/preposition, merge it into current evaluation
+      const hasBufferedDangling =
+        interviewerStoryBufferRef.current.length > 0 &&
+        isDanglingThought(interviewerStoryBufferRef.current);
+      const utteranceToEvaluate = hasBufferedDangling
+        ? accumulateUtteranceSegments([interviewerStoryBufferRef.current], clean)
+        : clean;
+      const contextForEvaluation = hasBufferedDangling ? '' : interviewerStoryBufferRef.current;
+
+      const evaluation = evaluateSpeechIntent(utteranceToEvaluate, contextForEvaluation, silenceMs);
 
       // 1. IGNORE_NOISE: Display transcript in Left Dialogue column, but DO NOT trigger /api/ai/dual-stream
       if (evaluation.decision === 'IGNORE_NOISE') {
@@ -855,7 +1008,7 @@ export function useCopilotAI({
           debounceTimerRef.current = null;
         }
         abortSpeculativePrefetch();
-        return { decision: 'IGNORE_NOISE' as const, evaluation };
+        return { decision: 'IGNORE_NOISE' as const, evaluation, guardrailToken: '<<<IGNORE>>>' as const };
       }
 
       // 2. WAIT_FOR_COMPLETION: Storytelling or mid-sentence pause -> Append to story buffer and wait
@@ -883,8 +1036,15 @@ export function useCopilotAI({
 
         if (triggerModeRef.current === 'auto') {
           const elapsedSinceLastAuto = now - lastAutoVoiceTriggerTimeRef.current;
-          // Minimum 2200ms cooldown for automatic voice triggers so rapid bursts never fire parallel requests
-          if (elapsedSinceLastAuto < 2200 || isCopilotGeneratingRef.current) {
+          const isShortPauseContinuation =
+            lastQATimestampRef.current > 0 &&
+            now - lastQATimestampRef.current <= 1500 &&
+            interviewQAsRef.current.length > 0 &&
+            mergeContinuationQuestion(interviewQAsRef.current[0].question, targetQuestion).addedConstraint;
+
+          if (isShortPauseContinuation) {
+            abortInFlight();
+          } else if (elapsedSinceLastAuto < 2200 || isCopilotGeneratingRef.current) {
             return { decision: 'WAIT_FOR_COMPLETION' as const, evaluation };
           }
           lastAutoVoiceTriggerTimeRef.current = now;
@@ -895,7 +1055,7 @@ export function useCopilotAI({
     }
 
     return null;
-  }, [abortSpeculativePrefetch, clearSpeculativeDebounce, startSpeculativeHookPrefetch]);
+  }, [abortInFlight, abortSpeculativePrefetch, clearSpeculativeDebounce, listenModeRef, micStreamRef, startSpeculativeHookPrefetch]);
 
   const handleManualEnterTrigger = useCallback((liveTranscript: string) => {
     const msg = getMsg(outputLanguageRef.current);
@@ -985,15 +1145,15 @@ export function useCopilotAI({
       hudBroadcastRef.current?.postMessage({ type: 'NEW_QA', qa: existing });
     };
 
-    const recentHistory = interviewQAsRef.current.slice(0, 3).map((qa) => ({
-      question: qa.question,
-      answer: qa.quickAnswer || qa.startHook || '',
-    }));
+    const recentHistory = buildRecentHistory();
 
     try {
       const res = await fetch('/api/ai/dual-stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-ghostboard-client': 'studio-session',
+        },
         signal: controller.signal,
         body: JSON.stringify({
           question: existing.question,
@@ -1224,7 +1384,10 @@ export function useCopilotAI({
       try {
         const res = await fetch('/api/ai/dual-stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-ghostboard-client': 'studio-session',
+          },
           body: JSON.stringify({
             question: `Поясни цей рядок коду: "${lineText.trim()}". Надай 2 стислих речення: суть та часову/просторову складність.`,
             directorModifier: 'explain_line',
@@ -1235,9 +1398,16 @@ export function useCopilotAI({
         });
 
         if (res.ok && res.body) {
-          const text = await res.text();
-          const structured = parseStructuredGhostboardOutput(text);
-          const explanation = structured.hook || text.replace(/<<<[^>]*>>>/g, '').trim().slice(0, 240);
+          let accumulated = '';
+          await consumeDualStreamSSE(res.body, {
+            onChunk: (chunkText) => {
+              accumulated += chunkText;
+            },
+          });
+          const structured = parseStructuredGhostboardOutput(accumulated);
+          const explanation =
+            structured.hook ||
+            accumulated.replace(/<<<[^>]*>>>/g, '').trim().slice(0, 240);
           const finalExplanation = explanation || `Рядок виконує логіку: ${lineText.trim()}`;
           setInterviewQAs((prev) =>
             prev.map((q) => {
@@ -1295,5 +1465,7 @@ export function useCopilotAI({
     speculativeHitMap,
     patchingSlotMap,
     speculativeHookCacheRef,
+    abortInFlight,
+    lastInterviewerSpeechTimeRef,
   };
 }

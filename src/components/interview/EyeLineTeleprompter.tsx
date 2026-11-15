@@ -58,11 +58,11 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
       transition={{ duration: 0.2 }}
       className="fixed top-2 left-1/2 z-50 w-[490px] max-w-[94vw] pointer-events-auto cursor-move"
     >
-      <div className="relative overflow-hidden rounded-2xl bg-black/85 backdrop-blur-3xl border border-white/[0.12] shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_1px_rgba(255,255,255,0.15)] p-3 text-zinc-100 font-sans">
+      <div className="relative overflow-hidden rounded-2xl bg-black/85   border border-white/[0.12] shadow-[0_20px_50px_rgba(0,0,0,0.9),inset_0_1px_1px_rgba(255,255,255,0.15)] p-3 text-zinc-100 font-sans">
         {/* Subtle camera anchor indicator */}
         <div className="absolute top-1 left-1/2 -translate-x-1/2 flex items-center gap-1 opacity-70">
           <Move className="w-2 h-2 text-zinc-300" />
-          <span className="text-[8px] font-mono uppercase tracking-widest text-zinc-300">
+          <span className="text-xs font-mono uppercase tracking-widest text-zinc-300">
             DRAG TO MOVE
           </span>
         </div>
@@ -72,11 +72,11 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
           <div className="flex items-center gap-2">
             <Eye className="w-3.5 h-3.5 text-white" />
             {activeQA.meta ? (
-              <span className="text-[10px] font-mono text-zinc-300 font-semibold truncate max-w-[260px]">
+              <span className="text-xs font-mono text-zinc-300 font-semibold truncate max-w-[260px]">
                 {activeQA.meta.domain} • {activeQA.meta.level} • {activeQA.meta.language}
               </span>
             ) : (
-              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold">
+              <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-bold">
                 {activeQA.tag || 'AI Co-Pilot'}
               </span>
             )}
@@ -84,7 +84,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
 
           <div className="flex items-center gap-1.5">
             {slides.length > 1 && (
-              <span className="text-[10px] font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
+              <span className="text-xs font-mono text-zinc-400 bg-white/5 px-2 py-0.5 rounded-full">
                 {hintIndex + 1}/{slides.length}
               </span>
             )}
@@ -119,7 +119,7 @@ export const EyeLineTeleprompter: React.FC<EyeLineTeleprompterProps> = ({
         {/* Action Controls / Next hint */}
         {slides.length > 1 && (
           <div className="flex items-center justify-between pt-1.5 mt-1 border-t border-white/5 px-1">
-            <span className="text-[10px] font-mono text-zinc-500">
+            <span className="text-xs font-mono text-zinc-500">
               Webcam Eyeline · [Space]
             </span>
             <div className="flex items-center gap-1">

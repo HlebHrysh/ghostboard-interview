@@ -1,12 +1,51 @@
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+pub const GEMINI_FLASH_MODELS: &[&str] = &[
+    "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3-flash-preview",
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-flash-latest",
+];
+
+pub const HEDGE_STAGGER_MS: u64 = 550;
+
 static CIRCUIT_BREAKER: std::sync::OnceLock<StdMutex<HashMap<String, std::time::Instant>>> =
     std::sync::OnceLock::new();
+
+static MODELS_REJECTING_THINKING: std::sync::OnceLock<StdMutex<HashSet<String>>> =
+    std::sync::OnceLock::new();
+
+pub fn is_model_rejecting_thinking(model: &str) -> bool {
+    let set = MODELS_REJECTING_THINKING.get_or_init(|| StdMutex::new(HashSet::new()));
+    if let Ok(guard) = set.lock() {
+        return guard.contains(model);
+    }
+    false
+}
+
+pub fn mark_model_rejecting_thinking(model: &str) {
+    let set = MODELS_REJECTING_THINKING.get_or_init(|| StdMutex::new(HashSet::new()));
+    if let Ok(mut guard) = set.lock() {
+        guard.insert(model.to_string());
+    }
+}
+
+pub fn clear_models_rejecting_thinking() {
+    let set = MODELS_REJECTING_THINKING.get_or_init(|| StdMutex::new(HashSet::new()));
+    if let Ok(mut guard) = set.lock() {
+        guard.clear();
+    }
+}
 
 /// Returns whether a given LLM model is currently in temporary error cooldown (e.g. 404, 429, 503).
 pub fn is_model_cooling_down(model: &str) -> bool {
@@ -45,6 +84,25 @@ pub fn clear_all_model_cooldowns() {
     }
 }
 
+/// Resolves available models from the cascade, applying Never-Dead Cooldown Bypass
+/// if all models are marked on cooldown simultaneously.
+pub fn resolve_available_models(candidates: &[String]) -> Vec<String> {
+    let available: Vec<String> = candidates
+        .iter()
+        .filter(|m| !is_model_cooling_down(m))
+        .cloned()
+        .collect();
+    if available.is_empty() && !candidates.is_empty() {
+        tracing::warn!(
+            target: "ghostboard::llm",
+            "All models on cooldown, clearing cooldown state (Never-Dead Cooldown Bypass)"
+        );
+        clear_all_model_cooldowns();
+        return candidates.to_vec();
+    }
+    available
+}
+
 /// Builds request payload for Google Gemini models, selectively configuring thinkingConfig.
 pub fn build_gemini_request_body(
     system_prompt: &str,
@@ -63,8 +121,8 @@ pub fn build_gemini_request_body(
         "maxOutputTokens": 850
     });
 
-    // Only include thinkingConfig on models that explicitly support it, and when requested
-    if include_thinking && (model == "gemini-3.8-flash" || model == "gemini-3.6-flash" || model == "gemini-3.5-flash") {
+    // Include thinkingConfig: { thinkingBudget: 0 } on active low-latency flash models when requested
+    if include_thinking && !model.contains("flash-lite") && !is_model_rejecting_thinking(model) {
         gen_config["thinkingConfig"] = serde_json::json!({ "thinkingBudget": 0 });
     }
 
@@ -158,6 +216,7 @@ pub fn parse_sse_data_chunk(provider: LlmProviderType, data_str: &str) -> Option
             #[derive(Deserialize)]
             struct GeminiPart {
                 text: Option<String>,
+                thought: Option<bool>,
             }
             #[derive(Deserialize)]
             struct GeminiContent {
@@ -181,6 +240,9 @@ pub fn parse_sse_data_chunk(provider: LlmProviderType, data_str: &str) -> Option
                         if let Some(content) = &first_cand.content {
                             if let Some(parts) = &content.parts {
                                 for part in parts {
+                                    if part.thought.unwrap_or(false) {
+                                        continue;
+                                    }
                                     if let Some(text) = &part.text {
                                         text_out.push_str(text);
                                     }
@@ -267,11 +329,13 @@ async fn send_gemini_request(
     let req_future = client.post(&url).headers(headers.clone()).json(&body_with_thinking).send();
     let resp = tokio::select! {
         _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
-        res = tokio::time::timeout(Duration::from_millis(12000), req_future) => match res {
+        res = tokio::time::timeout(Duration::from_millis(4500), req_future) => match res {
             Ok(Ok(r)) => r,
             Ok(Err(e)) => return Err(e.without_url().to_string()),
-            // On timeout, return error immediately - NEVER cooldown on timeout!
-            Err(_) => return Err(format!("Model {} timed out after 12000ms", model)),
+            Err(_) => {
+                mark_model_cooldown(model, Duration::from_secs(20));
+                return Err(format!("Model {} timed out after 4500ms", model));
+            }
         }
     };
 
@@ -283,18 +347,31 @@ async fn send_gemini_request(
 
     if status.as_u16() == 400 {
         let err_text = resp.text().await.unwrap_or_default();
-        if (err_text.contains("thinkingConfig") || err_text.contains("INVALID_ARGUMENT")) && include_thinking {
-            tracing::info!(target: "ghostboard::llm", model = %model, "Retrying Gemini without thinkingConfig on HTTP 400");
+        let is_dead_key = err_text.contains("API_KEY_INVALID") || err_text.contains("API key not valid");
+        if include_thinking && !is_dead_key {
+            tracing::info!(
+                target: "ghostboard::llm",
+                model = %model,
+                "Retrying Gemini immediately (0ms) without thinkingConfig on HTTP 400 without cooldown"
+            );
+            mark_model_rejecting_thinking(model);
             let body_without_thinking = build_gemini_request_body(system_prompt, user_prompt, model, false);
             let retry_req = client.post(&url).headers(headers).json(&body_without_thinking).send();
             let retry_res = tokio::select! {
                 _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
-                res = tokio::time::timeout(Duration::from_millis(12000), retry_req) => res
+                res = tokio::time::timeout(Duration::from_millis(5000), retry_req) => res
             };
             if let Ok(Ok(retry_resp)) = retry_res {
-                if retry_resp.status().is_success() {
+                let retry_status = retry_resp.status();
+                if retry_status.is_success() {
                     clear_model_cooldown(model);
                     return Ok(retry_resp);
+                } else if retry_status.as_u16() == 429 || retry_status.as_u16() == 503 {
+                    mark_model_cooldown(model, Duration::from_secs(8));
+                    return Err(format!("Model {} HTTP {}", model, retry_status));
+                } else if retry_status.as_u16() == 404 {
+                    mark_model_cooldown(model, Duration::from_secs(120));
+                    return Err(format!("Model {} HTTP 404 Not Found", model));
                 }
             }
         }
@@ -355,6 +432,103 @@ async fn send_groq_request(
     }
 }
 
+struct ContenderFirstChunk {
+    provider: LlmProviderType,
+    model: String,
+    first_deltas: Vec<String>,
+    line_buffer: String,
+    response: reqwest::Response,
+}
+
+/// Reads from an active SSE response stream until the first valid text chunk is yielded.
+async fn await_first_valid_chunk(
+    provider: LlmProviderType,
+    model: String,
+    mut response: reqwest::Response,
+    cancellation_token: &CancellationToken,
+) -> Result<ContenderFirstChunk, String> {
+    let mut line_buffer = String::new();
+    let mut first_deltas = Vec::new();
+
+    loop {
+        let chunk_opt = tokio::select! {
+            _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
+            res = tokio::time::timeout(Duration::from_secs(4), response.chunk()) => match res {
+                Ok(Ok(c)) => c,
+                Ok(Err(e)) => return Err(format!("SSE chunk error on {}: {}", model, e)),
+                Err(_) => return Err(format!("SSE first chunk timed out on {}", model)),
+            }
+        };
+
+        let chunk = match chunk_opt {
+            Some(c) => c,
+            None => break,
+        };
+
+        let text = String::from_utf8_lossy(&chunk);
+        line_buffer.push_str(&text);
+
+        while let Some(pos) = line_buffer.find('\n') {
+            let line = line_buffer[..pos].trim().to_string();
+            line_buffer = line_buffer[pos + 1..].to_string();
+            if line.is_empty() {
+                continue;
+            }
+            let data_str = if let Some(stripped) = line.strip_prefix("data:") {
+                stripped.trim()
+            } else {
+                line.as_str()
+            };
+            if data_str == "[DONE]" || data_str == "<<<END>>>" {
+                continue;
+            }
+            if let Some(delta) = parse_sse_data_chunk(provider, data_str) {
+                if !delta.is_empty() {
+                    first_deltas.push(delta);
+                }
+            }
+        }
+
+        if !first_deltas.is_empty() {
+            clear_model_cooldown(&model);
+            return Ok(ContenderFirstChunk {
+                provider,
+                model,
+                first_deltas,
+                line_buffer,
+                response,
+            });
+        }
+    }
+
+    let remaining = line_buffer.trim().to_string();
+    if !remaining.is_empty() {
+        let data_str = if let Some(stripped) = remaining.strip_prefix("data:") {
+            stripped.trim()
+        } else {
+            remaining.as_str()
+        };
+        if data_str != "[DONE]" && data_str != "<<<END>>>" {
+            if let Some(delta) = parse_sse_data_chunk(provider, data_str) {
+                if !delta.is_empty() {
+                    line_buffer.clear();
+                    first_deltas.push(delta);
+                    clear_model_cooldown(&model);
+                    return Ok(ContenderFirstChunk {
+                        provider,
+                        model,
+                        first_deltas,
+                        line_buffer,
+                        response,
+                    });
+                }
+            }
+        }
+    }
+
+    Err(format!("Model {} stream ended before yielding any valid text chunk", model))
+}
+
 impl SpeculativeLlmClient {
     pub fn new() -> Self {
         Self {
@@ -383,6 +557,8 @@ impl SpeculativeLlmClient {
         }
 
         let mut active_provider = config.provider;
+        let mut initial_deltas: Vec<String> = Vec::new();
+        let mut initial_line_buffer = String::new();
 
         // Send HTTP request with cancellation protection
         let mut response = if config.provider == LlmProviderType::Gemini {
@@ -391,35 +567,24 @@ impl SpeculativeLlmClient {
             }
 
             let mut gemini_models: Vec<String> = Vec::new();
-            if !config.model.trim().is_empty() && config.model.starts_with("gemini") {
-                let m = config.model.trim();
-                gemini_models.push(m.to_string());
-            }
-            for candidate in &["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"] {
+            for candidate in GEMINI_FLASH_MODELS {
                 if !gemini_models.iter().any(|m| m == candidate) {
-                    gemini_models.push(candidate.to_string());
+                    gemini_models.push((*candidate).to_string());
                 }
+            }
+            if !config.model.trim().is_empty()
+                && config.model.starts_with("gemini")
+                && config.model.trim() != "gemini-3.5-flash"
+                && !gemini_models.iter().any(|m| m == config.model.trim())
+            {
+                gemini_models.insert(0, config.model.trim().to_string());
             }
 
             // Never-Dead Cooldown Bypass: if every model is on cooldown, automatically clear cooldown state
-            let mut available_models: Vec<String> = gemini_models
-                .iter()
-                .filter(|m| !is_model_cooling_down(m))
-                .cloned()
-                .collect();
-
-            if available_models.is_empty() {
-                tracing::warn!(target: "ghostboard::llm", "All models on cooldown, clearing cooldown state (Never-Dead Cooldown Bypass)");
-                clear_all_model_cooldowns();
-                available_models = gemini_models.clone();
-            }
+            let available_models = resolve_available_models(&gemini_models);
 
             enum ContenderMsg {
-                Success {
-                    provider: LlmProviderType,
-                    model: String,
-                    response: reqwest::Response,
-                },
+                FirstChunk(ContenderFirstChunk),
                 Failed {
                     model: String,
                     error: String,
@@ -430,8 +595,7 @@ impl SpeculativeLlmClient {
             let race_cancel = cancellation_token.child_token();
             let mut active_contenders: usize = 0;
             let mut gemini_index: usize = 0;
-            let mut final_response: Option<reqwest::Response> = None;
-            let mut last_error = String::new();
+            let mut winner_chunk: Option<ContenderFirstChunk> = None;
 
             let groq_key_opt = std::env::var("GROQ_API_KEY")
                 .ok()
@@ -448,25 +612,43 @@ impl SpeculativeLlmClient {
                 let usr_c = user_prompt.to_string();
                 active_contenders += 1;
                 tokio::spawn(async move {
+                    let model_name = "llama-3.3-70b-versatile".to_string();
                     match send_groq_request(&client, &g_key_c, &sys_c, &usr_c, &cancel_c).await {
                         Ok(resp) => {
-                            let _ = tx_c.send(ContenderMsg::Success {
-                                provider: LlmProviderType::Groq,
-                                model: "llama-3.3-70b-versatile".to_string(),
-                                response: resp,
-                            }).await;
+                            match await_first_valid_chunk(
+                                LlmProviderType::Groq,
+                                model_name.clone(),
+                                resp,
+                                &cancel_c,
+                            )
+                            .await
+                            {
+                                Ok(first) => {
+                                    let _ = tx_c.send(ContenderMsg::FirstChunk(first)).await;
+                                }
+                                Err(e) => {
+                                    let _ = tx_c
+                                        .send(ContenderMsg::Failed {
+                                            model: model_name,
+                                            error: e,
+                                        })
+                                        .await;
+                                }
+                            }
                         }
                         Err(e) => {
-                            let _ = tx_c.send(ContenderMsg::Failed {
-                                model: "llama-3.3-70b-versatile".to_string(),
-                                error: e,
-                            }).await;
+                            let _ = tx_c
+                                .send(ContenderMsg::Failed {
+                                    model: model_name,
+                                    error: e,
+                                })
+                                .await;
                         }
                     }
                 });
             }
 
-            // Helper to spawn a Gemini contender
+            // Helper to spawn a Gemini contender that races to yield the first valid text chunk
             let spawn_gemini_contender = |model: String, tx_sender: tokio::sync::mpsc::Sender<ContenderMsg>, cancel: CancellationToken| {
                 let client = self.client.clone();
                 let key = config.api_key.clone();
@@ -476,36 +658,73 @@ impl SpeculativeLlmClient {
                 tokio::spawn(async move {
                     match send_gemini_request(&client, &model_clone, &key, &sys, &usr, true, &cancel).await {
                         Ok(resp) => {
-                            let _ = tx_sender.send(ContenderMsg::Success {
-                                provider: LlmProviderType::Gemini,
-                                model: model_clone,
-                                response: resp,
-                            }).await;
+                            match await_first_valid_chunk(
+                                LlmProviderType::Gemini,
+                                model_clone.clone(),
+                                resp,
+                                &cancel,
+                            )
+                            .await
+                            {
+                                Ok(first) => {
+                                    let _ = tx_sender.send(ContenderMsg::FirstChunk(first)).await;
+                                }
+                                Err(e) => {
+                                    let _ = tx_sender
+                                        .send(ContenderMsg::Failed {
+                                            model: model_clone,
+                                            error: e,
+                                        })
+                                        .await;
+                                }
+                            }
                         }
                         Err(e) => {
-                            let _ = tx_sender.send(ContenderMsg::Failed {
-                                model: model_clone,
-                                error: e,
-                            }).await;
+                            let _ = tx_sender
+                                .send(ContenderMsg::Failed {
+                                    model: model_clone,
+                                    error: e,
+                                })
+                                .await;
                         }
                     }
                 });
             };
 
-            // 2. Launch primary Gemini model at t=0ms
+            // 2. Launch primary Gemini model + sub-second Flash-Lite/Flash-3 contenders at t=0ms
+            let mut launched_models: HashSet<String> = HashSet::new();
             if gemini_index < available_models.len() {
                 let m = available_models[gemini_index].clone();
                 gemini_index += 1;
+                launched_models.insert(m.clone());
                 active_contenders += 1;
                 tracing::info!(target: "ghostboard::llm", model = %m, "Starting primary Gemini model in hedged race");
                 spawn_gemini_contender(m, tx.clone(), race_cancel.clone());
+
+                for fast_candidate in ["gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-flash-lite-latest"] {
+                    if available_models.iter().any(|am| am == fast_candidate)
+                        && !launched_models.contains(fast_candidate)
+                    {
+                        let fast_m = fast_candidate.to_string();
+                        launched_models.insert(fast_m.clone());
+                        active_contenders += 1;
+                        tracing::info!(target: "ghostboard::llm", model = %fast_m, "Starting parallel sub-second Gemini contender at t=0ms");
+                        spawn_gemini_contender(fast_m, tx.clone(), race_cancel.clone());
+                    }
+                }
             }
 
-            // 3. Staggered Hedged Race loop: 1800ms timer launches backup #2 in parallel if no first byte/success,
-            // or immediately launches next model on 404/429/503/error.
-            let mut next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
+            // 3. Staggered Hedged Race loop: 550ms timer launches secondary model in parallel if primary
+            // has not yielded its first valid text chunk within 550ms, or immediately on early failure.
+            let mut next_hedge_deadline =
+                tokio::time::Instant::now() + Duration::from_millis(HEDGE_STAGGER_MS);
 
             while active_contenders > 0 || gemini_index < available_models.len() {
+                while gemini_index < available_models.len()
+                    && launched_models.contains(&available_models[gemini_index])
+                {
+                    gemini_index += 1;
+                }
                 let hedge_sleep = if gemini_index < available_models.len() {
                     tokio::time::sleep_until(next_hedge_deadline)
                 } else {
@@ -518,38 +737,49 @@ impl SpeculativeLlmClient {
                         return Ok(LlmStreamOutcome::Cancelled);
                     }
                     _ = hedge_sleep => {
+                        while gemini_index < available_models.len()
+                            && launched_models.contains(&available_models[gemini_index])
+                        {
+                            gemini_index += 1;
+                        }
                         if gemini_index < available_models.len() {
                             let next_m = available_models[gemini_index].clone();
                             gemini_index += 1;
+                            launched_models.insert(next_m.clone());
                             active_contenders += 1;
-                            tracing::info!(target: "ghostboard::llm", model = %next_m, "1800ms hedge timer fired, launching backup contender in parallel");
+                            tracing::info!(target: "ghostboard::llm", model = %next_m, "550ms hedge timer fired without first token, launching secondary contender in parallel");
                             spawn_gemini_contender(next_m, tx.clone(), race_cancel.clone());
-                            next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
+                            next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(HEDGE_STAGGER_MS);
                         }
                     }
                     msg = rx.recv() => {
                         match msg {
-                            Some(ContenderMsg::Success { provider, model, response: r }) => {
-                                tracing::info!(target: "ghostboard::llm", model = %model, "Hedged race won by contender");
+                            Some(ContenderMsg::FirstChunk(winner)) => {
+                                tracing::info!(target: "ghostboard::llm", model = %winner.model, "Hedged race won on first valid text chunk; aborting slower streams");
                                 race_cancel.cancel();
-                                final_response = Some(r);
-                                active_provider = provider;
+                                active_provider = winner.provider;
+                                winner_chunk = Some(winner);
                                 break;
                             }
                             Some(ContenderMsg::Failed { model, error: e }) => {
                                 tracing::warn!(target: "ghostboard::llm", model = %model, error = %e, "Hedged contender failed");
-                                last_error = e;
                                 if active_contenders > 0 {
                                     active_contenders -= 1;
+                                }
+                                while gemini_index < available_models.len()
+                                    && launched_models.contains(&available_models[gemini_index])
+                                {
+                                    gemini_index += 1;
                                 }
                                 // On early error (e.g. 404/429/503), launch next backup contender immediately
                                 if gemini_index < available_models.len() {
                                     let next_m = available_models[gemini_index].clone();
                                     gemini_index += 1;
+                                    launched_models.insert(next_m.clone());
                                     active_contenders += 1;
                                     tracing::info!(target: "ghostboard::llm", model = %next_m, "Early contender failure, launching next candidate immediately");
                                     spawn_gemini_contender(next_m, tx.clone(), race_cancel.clone());
-                                    next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(1800);
+                                    next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(HEDGE_STAGGER_MS);
                                 }
                             }
                             None => break,
@@ -559,29 +789,26 @@ impl SpeculativeLlmClient {
             }
 
             // 4. Never-Dead Cooldown Breaker: if all models are on cooldown or failed,
-            // call clear_all_model_cooldowns() and execute 1 direct retry on primary model with simplified payload (include_thinking: false)
-            if final_response.is_none() {
+            // call clear_all_model_cooldowns() and execute 1 direct retry on fast fallback model with simplified payload (include_thinking: false)
+            if let Some(winner) = winner_chunk {
+                initial_deltas = winner.first_deltas;
+                initial_line_buffer = winner.line_buffer;
+                winner.response
+            } else {
                 if cancellation_token.is_cancelled() {
                     return Ok(LlmStreamOutcome::Cancelled);
                 }
-                tracing::warn!(target: "ghostboard::llm", "All candidates exhausted, triggering Never-Dead Cooldown Breaker on primary model");
+                tracing::warn!(target: "ghostboard::llm", "All candidates exhausted, triggering Never-Dead Cooldown Breaker on fast fallback model");
                 clear_all_model_cooldowns();
-                let primary = gemini_models.first().cloned().unwrap_or_else(|| "gemini-3.8-flash".to_string());
+                let primary = "gemini-3.5-flash-lite".to_string();
                 match send_gemini_request(&self.client, &primary, &config.api_key, system_prompt, user_prompt, false, &cancellation_token).await {
                     Ok(resp) => {
                         active_provider = LlmProviderType::Gemini;
-                        final_response = Some(resp);
+                        resp
                     }
                     Err(e) => {
-                        last_error = e;
+                        return Err(format!("All Gemini fallback models exhausted: {}", e));
                     }
-                }
-            }
-
-            match final_response {
-                Some(r) => r,
-                None => {
-                    return Err(format!("All Gemini fallback models exhausted: {}", last_error));
                 }
             }
         } else {
@@ -696,7 +923,13 @@ impl SpeculativeLlmClient {
         // Stream SSE tokens sequentially using response.chunk().await without whole-stream cutoff
         let mut full_text = String::new();
         let mut token_count = 0;
-        let mut line_buffer = String::new();
+        let mut line_buffer = initial_line_buffer;
+
+        for delta in initial_deltas {
+            full_text.push_str(&delta);
+            token_count += 1;
+            on_chunk(delta);
+        }
 
         loop {
             if cancellation_token.is_cancelled() {
@@ -850,5 +1083,35 @@ mod tests {
         let gen_config2 = &body_without_thinking["generationConfig"];
         assert!(gen_config2.get("thinkingConfig").is_none());
         assert!(body_without_thinking["contents"][0]["parts"][0]["text"].as_str().unwrap().contains("User prompt"));
+    }
+
+    #[test]
+    fn test_never_dead_cooldown_bypass_and_thinking_rejection_cache() {
+        clear_all_model_cooldowns();
+        clear_models_rejecting_thinking();
+
+        let candidates: Vec<String> = GEMINI_FLASH_MODELS.iter().map(|s| s.to_string()).collect();
+        assert_eq!(candidates[0], "gemini-3.8-flash");
+        assert_eq!(candidates[1], "gemini-2.5-flash");
+        assert!(candidates.contains(&"gemini-flash-latest".to_string()));
+        assert_eq!(HEDGE_STAGGER_MS, 550);
+
+        for m in &candidates {
+            mark_model_cooldown(m, Duration::from_secs(60));
+            assert!(is_model_cooling_down(m));
+        }
+
+        // Never-Dead Bypass clears cooldown state when all models are marked on cooldown simultaneously
+        let resolved = resolve_available_models(&candidates);
+        assert_eq!(resolved, candidates);
+        assert!(!is_model_cooling_down("gemini-3.8-flash"));
+
+        mark_model_rejecting_thinking("gemini-flash-latest");
+        assert!(is_model_rejecting_thinking("gemini-flash-latest"));
+        let body_rejected = build_gemini_request_body("Sys", "Usr", "gemini-flash-latest", true);
+        assert!(body_rejected["generationConfig"].get("thinkingConfig").is_none());
+
+        clear_models_rejecting_thinking();
+        clear_all_model_cooldowns();
     }
 }

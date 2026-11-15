@@ -418,8 +418,16 @@ export class TabAudioCapture {
         }
 
         // 🎙️ Candidate Microphone Speech Transcription (Dedicated Isolated Stream)
-        // Transcribes candidate mic separately via Deepgram Nova-3 (or Web Speech API strictly labeled 'candidate')
-        if (this.micStream && this.isMicActive && options?.onLiveTranscript && this.candidateGainNode) {
+        // Only run separate candidate STT when tab audio is also present (2 distinct physical channels).
+        // When in mic-only mode, the microphone is already routed to interviewerGainNode above.
+        if (
+          hasTabAudio &&
+          requestedSource === 'tab' &&
+          this.micStream &&
+          this.isMicActive &&
+          options?.onLiveTranscript &&
+          this.candidateGainNode
+        ) {
           await this.startCandidateSpeechRecognition(options);
         }
       }

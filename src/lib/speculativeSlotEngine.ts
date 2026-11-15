@@ -29,6 +29,7 @@ export interface SpeculativeHookEntry {
 export interface IntentOverlapResult {
   recall: number;
   precision: number;
+  similarity: number;
   matched: number;
   hasNewNegation: boolean;
   valid: boolean;
@@ -63,6 +64,7 @@ export function computeIntentOverlap(interimText: string, finalText: string): In
     return {
       recall: 0,
       precision: 0,
+      similarity: 0,
       matched: 0,
       hasNewNegation: false,
       valid: false,
@@ -80,11 +82,13 @@ export function computeIntentOverlap(interimText: string, finalText: string): In
 
   const recall = matched / interimTokens.length;
   const precision = matched / finalTokens.length;
-  const valid = !hasNewNegation && recall >= 0.7 && precision >= 0.5;
+  const similarity = recall;
+  const valid = !hasNewNegation && similarity >= 0.65 && precision >= 0.5;
 
   return {
     recall,
     precision,
+    similarity,
     matched,
     hasNewNegation,
     valid,
@@ -93,7 +97,7 @@ export function computeIntentOverlap(interimText: string, finalText: string): In
 
 /**
  * Returns true if the pre-fetched PHASE_1:HOOK is valid for instant 0ms display:
- * token recall >= 0.7, precision >= 0.5, and the final utterance did not introduce a new negation constraint.
+ * token recall >= 0.65, precision >= 0.5, and the final utterance did not introduce a new negation constraint.
  */
 export function isSpeculativeHookValid(interimText: string, finalText: string): boolean {
   return computeIntentOverlap(interimText, finalText).valid;

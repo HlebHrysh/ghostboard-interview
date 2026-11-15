@@ -85,13 +85,13 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80  ">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          className="relative w-full max-w-md overflow-hidden bento-card border border-white/[0.12] p-6 sm:p-7 shadow-[0_0_80px_rgba(196,181,253,0.12)] text-zinc-100"
+          className="relative w-full max-w-md overflow-hidden bento-card border border-white/[0.12] p-6 sm:p-7  text-zinc-100"
         >
           {/* Close button */}
           <button
@@ -107,7 +107,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
               <Tablet className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-mono text-[10px] text-zinc-300 uppercase tracking-widest font-bold">
+              <div className="font-mono text-xs text-zinc-300 uppercase tracking-widest font-bold">
                 {c.badge}
               </div>
               <h3 className="text-xl font-bold font-sans text-white">
@@ -121,8 +121,8 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
           </p>
 
           {isUnauthorized && (
-            <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5 text-xs text-amber-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 mt-1.5 animate-pulse" />
+            <div className="mb-4 p-3 rounded-xl bg-white/[0.08] border border-white/[0.12] flex items-start gap-2.5 text-xs text-zinc-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 mt-1.5 animate-pulse" />
               <span>Увійдіть у свій акаунт Ghostboard, щоб надійно зв&apos;язати телефон з вашою персональною сесією.</span>
             </div>
           )}
@@ -143,7 +143,7 @@ export const CompanionQRModal: React.FC<CompanionQRModalProps> = ({ isOpen, onCl
               </div>
             )}
 
-            <div className="flex items-center gap-1.5 mt-3 text-[11px] font-mono text-zinc-400">
+            <div className="flex items-center gap-1.5 mt-3 text-xs font-mono text-zinc-400">
               <Wifi className="w-3.5 h-3.5 text-white" />
               <span>{c.sseSync}</span>
             </div>

@@ -1,26 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { OfficeNavRail, type OfficeTab } from './OfficeNavRail';
-import { LaunchpadTab } from './LaunchpadTab';
-import { AudioStudioTab } from './AudioStudioTab';
-import { AiBrainTab } from './AiBrainTab';
-import { CandidateContextTab } from './CandidateContextTab';
-import { StealthTab } from './StealthTab';
+import React, { useCallback, useEffect, useState } from 'react';
+import { apiFetch, type UserProfileData } from '../lib/apiClient';
+import { markDemoPending } from '../lib/demoInterview';
 import {
   useDesktopSettings,
   type DesktopSettings,
 } from '../lib/desktopSettings';
 import {
+  buildCandidateSystemPrompt,
   getStoredProfile,
   type CandidateProfile,
 } from '../lib/profileStore';
+import { startListening } from '../lib/audioSession';
 import {
   launchCopilotWindow,
   saveTokens,
+  setAiPreferences,
   type CopilotMode,
 } from '../lib/tauriBridge';
-import { startListening } from '../lib/audioSession';
-import { markDemoPending } from '../lib/demoInterview';
-import { apiFetch, type UserProfileData } from '../lib/apiClient';
+import { AiBrainTab } from './AiBrainTab';
+import { AudioStudioTab } from './AudioStudioTab';
+import { CandidateContextTab } from './CandidateContextTab';
+import { LaunchpadTab } from './LaunchpadTab';
+import { OfficeNavRail, type OfficeTab } from './OfficeNavRail';
+import { StealthTab } from './StealthTab';
 
 export interface OfficeWindowProps {
   user: UserProfileData | null;
@@ -29,9 +31,21 @@ export interface OfficeWindowProps {
   onStartHud?: (mode?: CopilotMode) => void;
 }
 
+function buildCascadeInstructions(settings: DesktopSettings): string {
+  const cascadeHint =
+    settings.aiModelCascade === 'gemini_flash'
+      ? '[Model Preference: Gemini 2.5 Flash]'
+      : settings.aiModelCascade === 'groq_llama'
+        ? '[Model Preference: Groq Llama 3.3 Turbo]'
+        : '[Model Preference: Hedged Race Gemini 2.5 Flash + Groq Llama 3.3]';
+  const custom = settings.customInstructions.trim();
+  return custom ? `${cascadeHint}\n${custom}` : cascadeHint;
+}
+
 export const OfficeWindow: React.FC<OfficeWindowProps> = ({
   user,
   onLogout,
+  onOpenAuth,
   onStartHud,
 }) => {
   const [settings, updateSettings] = useDesktopSettings();
@@ -42,7 +56,31 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [isQaLoggingIn, setIsQaLoggingIn] = useState(false);
 
-  // Quick QA login handler for offline dev
+  // Keep native Rust AI pipeline aligned with current Office preferences & candidate profile
+  useEffect(() => {
+    const helperLanguage =
+      settings.hintLanguage === 'bilingual_uk'
+        ? 'uk'
+        : settings.hintLanguage === 'bilingual_ru'
+          ? 'ru'
+          : null;
+    const outputLanguage =
+      settings.hintLanguage === 'auto'
+        ? 'auto'
+        : settings.hintLanguage === 'bilingual_uk' || settings.hintLanguage === 'bilingual_ru'
+          ? 'en'
+          : settings.hintLanguage;
+
+    void setAiPreferences({
+      outputLanguage,
+      helperLanguage,
+      modifier: settings.answerLength === 'short' ? 'shorter' : settings.answerLength === 'code' ? 'code' : null,
+      concise: settings.answerSpeed === 'fast' && settings.answerLength === 'short',
+      candidateProfile: `${buildCandidateSystemPrompt(profile)}\n\n${buildCascadeInstructions(settings)}`,
+    });
+  }, [profile, settings]);
+
+  // Quick QA login handler for localhost dev
   const handleQuickQaLogin = useCallback(async () => {
     setIsQaLoggingIn(true);
     try {
@@ -62,32 +100,33 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
         });
         window.location.reload();
       }
-    } catch (e) {
-      console.warn('[OfficeWindow] Quick QA login failed:', e);
+    } catch (err) {
+      console.warn('[OfficeWindow] Quick QA login failed:', err);
     } finally {
       setIsQaLoggingIn(false);
     }
   }, []);
 
-  // Launch action: Starts audio hardware capture and launches HUD window (with in-window fallback)
+  /**
+   * Instant Copilot Launch (<50ms window spawn):
+   * Spawns detached Stealth HUD immediately without waiting for blocking audio device setup;
+   * audio capture starts concurrently in the background.
+   */
   const handleLaunch = useCallback(
     async (overrideMode?: CopilotMode) => {
       const targetMode = overrideMode || settings.copilotMode;
       setLaunchError(null);
       setIsLaunching(true);
 
-      // 1. Start audio isolation capture in background
-      try {
-        await startListening(settings);
-      } catch (audioErr) {
-        console.warn('[OfficeWindow] Audio start warning:', audioErr);
-      }
+      // Fire-and-forget audio capture so HUD opens instantaneously (<50ms)
+      void startListening(settings).catch((audioErr) => {
+        console.warn('[OfficeWindow] Audio background start warning:', audioErr);
+      });
 
-      // 2. Launch detached HUD window or fallback to in-window HUD
       try {
         await launchCopilotWindow(targetMode);
       } catch (err) {
-        console.warn('[OfficeWindow] Detached window launch failed, falling back to in-window HUD:', err);
+        console.warn('[OfficeWindow] Detached HUD launch failed, switching inline:', err);
         if (onStartHud) {
           onStartHud(targetMode);
           return;
@@ -97,16 +136,15 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
         setIsLaunching(false);
       }
     },
-    [settings, onStartHud]
+    [onStartHud, settings]
   );
 
-  // 1-Click Demo Simulation trigger
   const handleRunDemo = useCallback(async () => {
     markDemoPending();
     await handleLaunch(settings.copilotMode);
   }, [handleLaunch, settings.copilotMode]);
 
-  // Global keyboard shortcut: Ctrl+Enter / ⌘+Enter to launch from anywhere in the Office
+  // Global Ctrl+Enter / Cmd+Enter launch shortcut inside Office
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -119,27 +157,21 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
   }, [handleLaunch]);
 
   return (
-    <div className="flex h-screen w-screen bg-[#09090b] text-zinc-100 select-none overflow-hidden font-sans">
-      {/* 220px Left Navigation Rail */}
+    <div className="gb-office flex h-screen w-screen text-zinc-100 select-none overflow-hidden font-sans relative">
+      {/* Apple Settings / Linear Left Navigation Rail */}
       <OfficeNavRail
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         user={user}
+        stealthArmed={settings.stealth}
         onLogout={onLogout}
+        onOpenAuth={onOpenAuth}
         onQuickQaLogin={handleQuickQaLogin}
         isQaLoggingIn={isQaLoggingIn}
       />
 
-      {/* Main Content View with Ambient Radial Glow */}
-      <main className="flex-1 flex flex-col h-full overflow-y-auto bg-[#09090b] p-6 sm:p-8 gb-scroll relative">
-        {/* Subtle radial top lighting */}
-        <div
-          className="absolute top-0 left-0 right-0 h-96 pointer-events-none -z-0 opacity-40"
-          style={{
-            background: 'radial-gradient(ellipse at top, rgba(255, 255, 255, 0.04), transparent 70%)',
-          }}
-        />
-
+      {/* Unified #09090b Engineering Grid Workspace Canvas */}
+      <main className="flex-1 flex flex-col h-full overflow-y-auto px-5 py-6 sm:px-8 sm:py-7 gb-scroll relative">
         <div className="relative z-10 max-w-4xl w-full mx-auto">
           {activeTab === 'launch' && (
             <LaunchpadTab
@@ -155,31 +187,19 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
           )}
 
           {activeTab === 'audio' && (
-            <AudioStudioTab
-              settings={settings}
-              updateSettings={updateSettings}
-            />
+            <AudioStudioTab settings={settings} updateSettings={updateSettings} />
           )}
 
           {activeTab === 'ai' && (
-            <AiBrainTab
-              settings={settings}
-              updateSettings={updateSettings}
-            />
+            <AiBrainTab settings={settings} updateSettings={updateSettings} />
           )}
 
           {activeTab === 'context' && (
-            <CandidateContextTab
-              profile={profile}
-              setProfile={setProfile}
-            />
+            <CandidateContextTab profile={profile} setProfile={setProfile} />
           )}
 
           {activeTab === 'stealth' && (
-            <StealthTab
-              settings={settings}
-              updateSettings={updateSettings}
-            />
+            <StealthTab settings={settings} updateSettings={updateSettings} />
           )}
         </div>
       </main>

@@ -6,20 +6,50 @@ import { logger } from './logger';
 const log = logger.child({ component: 'geminiApi' });
 
 export const FLASH_MODELS = [
-  'gemini-3.5-flash',
   'gemini-3.8-flash',
   'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
   'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
 
 export const PRO_MODELS = [
-  'gemini-3.5-flash',
   'gemini-3.8-flash',
   'gemini-2.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3-flash-preview',
+  'gemini-flash-lite-latest',
+  'gemini-3.1-flash-lite',
   'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
+
+interface GeminiCandidatePart {
+  text?: string;
+  thought?: boolean;
+}
+
+interface GeminiCandidateLike {
+  content?: {
+    parts?: GeminiCandidatePart[];
+  };
+}
+
+export function extractGeminiTextFromCandidate(candidate: GeminiCandidateLike | undefined): string {
+  const parts = candidate?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return '';
+  return parts
+    .filter((part) => !part?.thought)
+    .map((part) => part?.text ?? '')
+    .join('');
+}
+
+export const HEDGE_STAGGER_MS = 550;
 
 /** In-process cache of models that rejected thinkingConfig to avoid repeated 400 retries */
 export const modelsRejectingThinking = new Set<string>();
@@ -224,7 +254,11 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
 
     const remainingTime = deadline - now;
     if (remainingTime <= 0) break;
-    const timeoutMs = Math.min(options.timeoutMs || 3000, remainingTime);
+    const baseTimeout =
+      modelsToTry.length > 1 && model === 'gemini-3.8-flash'
+        ? Math.min(options.timeoutMs || 1400, 1400)
+        : options.timeoutMs || 2800;
+    const timeoutMs = Math.min(baseTimeout, remainingTime);
     if (remainingTime < 50) break;
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -265,19 +299,15 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
         try {
           errBody = await res.text();
         } catch {}
-        if (
-          errBody.includes('thinkingConfig') ||
-          errBody.includes('invalid argument') ||
-          errBody.includes('unknown field') ||
-          errBody.includes('INVALID_ARGUMENT')
-        ) {
+        const isDeadKey = errBody.includes('API_KEY_INVALID') || errBody.includes('API key not valid');
+        if (!isDeadKey) {
           modelsRejectingThinking.add(model);
           delete genConfig.thinkingConfig;
           res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              contents: options.contents,
+              contents: contentsPayload,
               generationConfig: genConfig,
             }),
             signal: controller.signal,
@@ -307,7 +337,7 @@ export async function callGeminiWithFallback(options: GeminiCallOptions): Promis
 
         const candidate = data?.candidates?.[0];
         const finishReason = candidate?.finishReason;
-        const text = candidate?.content?.parts?.[0]?.text;
+        const text = extractGeminiTextFromCandidate(candidate);
 
         if (!text || text.trim() === '') {
           log.warn(`Model ${model} returned empty text. Trying fallback model...`);
@@ -629,6 +659,13 @@ export async function runHedgedStreamRace(
     const ac = new AbortController();
     activeControllers.set(model, ac);
     activeContendersCount++;
+    const contenderTimeoutId = setTimeout(() => {
+      if (!winnerDeclared) {
+        try {
+          ac.abort();
+        } catch {}
+      }
+    }, 3500);
 
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
@@ -661,13 +698,8 @@ export async function runHedgedStreamRace(
           return;
         }
         const errBody = await res.text().catch(() => '');
-        if (
-          res.status === 400 &&
-          (errBody.includes('thinkingConfig') ||
-            errBody.includes('invalid argument') ||
-            errBody.includes('unknown field') ||
-            errBody.includes('INVALID_ARGUMENT'))
-        ) {
+        const isDeadKey = errBody.includes('API_KEY_INVALID') || errBody.includes('API key not valid');
+        if (res.status === 400 && genConfig.thinkingConfig && !isDeadKey) {
           modelsRejectingThinking.add(model);
           delete genConfig.thinkingConfig;
           res = await fetch(url, {
@@ -710,8 +742,9 @@ export async function runHedgedStreamRace(
           try {
             const parsed = JSON.parse(jsonStr);
             const candidate = parsed.candidates?.[0];
-            const textChunk = candidate?.content?.parts?.[0]?.text;
+            const textChunk = extractGeminiTextFromCandidate(candidate);
             if (textChunk) {
+              clearTimeout(contenderTimeoutId);
               const ttftMs = Date.now() - startTime;
               const claimed = declareWinner({
                 model,
@@ -734,11 +767,14 @@ export async function runHedgedStreamRace(
         }
       }
     } catch {
-      // Never put a model on cooldown for a single timeout
+      if (!winnerDeclared) {
+        tripModelCircuitBreaker(model, CIRCUIT_BREAKER_429_503_TTL_MS);
+      }
       if (preferredFastModel === model) {
         preferredFastModel = null;
       }
     } finally {
+      clearTimeout(contenderTimeoutId);
       activeControllers.delete(model);
       activeContendersCount--;
       checkContendersDone();
@@ -752,6 +788,7 @@ export async function runHedgedStreamRace(
     unbrokenGemini = prioritizedGemini;
   }
   prioritizedGemini = unbrokenGemini;
+  const launchedGemini = new Set<string>();
   let geminiIndex = 0;
 
   if (groqKey) {
@@ -760,7 +797,17 @@ export async function runHedgedStreamRace(
 
   if (apiKey && geminiIndex < prioritizedGemini.length) {
     const primaryModel = prioritizedGemini[geminiIndex++];
+    launchedGemini.add(primaryModel);
     void startGeminiContender(primaryModel);
+
+    // Parallel Sub-Second Boost: simultaneously launch low-latency live Gemini Flash contenders
+    // at t=0ms so the first token arrives in ~600-800ms even if primaryModel stalls or rate-limits.
+    for (const fastCandidate of ['gemini-3.5-flash-lite', 'gemini-3-flash-preview', 'gemini-flash-lite-latest']) {
+      if (prioritizedGemini.includes(fastCandidate) && !launchedGemini.has(fastCandidate)) {
+        launchedGemini.add(fastCandidate);
+        void startGeminiContender(fastCandidate);
+      }
+    }
   }
 
   const hedgeScheduler = async () => {
@@ -774,11 +821,11 @@ export async function runHedgedStreamRace(
           }
         };
         onContenderFinished = finishListener;
-        // 1800ms First-Byte Hedge instead of 8s dead wait
+        // 550ms First-Token Hedge Race: launch secondary contender if primary hasn't yielded first chunk within 550ms
         timer = setTimeout(() => {
           cleanup();
           resolve();
-        }, 1800);
+        }, HEDGE_STAGGER_MS);
 
         const cleanup = () => {
           if (timer) clearTimeout(timer);
@@ -786,18 +833,22 @@ export async function runHedgedStreamRace(
         };
       });
 
+      while (geminiIndex < prioritizedGemini.length && launchedGemini.has(prioritizedGemini[geminiIndex])) {
+        geminiIndex++;
+      }
       if (!winnerDeclared && geminiIndex < prioritizedGemini.length) {
         const nextModel = prioritizedGemini[geminiIndex++];
+        launchedGemini.add(nextModel);
         void startGeminiContender(nextModel);
       }
     }
 
     if (!winnerDeclared && activeContendersCount === 0) {
       // Never-Dead Cooldown Breaker: if all models are on cooldown or fail on the first pass,
-      // immediately clear all cooldowns and execute one direct retry on primary model with simplified payload
+      // immediately clear all cooldowns and execute one direct retry on fast fallback model
       resetModelHealth();
-      const primaryModel = FLASH_MODELS[0] || 'gemini-3.8-flash';
-      await startGeminiContender(primaryModel, true);
+      const recoveryModel = 'gemini-3.5-flash-lite';
+      await startGeminiContender(recoveryModel, true);
       if (!winnerDeclared && activeContendersCount === 0) {
         resolveWinner(null);
       }
@@ -832,7 +883,7 @@ export async function* iterateHedgedStreamChunks(
         if (winner.type === 'groq') {
           textChunk = parsed.choices?.[0]?.delta?.content || '';
         } else {
-          textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          textChunk = extractGeminiTextFromCandidate(parsed.candidates?.[0]);
         }
         if (textChunk) {
           yield textChunk;
@@ -863,7 +914,7 @@ export async function* iterateHedgedStreamChunks(
         if (winner.type === 'groq') {
           textChunk = parsed.choices?.[0]?.delta?.content || '';
         } else {
-          textChunk = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          textChunk = extractGeminiTextFromCandidate(parsed.candidates?.[0]);
         }
         if (textChunk) {
           yield textChunk;
@@ -880,7 +931,7 @@ export async function* iterateHedgedStreamChunks(
         const textChunk =
           winner.type === 'groq'
             ? parsed.choices?.[0]?.delta?.content
-            : parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            : extractGeminiTextFromCandidate(parsed.candidates?.[0]);
         if (textChunk) {
           yield textChunk;
         }

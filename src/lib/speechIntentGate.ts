@@ -18,29 +18,152 @@ export interface IntentEvaluation {
   normalizedQuestion: string;
   reason: string;
   recommendedWaitMs: number;
+  guardrailToken?: '<<<IGNORE>>>';
 }
 
 const NOISE_OR_GREETING_RE =
   /^(?:(?:привіт|привіт усім|добрий день|доброго дня|вітаю|алло|раз два|як чути|як мене чути|чи добре чути|зараз розшарю|секунду|угу|ага|так-так|окей|добре|дякую|hello|hi there|can you hear me|let me share|one second|uh huh|yeah|okay|thanks|здравствуйте|привет|как слышно)[\s!.,?]*)+$/i;
 
+const WEBINAR_CHATTER_RE =
+  /(?:^|[\s.,!?])(вітаю всіх на нашому вебінарі|сьогодні на стрімі|підписуйтесь на канал|пишіть плюсики в чат|поставте плюс у чаті|запис вебінару буде|поки всі збираються|напишіть у чаті з якого ви міста|welcome everyone to today's webinar|drop a plus in the chat|don't forget to like and subscribe|while we wait for others to join|recording will be sent after the webinar|type in the chat where you are joining from|всем привет на нашем вебинаре|поставьте плюсики в чат|подписывайтесь на канал|запись эфира будет доступна)(?:$|[\s.,!?])/i;
+
 const STORYTELLING_FIRST_PERSON_RE =
   /(?:^|[\s.,!?])(у нашій компанії|в нашій команді|ми в компанії|ми зараз робимо|наш продукт|наш клієнт|я працюю в|сьогодні ми поговоримо|план нашої співбесіди|давайте я розповім про нас|in our company|our team builds|we are currently working on|let me tell you about our|today we will cover|в нашей компании|мы в команде|сейчас я расскажу о нас)(?:$|[\s.,!?])/i;
 
 const DANGLING_ENDING_RE =
-  /(?:^|\s)(і|та|або|але|тому|тому що|бо|якщо|коли|щоб|який|яка|яке|які|про|для|на|в|у|з|із|це все-таки|основна|наприклад|тобто|буде|будет|will be|and|or|but|because|if|when|that|which|with|for|to|in|on|of|such as|и|или|но|потому что|если|когда|чтобы|который|которая)\s*[.,…-]*$/i;
+  /(?:^|\s)(і|й|та|або|чи|але|проте|однак|тому|тому що|бо|оскільки|якщо|коли|щоб|хоча|який|яка|яке|які|про|для|на|в|у|з|із|зі|від|до|за|під|над|між|через|при|це все-таки|основна|наприклад|тобто|буде|будет|will be|and|or|but|because|since|although|though|while|if|when|where|that|which|with|without|for|to|in|into|on|of|from|by|about|as|such as|like|whether|и|или|но|однако|потому|потому что|так как|если|когда|чтобы|хотя|который|которая|которое|которые|о|об|во|со|из|от|под|между|например|то есть)\s*[.,…-]*$/i;
 
 const QUESTION_OPENER_RE =
-  /(?:^|[.!;]\s*)(як|чому|навіщо|що таке|що буде|у чому різниця|в чому різниця|яка різниця|як працює|як би ти|як би ви|розкажи|розкажіть|поясни|поясніть|назви|назвіть|опиши|опишіть|порівняй|спроектуй|напиши|how\b|why\b|what is\b|what are\b|what happens\b|what's the difference\b|explain\b|describe\b|tell me\b|walk me through\b|compare\b|design\b|implement\b|when would you\b|как|почему|зачем|что такое|что будет|в чем разница|расскажи|расскажите|объясни|объясните|опиши)(?:$|[\s.,!?;])/i;
+  /(?:^|[.!;]\s*)(як|чому|навіщо|що таке|що буде|що це|а чому|а як|а які|які мінуси|які плюси|у чому різниця|в чому різниця|яка різниця|як працює|як би ти|як би ви|розкажи|розкажіть|поясни|поясніть|назви|назвіть|опиши|опишіть|порівняй|спроектуй|напиши|напишіть|how\b|why\b|what is\b|what are\b|what happens\b|what's the difference\b|explain\b|describe\b|tell me\b|walk me through\b|compare\b|design\b|implement\b|write\b|show\b|when would you\b|как|почему|зачем|что такое|что будет|что это|а какие|какие минусы|какие плюсы|в чем разница|расскажи|расскажите|объясни|объясните|опиши|напиши)(?:$|[\s.,!?;])/i;
 
 const QUESTION_ANYWHERE_RE =
-  /(?:^|[\s.,!?])(як ти вважаєш|як ви вважаєте|чи використовував|чи працював|чи знаєш|що думаєш про|what do you think|have you used|have you worked with|do you know|how do you handle|how does .* work|как ты думаешь|работал ли ты|использовал ли)(?:$|[\s.,!?])/i;
+  /(?:^|[\s.,!?])(як ти вважаєш|як ви вважаєте|чи використовував|чи працював|чи знаєш|що думаєш про|які мінуси|які плюси|напиши код|what do you think|have you used|have you worked with|do you know|how do you handle|how does .* work|write code|show code|pros and cons|trade-offs|как ты думаешь|работал ли ты|использовал ли|какие минусы)(?:$|[\s.,!?])/i;
+
+const SHORT_FOLLOW_UP_RE =
+  /^(?:why|how|what|when|where|чому|як|навіщо|що це|а чому|а як|а які мінуси|які мінуси|які плюси|write code|write code for this|show code|напиши код|почему|зачем|как|а какие минусы)\s*[?.!]*$/i;
 
 const TECH_TOPIC_RE =
-  /(?:^|[\s.,!?])(react|next\.?js|node\.?js|typescript|javascript|python|rust|go|golang|java|c\+\+|sql|postgres|postgresql|mysql|mongodb|redis|kafka|rabbitmq|docker|kubernetes|k8s|aws|gcp|azure|ci\/cd|git|linux|rest|graphql|grpc|websocket|http|tcp|udp|dns|tls|jwt|oauth|cors|csrf|xss|ssr|csr|isr|dom|virtual dom|event loop|promise|async|thread|process|mutex|deadlock|garbage collect|memory leak|index|b-tree|acid|cap|sharding|replication|partition|load balanc|rate limit|cache|microservice|monolith|solid|oop|fp|big o|hash map|binary tree|індекс|потік|процес|пам'ят|кеш|транзакц|база даних|архітектур|алгоритм|складність)(?:$|[\s.,!?])/i;
+  /(?:^|[\s.,!?])(react|next\.?js|node\.?js|typescript|javascript|python|rust|go|golang|java|c\+\+|sql|postgres|postgresql|mysql|mongodb|redis|kafka|rabbitmq|docker|kubernetes|k8s|aws|gcp|azure|ci\/cd|git|linux|rest|graphql|grpc|websocket|http|tcp|udp|dns|tls|jwt|oauth|cors|csrf|xss|ssr|csr|isr|dom|virtual dom|event loop|promise|async|thread|process|mutex|deadlock|garbage collect|memory leak|index|b-tree|acid|cap|sharding|replication|partition|load balanc|rate limit|cache|microservice|monolith|solid|oop|fp|big o|hash map|binary tree|code|індекс|потік|процес|пам'ят|кеш|транзакц|база даних|архітектур|алгоритм|складність|код|мінуси|плюси)(?:$|[\s.,!?])/i;
+
+/**
+ * Deduplicates repeated STT loops (e.g. "how does how does", "can you explain can you explain")
+ * within a single transcript or across joined segments.
+ */
+export function deduplicateSttTranscript(raw: string): string {
+  const collapsed = (raw || '').replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+
+  const tokens = collapsed.split(' ');
+  if (tokens.length < 2) return collapsed;
+
+  const normWord = (w: string) =>
+    w.toLowerCase().replace(/^[.,!?;:()[\]{}"'`~–—]+|[.,!?;:()[\]{}"'`~–—]+$/g, '');
+
+  const out: string[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    let skipped = false;
+    const maxWindow = Math.min(8, Math.floor((tokens.length - i) / 2));
+    for (let k = maxWindow; k >= 1; k--) {
+      let match = true;
+      for (let j = 0; j < k; j++) {
+        const a = normWord(tokens[i + j]);
+        const b = normWord(tokens[i + k + j]);
+        if (!a || a !== b) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        for (let j = 0; j < k; j++) {
+          out.push(tokens[i + j]);
+        }
+        let nextIdx = i + k;
+        while (nextIdx + k <= tokens.length) {
+          let repeatMatch = true;
+          for (let j = 0; j < k; j++) {
+            if (normWord(tokens[i + j]) !== normWord(tokens[nextIdx + j])) {
+              repeatMatch = false;
+              break;
+            }
+          }
+          if (repeatMatch) {
+            nextIdx += k;
+          } else {
+            break;
+          }
+        }
+        i = nextIdx;
+        skipped = true;
+        break;
+      }
+    }
+    if (!skipped) {
+      out.push(tokens[i]);
+      i += 1;
+    }
+  }
+
+  return out.join(' ').trim();
+}
+
+/**
+ * Sliding utterance accumulator: merges buffered segments with an incoming segment while
+ * deduplicating overlapping prefixes/suffixes and repeated STT loops.
+ */
+export function accumulateUtteranceSegments(segments: string[], incoming?: string): string {
+  const all = [...segments, ...(incoming ? [incoming] : [])]
+    .map((s) => deduplicateSttTranscript(s))
+    .filter(Boolean);
+  if (all.length === 0) return '';
+
+  const normClean = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[.,!?;:()[\]{}"'`~–—]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  let acc = all[0];
+  for (let idx = 1; idx < all.length; idx++) {
+    const next = all[idx];
+    const accNorm = normClean(acc);
+    const nextNorm = normClean(next);
+    if (!nextNorm) continue;
+    if (accNorm === nextNorm || accNorm.endsWith(nextNorm)) {
+      continue;
+    }
+    if (nextNorm.startsWith(accNorm)) {
+      acc = next;
+      continue;
+    }
+
+    const accWords = acc.split(/\s+/);
+    const nextWords = next.split(/\s+/);
+    const maxOverlap = Math.min(6, accWords.length, nextWords.length);
+    let overlap = 0;
+    for (let k = maxOverlap; k >= 1; k--) {
+      const suffix = normClean(accWords.slice(-k).join(' '));
+      const prefix = normClean(nextWords.slice(0, k).join(' '));
+      if (suffix && suffix === prefix) {
+        overlap = k;
+        break;
+      }
+    }
+
+    if (overlap > 0) {
+      acc = `${acc} ${nextWords.slice(overlap).join(' ')}`.trim();
+    } else {
+      acc = `${acc} ${next}`.trim();
+    }
+  }
+
+  return deduplicateSttTranscript(acc);
+}
 
 export function evaluateSpeechIntent(
   rawTranscript: string,
-  silenceMsOrContext: number | string = 350,
+  silenceMsOrContext: number | string = 250,
   contextOrSilenceMs: string | number = ''
 ): IntentEvaluation {
   const silenceMs =
@@ -48,7 +171,7 @@ export function evaluateSpeechIntent(
       ? silenceMsOrContext
       : typeof contextOrSilenceMs === 'number'
       ? contextOrSilenceMs
-      : 350;
+      : 250;
   const contextWindowText =
     typeof silenceMsOrContext === 'string'
       ? silenceMsOrContext
@@ -56,44 +179,71 @@ export function evaluateSpeechIntent(
       ? contextOrSilenceMs
       : '';
 
-  const text = rawTranscript.replace(/\s+/g, ' ').trim();
+  const text = deduplicateSttTranscript(rawTranscript);
   if (!text) {
-    return { decision: 'IGNORE_NOISE', score: 0, normalizedQuestion: '', reason: 'empty', recommendedWaitMs: 0 };
+    return {
+      decision: 'IGNORE_NOISE',
+      score: 0,
+      normalizedQuestion: '',
+      reason: 'empty',
+      recommendedWaitMs: 0,
+      guardrailToken: '<<<IGNORE>>>',
+    };
   }
 
   const words = text.split(' ').filter(Boolean);
   const wordCount = words.length;
 
-  // 1. Pure noise or greeting check
-  if (NOISE_OR_GREETING_RE.test(text)) {
-    return { decision: 'IGNORE_NOISE', score: -10, normalizedQuestion: '', reason: 'greeting_or_noise', recommendedWaitMs: 2000 };
+  // 1. Pure noise, greeting, or background webinar chatter check
+  if (NOISE_OR_GREETING_RE.test(text) || WEBINAR_CHATTER_RE.test(text)) {
+    return {
+      decision: 'IGNORE_NOISE',
+      score: -10,
+      normalizedQuestion: '',
+      reason: WEBINAR_CHATTER_RE.test(text) ? 'webinar_chatter' : 'greeting_or_noise',
+      recommendedWaitMs: 2000,
+      guardrailToken: '<<<IGNORE>>>',
+    };
   }
 
   const hasQuestionMark = text.includes('?');
   const hasQuestionOpener = QUESTION_OPENER_RE.test(text);
   const hasQuestionAnywhere = QUESTION_ANYWHERE_RE.test(text);
+  const isShortFollowUp = SHORT_FOLLOW_UP_RE.test(text);
   const hasTechKeyword = TECH_TOPIC_RE.test(text);
   const isStorytelling = STORYTELLING_FIRST_PERSON_RE.test(text);
   const endsWithDanglingWord = DANGLING_ENDING_RE.test(text);
+
+  // Strict dangling clause guardrail: buffer any segment ending on a dangling conjunction/preposition
+  if (endsWithDanglingWord && !hasQuestionMark) {
+    return {
+      decision: 'WAIT_FOR_COMPLETION',
+      score: -25,
+      normalizedQuestion: text,
+      reason: 'dangling_clause',
+      recommendedWaitMs: 1200,
+    };
+  }
 
   let score = 0;
   if (hasQuestionMark) score += 55;
   if (hasQuestionOpener) score += 50;
   if (hasQuestionAnywhere) score += 45;
+  if (isShortFollowUp) score += 55;
   if (hasTechKeyword) score += 25;
   if (wordCount >= 4 && wordCount <= 45) score += 10;
 
-  // Penalties for unfinished clauses or pure company monologue
-  if (endsWithDanglingWord && !hasQuestionMark) score -= 45;
+  // Penalties for pure company monologue
   if (isStorytelling && !hasQuestionMark && !hasQuestionOpener && !hasQuestionAnywhere) score -= 50;
-  if (wordCount < 2 && !hasTechKeyword) score -= 40;
+  if (wordCount < 2 && !hasTechKeyword && !isShortFollowUp) score -= 40;
 
-  // Case A: Clear question or explicit technical prompt -> FIRE IMMEDIATELY!
+  // Case A: Clear question, short follow-up, or explicit technical prompt -> FIRE IMMEDIATELY (<300ms)!
   if (
     score >= 45 ||
+    isShortFollowUp ||
     (hasQuestionMark && wordCount >= 2) ||
-    (hasQuestionOpener && wordCount >= 3 && !endsWithDanglingWord) ||
-    (hasTechKeyword && (hasQuestionOpener || hasQuestionAnywhere || hasQuestionMark))
+    (hasQuestionOpener && wordCount >= 2 && !endsWithDanglingWord) ||
+    (hasTechKeyword && !endsWithDanglingWord && (hasQuestionOpener || hasQuestionAnywhere || hasQuestionMark))
   ) {
     const extracted = extractFocusedQuestion(text, contextWindowText);
     return {
@@ -105,8 +255,8 @@ export function evaluateSpeechIntent(
     };
   }
 
-  // Case B: Short standalone tech concept spoken after full pause (e.g. "Event Loop у JavaScript", "Індекси в Postgres")
-  if (hasTechKeyword && wordCount >= 2 && wordCount <= 8 && !isStorytelling && !endsWithDanglingWord && silenceMs >= 650) {
+  // Case B: Short standalone tech concept spoken after brief pause (<300ms: e.g. "Event Loop у JavaScript", "Індекси в Postgres")
+  if (hasTechKeyword && wordCount >= 2 && wordCount <= 8 && !isStorytelling && !endsWithDanglingWord && silenceMs >= 250) {
     return {
       decision: 'TRIGGER_NOW',
       score: score + 25,
@@ -187,7 +337,7 @@ function cleanSpeech(raw: string): string {
 export function isFillerOrBanter(text: string): boolean {
   const raw = (text || '').trim();
   if (!raw) return true;
-  if (NOISE_OR_GREETING_RE.test(raw)) return true;
+  if (NOISE_OR_GREETING_RE.test(raw) || WEBINAR_CHATTER_RE.test(raw)) return true;
 
   const cleaned = cleanSpeech(raw);
   if (!cleaned) return true;

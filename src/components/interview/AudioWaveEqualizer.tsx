@@ -32,7 +32,7 @@ export const AudioWaveEqualizer: React.FC<AudioWaveEqualizerProps> = ({
 
   return (
     <div
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08] backdrop-blur-md transition-colors ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.08]   transition-colors ${className}`}
       title={label ? `${label}: ${Math.round(normalized)}%` : `Рівень звуку: ${Math.round(normalized)}%`}
       aria-label="Sound level equalizer"
     >
@@ -52,14 +52,14 @@ export const AudioWaveEqualizer: React.FC<AudioWaveEqualizerProps> = ({
             }}
             className={`w-[2.5px] rounded-full transition-colors ${
               isAudible
-                ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                ? 'bg-white '
                 : 'bg-zinc-600'
             }`}
           />
         ))}
       </div>
       {label && (
-        <span className="text-[10px] font-mono tracking-tight text-zinc-400 select-none">
+        <span className="text-xs font-mono tracking-tight text-zinc-400 select-none">
           {label}
         </span>
       )}

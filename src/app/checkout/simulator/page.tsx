@@ -44,8 +44,9 @@ function SimulatorContent() {
   const [cardHolder, setCardHolder] = useState('Senior Developer');
 
   useEffect(() => {
-    // Strictly gate payment simulator: only allowed in QA / Simulator mode
-    const isQa = process.env.NEXT_PUBLIC_QA_MODE === 'true';
+    // Strictly gate payment simulator: never active in production unless simulator is explicitly enabled
+    const isProd = process.env.NODE_ENV === 'production';
+    const isQa = !isProd && process.env.NEXT_PUBLIC_QA_MODE === 'true';
     const isSim = process.env.NEXT_PUBLIC_ENABLE_PROD_SIMULATOR === 'true' || process.env.ENABLE_PROD_SIMULATOR === 'true';
     if (!isQa && !isSim) {
       router.replace('/pricing');

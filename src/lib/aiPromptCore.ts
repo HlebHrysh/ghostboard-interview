@@ -48,6 +48,7 @@ export interface CandidateContext {
   experienceLevel?: string;
   cvContext?: string;
   resumeContext?: string;
+  customContext?: string;
   techStack?: string[];
   petProjects?: Array<{ name?: string; description?: string; keyHighlight?: string }>;
   customBio?: string;
@@ -507,9 +508,17 @@ export function buildGhostboardSystemPrompt(options: {
   // Resume / CV Context injection
   const cvPieces: string[] = [];
   if (profile?.role) cvPieces.push(`Target Role: ${profile.role}`);
-  if (profile?.primaryStack) cvPieces.push(`Stack: ${profile.primaryStack}`);
+  if (profile?.experienceLevel) cvPieces.push(`Level: ${profile.experienceLevel}`);
+  const resolvedStack =
+    profile?.primaryStack ||
+    (Array.isArray(profile?.techStack) && profile.techStack.length > 0
+      ? profile.techStack.join(', ')
+      : undefined);
+  if (resolvedStack) cvPieces.push(`Stack: ${resolvedStack}`);
   if (profile?.cvContext) cvPieces.push(`CV Context: ${profile.cvContext.slice(0, 500)}`);
   if (profile?.resumeContext) cvPieces.push(`Resume: ${profile.resumeContext.slice(0, 500)}`);
+  if (profile?.customBio) cvPieces.push(`Bio: ${profile.customBio.slice(0, 500)}`);
+  if (profile?.customContext) cvPieces.push(`Context: ${profile.customContext.slice(0, 500)}`);
 
   const cvContextString =
     cvPieces.length > 0
@@ -560,6 +569,64 @@ export interface FollowUpContextTurn {
   question: string;
   shortHook?: string;
   answer?: string;
+}
+
+export type RawHistoryEntry =
+  | { speaker: 'interviewer' | 'candidate'; text: string }
+  | { question: string; answer?: string; shortHook?: string };
+
+/**
+ * Normalizes mixed history payloads into at most the last 2 Q&A turns (`FollowUpContextTurn[]`)
+ * so short follow-up questions ("Why?", "Write code for this", "А які мінуси?") resolve context accurately.
+ */
+export function normalizeFollowUpTurns(history?: RawHistoryEntry[] | null): FollowUpContextTurn[] {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  const turns: FollowUpContextTurn[] = [];
+  let pendingQuestion: string | null = null;
+
+  for (const item of history) {
+    if ('question' in item && typeof item.question === 'string') {
+      if (pendingQuestion) {
+        turns.push({ question: pendingQuestion });
+        pendingQuestion = null;
+      }
+      const q = item.question.trim();
+      if (q) {
+        turns.push({
+          question: q,
+          shortHook: (item.shortHook || item.answer || '').trim() || undefined,
+          answer: (item.answer || item.shortHook || '').trim() || undefined,
+        });
+      }
+    } else if ('speaker' in item && typeof item.text === 'string') {
+      const text = item.text.trim();
+      if (!text) continue;
+      if (item.speaker === 'interviewer') {
+        if (pendingQuestion) {
+          turns.push({ question: pendingQuestion });
+        }
+        pendingQuestion = text;
+      } else if (item.speaker === 'candidate') {
+        if (pendingQuestion) {
+          turns.push({
+            question: pendingQuestion,
+            shortHook: text,
+            answer: text,
+          });
+          pendingQuestion = null;
+        } else if (turns.length > 0 && !turns[turns.length - 1].shortHook) {
+          turns[turns.length - 1].shortHook = text;
+          turns[turns.length - 1].answer = text;
+        }
+      }
+    }
+  }
+
+  if (pendingQuestion) {
+    turns.push({ question: pendingQuestion });
+  }
+
+  return turns.slice(-2);
 }
 
 /**
@@ -787,15 +854,24 @@ export function parseStructuredGhostboardOutput(raw: string): {
     if (trapMatch) {
       const rawTrap = stripTrailingPartialTags(trapMatch[1]);
       if (rawTrap.trim()) {
-        const qMatch = rawTrap.match(/(?:^|\n)\s*(?:Q|Question)\s*:\s*([^\n]+)/i);
-        const aMatch = rawTrap.match(/(?:^|\n)\s*(?:A|Answer)\s*:\s*([\s\S]+)/i);
-        let question = qMatch ? stripTrailingPartialTags(qMatch[1].trim()) : '';
-        let answer = aMatch ? stripTrailingPartialTags(aMatch[1].trim()) : '';
+        let question = '';
+        let answer = '';
 
-        if (!question && !answer && rawTrap.trim()) {
-          const lines = rawTrap.split('\n').map((l) => l.trim()).filter(Boolean);
-          if (lines.length > 0) question = lines[0];
-          if (lines.length > 1) answer = lines.slice(1).join(' ');
+        if (rawTrap.includes('|||')) {
+          const [qPart, ...aParts] = rawTrap.split('|||');
+          question = stripTrailingPartialTags(qPart.replace(/^(?:Q|Question)\s*:\s*/i, '').trim());
+          answer = stripTrailingPartialTags(aParts.join('|||').replace(/^(?:A|Answer)\s*:\s*/i, '').trim());
+        } else {
+          const qMatch = rawTrap.match(/(?:^|\n)\s*(?:Q|Question)\s*:\s*([^\n]+)/i);
+          const aMatch = rawTrap.match(/(?:^|\n)\s*(?:A|Answer)\s*:\s*([\s\S]+)/i);
+          question = qMatch ? stripTrailingPartialTags(qMatch[1].trim()) : '';
+          answer = aMatch ? stripTrailingPartialTags(aMatch[1].trim()) : '';
+
+          if (!question && !answer && rawTrap.trim()) {
+            const lines = rawTrap.split('\n').map((l) => l.trim()).filter(Boolean);
+            if (lines.length > 0) question = lines[0];
+            if (lines.length > 1) answer = lines.slice(1).join(' ');
+          }
         }
 
         if (question || answer) {

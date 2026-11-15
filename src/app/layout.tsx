@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, Manrope, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemedToaster } from '@/components/ui/ThemedToaster';
 import { BlackHoleCanvas } from '@/components/singularity/BlackHoleCanvas';
@@ -8,6 +8,12 @@ import { CommandPalette } from '@/components/singularity/CommandPalette';
 import { GhostFx } from '@/components/ui/GhostFx';
 import { LocaleProvider } from '@/contexts/LocaleContext';
 import { ServiceWorkerRegister } from '@/components/pwa/ServiceWorkerRegister';
+import { DeveloperDockLoader } from '@/components/dev/DeveloperDockLoader';
+import {
+  getServerDeveloperUser,
+  hasDeveloperAccess,
+  resolveEffectivePlan,
+} from '@/lib/devGuard';
 import dynamic from 'next/dynamic';
 
 const QaTestDock = dynamic(
@@ -23,13 +29,20 @@ export const viewport: Viewport = {
 };
 
 const inter = Inter({
-  variable: "--font-sans",
+  variable: "--font-inter",
   subsets: ["latin", "cyrillic"],
   display: "swap",
 });
 
+const manrope = Manrope({
+  variable: "--font-manrope",
+  subsets: ["latin", "cyrillic"],
+  weight: ["500", "600", "700", "800"],
+  display: "swap",
+});
+
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-mono",
+  variable: "--font-jetbrains",
   subsets: ["latin", "cyrillic"],
   display: "swap",
 });
@@ -59,21 +72,35 @@ export const metadata: Metadata = {
 };
 
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  let devUser = null;
+  try {
+    devUser = await getServerDeveloperUser();
+  } catch {
+    devUser = null;
+  }
+  const canRenderDevDock = hasDeveloperAccess(devUser);
+  const initialEffectivePlan = canRenderDevDock ? resolveEffectivePlan(devUser) : null;
+
   return (
-    <html lang="en" className="dark min-h-full w-full" data-scroll-behavior="smooth" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark min-h-full w-full ${inter.variable} ${manrope.variable} ${jetbrainsMono.variable}`}
+      data-scroll-behavior="smooth"
+      suppressHydrationWarning
+    >
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem("gb-theme");if(!t){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}var d=document.documentElement;d.dataset.theme=t;d.classList.toggle("dark",t!=="light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f4f4f2":"#000000")}catch(e){}`,
+            __html: `try{var t=localStorage.getItem("gb-theme");if(!t){t=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}var d=document.documentElement;d.dataset.theme=t;d.classList.toggle("dark",t!=="light");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",t==="light"?"#f5f5f7":"#040508")}catch(e){}`,
           }}
         />
       </head>
-      <body className={`${inter.variable} ${jetbrainsMono.variable} min-h-screen w-full overflow-x-hidden subpixel-antialiased bg-black text-zinc-100 font-sans`}>
+      <body className="min-h-screen w-full overflow-x-hidden antialiased bg-[#040508] text-zinc-100 font-sans">
         <LocaleProvider>
           <BlackHoleCanvas />
           <CommandPalette />
@@ -83,7 +110,13 @@ export default function RootLayout({
         </LocaleProvider>
         <ServiceWorkerRegister />
         <ThemedToaster />
-        {process.env.NEXT_PUBLIC_QA_MODE === 'true' && <QaTestDock />}
+        {canRenderDevDock && (
+          <DeveloperDockLoader
+            initialRole={devUser?.role ?? 'developer'}
+            initialEffectivePlan={initialEffectivePlan}
+          />
+        )}
+        {process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_QA_MODE === 'true' && <QaTestDock />}
       </body>
     </html>
   );

@@ -1,31 +1,36 @@
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
-  FileText,
-  UserCheck,
-  Plus,
-  X,
-  RefreshCw,
-  Check,
   AlertCircle,
   Briefcase,
+  Building2,
+  Check,
+  FileUp,
   Layers,
+  Loader2,
+  Plus,
+  RefreshCw,
+  UserCheck,
+  X,
 } from 'lucide-react';
-import { Card, SectionTitle, Button, Pill, StatusDot, stopDrag } from '../ui/primitives';
+import { getResolvedBaseUrl } from '../lib/apiClient';
 import {
   EXPERIENCE_LEVELS,
+  parseResumePdf,
   syncProfileToBackend,
   updateStoredProfile,
-  type CandidateProfile,
   type CandidateLevel,
+  type CandidateProfile,
 } from '../lib/profileStore';
-import { setAiPreferences } from '../lib/tauriBridge';
+import { getAccessToken, setAiPreferences } from '../lib/tauriBridge';
+import { SectionTitle, SPRING } from '../ui/primitives';
 
 interface CandidateContextTabProps {
   profile: CandidateProfile;
   setProfile: (profile: CandidateProfile) => void;
 }
 
-const COMMON_TAG_SUGGESTIONS = [
+const SUGGESTED_TAGS = [
   'TypeScript',
   'React',
   'Next.js',
@@ -40,287 +45,335 @@ const COMMON_TAG_SUGGESTIONS = [
   'Rust',
   'GraphQL',
   'Kafka',
-  'Microservices',
 ];
 
 export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
   profile,
   setProfile,
 }) => {
-  const [newTagInput, setNewTagInput] = useState('');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<{ ok: boolean; message: string } | null>(null);
+  const roleId = useId();
+  const companyId = useId();
+  const stackInputId = useId();
+  const bioId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleUpdate = (patch: Partial<CandidateProfile>) => {
+  const [newTag, setNewTag] = useState('');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isParsingCv, setIsParsingCv] = useState(false);
+  const [statusBanner, setStatusBanner] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const commitPatch = (patch: Partial<CandidateProfile>) => {
     const next = updateStoredProfile(patch);
     setProfile(next);
-    // Sync candidate role and stack to Rust orchestrator
+    const cvSnippet = next.cvContext?.trim() ? `\nCV Context: ${next.cvContext.slice(0, 1800)}` : '';
+    const companySnippet = next.targetCompany?.trim() ? ` at ${next.targetCompany}` : '';
     void setAiPreferences({
-      candidateProfile: `${next.experienceLevel} ${next.role} (Stack: ${next.techStack.join(', ')})`,
+      candidateProfile: `${next.experienceLevel} ${next.role}${companySnippet} (Stack: ${next.techStack.join(', ')}). ${next.customBio || ''}${cvSnippet}`,
     });
   };
 
-  const handleAddTag = (tagToAdd?: string) => {
-    const val = (tagToAdd || newTagInput).trim();
-    if (!val) return;
-    if (!profile.techStack.includes(val)) {
-      handleUpdate({ techStack: [...profile.techStack, val] });
+  const addTag = (raw?: string) => {
+    const clean = (raw ?? newTag).trim();
+    if (!clean) return;
+    const exists = profile.techStack.some((t) => t.toLowerCase() === clean.toLowerCase());
+    if (!exists) {
+      commitPatch({
+        techStack: [...profile.techStack, clean],
+        primaryStack: [...profile.techStack, clean].join(', '),
+      });
     }
-    setNewTagInput('');
+    if (!raw) setNewTag('');
   };
 
-  const handleRemoveTag = (tag: string) => {
-    handleUpdate({ techStack: profile.techStack.filter((t) => t !== tag) });
+  const removeTag = (tag: string) => {
+    const nextStack = profile.techStack.filter((t) => t !== tag);
+    commitPatch({
+      techStack: nextStack,
+      primaryStack: nextStack.join(', '),
+    });
   };
 
-  const handleSyncToBackend = async () => {
-    setIsSyncing(true);
-    setSyncStatus(null);
+  const handleCvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    setStatusBanner(null);
+
+    // Plain text / markdown resumes can be loaded locally even offline
+    if (file.type === 'text/plain' || /\.(txt|md)$/i.test(file.name)) {
+      try {
+        const text = (await file.text()).slice(0, 6000);
+        commitPatch({
+          cvContext: text,
+          customBio: profile.customBio || text.slice(0, 600),
+        });
+        setStatusBanner({ ok: true, text: `Резюме «${file.name}» завантажено в контекст.` });
+      } catch {
+        setStatusBanner({ ok: false, text: 'Не вдалося прочитати текстовий файл.' });
+      }
+      return;
+    }
+
+    setIsParsingCv(true);
     try {
-      const res = await syncProfileToBackend(profile);
-      if (res.success) {
-        setSyncStatus({ ok: true, message: 'Профіль успішно синхронізовано з хмарою' });
-        setTimeout(() => setSyncStatus(null), 3500);
+      const token = await getAccessToken();
+      const parsed = await parseResumePdf(file, file.name, getResolvedBaseUrl(), token);
+      if (parsed.success && parsed.profile) {
+        const mergedStack = Array.from(
+          new Set([...(parsed.profile.techStack ?? []), ...profile.techStack])
+        );
+        commitPatch({
+          role: parsed.profile.role || profile.role,
+          experienceLevel: parsed.profile.experienceLevel || profile.experienceLevel,
+          techStack: mergedStack,
+          primaryStack: mergedStack.join(', '),
+          customBio: parsed.profile.customBio || parsed.profile.summary || profile.customBio,
+          cvContext: parsed.profile.cvContext || parsed.profile.summary || profile.cvContext,
+        });
+        setStatusBanner({ ok: true, text: `CV «${file.name}» розібрано та додано до профілю.` });
       } else {
-        setSyncStatus({ ok: false, message: res.error || 'Помилка синхронізації' });
+        setStatusBanner({
+          ok: false,
+          text: parsed.error || 'Не вдалося розібрати PDF. Скопіюйте текст резюме в поле нижче.',
+        });
       }
     } catch {
-      setSyncStatus({ ok: false, message: 'Немає зв’язку з сервером' });
+      setStatusBanner({
+        ok: false,
+        text: 'Сервер парсингу PDF недоступний. Завантажте .txt/.md або вставте текст вручну.',
+      });
+    } finally {
+      setIsParsingCv(false);
+    }
+  };
+
+  const handleCloudSync = async () => {
+    setIsSyncing(true);
+    setStatusBanner(null);
+    try {
+      const token = await getAccessToken();
+      const res = await syncProfileToBackend(profile, getResolvedBaseUrl(), token);
+      setStatusBanner({
+        ok: res.success,
+        text: res.success
+          ? 'Профіль збережено локально та синхронізовано з акаунтом.'
+          : res.error || 'Збережено локально; хмарний бекенд недоступний.',
+      });
+    } catch {
+      setStatusBanner({ ok: false, text: 'Збережено локально (офлайн).' });
     } finally {
       setIsSyncing(false);
     }
   };
 
   return (
-    <div className="space-y-6 pb-6 select-none">
+    <div className="space-y-5 pb-4">
       <SectionTitle
-        eyebrow="ПРОФІЛЬ КАНДИДАТА"
-        title="Контекст та Резюме"
-        hint="ШІ адаптує відповіді під ваш реальний стек, роль та сеньйоріті, щоб аргументи звучали природно"
+        title="Профіль кандидата та CV"
         right={
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSyncToBackend}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 cursor-pointer font-mono"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>Синхронізувати</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.txt,.md,application/pdf,text/plain"
+              onChange={(e) => void handleCvUpload(e)}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isParsingCv}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-[#111114] px-2.5 py-1 text-[11px] font-medium text-zinc-200 hover:border-white/25 hover:text-white disabled:opacity-50 cursor-pointer"
+            >
+              {isParsingCv ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <FileUp className="h-3 w-3 text-emerald-400" />
+              )}
+              Завантажити CV
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleCloudSync()}
+              disabled={isSyncing}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-950 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
+            >
+              <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              Синхронізувати
+            </button>
+          </div>
         }
       />
 
-      {syncStatus && (
+      {statusBanner && (
         <div
-          className={`p-3 rounded-xl border text-xs font-mono flex items-center gap-2 ${
-            syncStatus.ok
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-              : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+            statusBanner.ok
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
           }`}
         >
-          {syncStatus.ok ? (
-            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+          {statusBanner.ok ? (
+            <Check className="h-3.5 w-3.5 shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           )}
-          <span>{syncStatus.message}</span>
+          <span>{statusBanner.text}</span>
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          1. TARGET ROLE & SENIORITY LEVEL
-      ───────────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Role Input */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-            <Briefcase className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Цільова позиція (Role)</span>
+      {/* Role & Target Company */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <label htmlFor={roleId} className="flex items-center gap-1.5 text-xs font-semibold text-white">
+            <Briefcase className="h-3.5 w-3.5 text-zinc-400" />
+            Цільова роль
           </label>
           <input
+            id={roleId}
             type="text"
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
             value={profile.role}
-            onChange={(e) => handleUpdate({ role: e.target.value })}
-            placeholder="Наприклад: Senior Full-Stack Engineer"
-            className="gb-input font-medium text-xs"
+            onChange={(e) => commitPatch({ role: e.target.value })}
+            placeholder="Напр.: Senior Full-Stack Engineer"
+            className="gb-input h-9 text-xs"
           />
-          <p className="text-[11px] text-zinc-500">
-            Визначає професійний кут зору для прикладів і технічних термінів.
-          </p>
         </div>
 
-        {/* Primary Stack Summary */}
-        <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-            <Layers className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Основний фокус стеку</span>
+        <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+          <label htmlFor={companyId} className="flex items-center gap-1.5 text-xs font-semibold text-white">
+            <Building2 className="h-3.5 w-3.5 text-zinc-400" />
+            Компанія (опціонально)
           </label>
           <input
+            id={companyId}
             type="text"
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            value={profile.primaryStack}
-            onChange={(e) => handleUpdate({ primaryStack: e.target.value })}
-            placeholder="TypeScript, React, Node.js, PostgreSQL"
-            className="gb-input font-medium text-xs"
+            value={profile.targetCompany || ''}
+            onChange={(e) => commitPatch({ targetCompany: e.target.value })}
+            placeholder="Напр.: Stripe, Linear, Vercel..."
+            className="gb-input h-9 text-xs"
           />
-          <p className="text-[11px] text-zinc-500">
-            Короткий рядок стеку, який додається як головний фокус у кожен запит.
-          </p>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          2. SENIORITY LEVEL CARDS
-      ───────────────────────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-          Рівень кваліфікації (Seniority)
+      {/* Seniority Grade Pills */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+          <UserCheck className="h-3.5 w-3.5 text-zinc-400" />
+          Грейд відповідей
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {EXPERIENCE_LEVELS.map((lvl) => {
-            const isSelected = profile.experienceLevel === lvl.id;
+            const active = profile.experienceLevel === lvl.id;
             return (
-              <button
+              <motion.button
                 key={lvl.id}
                 type="button"
-                data-tauri-drag-region="false"
-                onMouseDown={stopDrag}
-                onClick={() => handleUpdate({ experienceLevel: lvl.id })}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                  isSelected
-                    ? 'border-white bg-white/[0.08] ring-1 ring-white/20'
-                    : 'border-white/[0.06] bg-[#111114] hover:border-white/15'
+                whileHover={{ scale: 1.015 }}
+                whileTap={{ scale: 0.98 }}
+                transition={SPRING}
+                onClick={() => commitPatch({ experienceLevel: lvl.id as CandidateLevel })}
+                title={lvl.description}
+                className={`rounded-xl border px-3 py-2 text-center transition-colors cursor-pointer ${
+                  active
+                    ? 'border-white/35 bg-white text-zinc-950 font-semibold'
+                    : 'border-white/[0.08] bg-[#0c0c0f] text-zinc-300 hover:border-white/20 hover:text-white'
                 }`}
               >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-semibold text-white">{lvl.label}</span>
-                    {isSelected && (
-                      <div className="w-3.5 h-3.5 rounded-full bg-white text-zinc-950 flex items-center justify-center">
-                        <Check className="w-2.5 h-2.5 stroke-[3]" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-zinc-400 leading-snug line-clamp-2">
-                    {lvl.description}
-                  </div>
-                </div>
-              </button>
+                <span className="text-xs">{lvl.label}</span>
+              </motion.button>
             );
           })}
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          3. TECH STACK TAGS (Add / Remove / Presets)
-      ───────────────────────────────────────────────────────────── */}
-      <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300">
-            Технологічний стек (Tech Stack Tags)
+      {/* Interactive Tech Stack Capsules */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={stackInputId} className="flex items-center gap-1.5 text-xs font-semibold text-white">
+            <Layers className="h-3.5 w-3.5 text-zinc-400" />
+            Стек технологій ({profile.techStack.length})
           </label>
-          <span className="text-[10px] font-mono text-zinc-500">
-            {profile.techStack?.length || 0} технологій
-          </span>
+          <span className="text-[10.5px] font-mono text-zinc-500">STT vocabulary boost</span>
         </div>
 
-        {/* Active Tags */}
-        <div className="flex flex-wrap gap-1.5 min-h-[36px] p-2 rounded-lg bg-black/30 border border-white/[0.06]">
-          {(profile.techStack || []).map((tag) => (
+        <div className="flex flex-wrap gap-1.5">
+          {profile.techStack.map((tag) => (
             <span
               key={tag}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/10 text-zinc-200 text-xs font-mono border border-white/10"
+              className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-[#18181e] px-2.5 py-1 text-[11px] font-medium text-zinc-100"
             >
-              <span>{tag}</span>
+              {tag}
               <button
                 type="button"
-                data-tauri-drag-region="false"
-                onMouseDown={stopDrag}
-                onClick={() => handleRemoveTag(tag)}
-                className="text-zinc-400 hover:text-white p-0.5 cursor-pointer"
+                onClick={() => removeTag(tag)}
+                aria-label={`Видалити ${tag}`}
+                className="text-zinc-500 hover:text-rose-300 cursor-pointer"
               >
-                <X className="w-2.5 h-2.5" />
+                <X className="h-3 w-3" />
               </button>
             </span>
           ))}
-          {(!profile.techStack || profile.techStack.length === 0) && (
-            <span className="text-xs text-zinc-500 py-1 font-mono">
-              Немає доданих технологій. Додайте нижче.
-            </span>
-          )}
         </div>
 
-        {/* Input to add custom tag */}
         <div className="flex gap-2">
           <input
+            id={stackInputId}
             type="text"
-            data-tauri-drag-region="false"
-            onMouseDown={stopDrag}
-            value={newTagInput}
-            onChange={(e) => setNewTagInput(e.target.value)}
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                 e.preventDefault();
-                handleAddTag();
+                addTag();
               }
             }}
-            placeholder="+ Додати нову технологію (натисніть Enter)..."
-            className="gb-input flex-1 font-mono text-xs"
+            placeholder="Додати технологію (напр.: Redis, Rust, Next.js 16)..."
+            className="gb-input h-9 flex-1 text-xs"
           />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => handleAddTag()}
-            className="px-3 cursor-pointer"
+          <button
+            type="button"
+            onClick={() => addTag()}
+            className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/[0.06] px-3 text-xs font-medium text-zinc-100 hover:bg-white/[0.12] cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Додати</span>
-          </Button>
+            <Plus className="h-3.5 w-3.5" />
+            Додати
+          </button>
         </div>
 
-        {/* Quick Suggestion Pills */}
-        <div className="pt-2 border-t border-white/[0.04]">
-          <div className="text-[10px] uppercase font-mono text-zinc-500 mb-1.5">
-            Швидкі рекомендації:
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {COMMON_TAG_SUGGESTIONS.filter((t) => !profile.techStack?.includes(t)).slice(0, 10).map((tag) => (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {SUGGESTED_TAGS.filter((t) => !profile.techStack.includes(t))
+            .slice(0, 8)
+            .map((tag) => (
               <button
                 key={tag}
                 type="button"
-                data-tauri-drag-region="false"
-                onMouseDown={stopDrag}
-                onClick={() => handleAddTag(tag)}
-                className="px-2 py-0.5 rounded text-[11px] font-mono bg-white/[0.04] text-zinc-400 hover:text-white hover:bg-white/[0.08] transition cursor-pointer"
+                onClick={() => addTag(tag)}
+                className="rounded-md border border-white/[0.06] bg-[#09090b] px-2 py-0.5 text-[10.5px] text-zinc-400 hover:border-white/20 hover:text-zinc-200 cursor-pointer"
               >
                 + {tag}
               </button>
             ))}
-          </div>
         </div>
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          4. CV CONTEXT / BIO TEXTAREA
-      ───────────────────────────────────────────────────────────── */}
-      <div className="p-4 rounded-xl border border-white/[0.08] bg-[#111114] space-y-2.5">
-        <label className="text-[11px] font-semibold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-          <FileText className="w-3.5 h-3.5 text-zinc-400" />
-          <span>Коротке резюме або біографія кандидата</span>
-        </label>
+      {/* Bio / CV Experience Context */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+        <div className="flex items-center justify-between gap-2">
+          <label htmlFor={bioId} className="text-xs font-semibold text-white">
+            Досвід та ключові проекти (CV Context)
+          </label>
+          <span className="text-[10.5px] font-mono text-emerald-400">Автозбереження</span>
+        </div>
         <textarea
-          data-tauri-drag-region="false"
-          onMouseDown={stopDrag}
-          rows={4}
-          value={profile.customBio}
-          onChange={(e) => handleUpdate({ customBio: e.target.value })}
-          placeholder="Вставте опис вашого досвіду, ключові проєкти або резюме. ШІ врахує це при відповідях на питання про ваш минулий досвід."
-          className="gb-input h-auto py-2 font-mono text-xs leading-relaxed resize-none"
+          id={bioId}
+          rows={5}
+          value={profile.cvContext || profile.customBio}
+          onChange={(e) => commitPatch({ cvContext: e.target.value, customBio: e.target.value })}
+          placeholder="Вставте опис досвіду, досягнення або текст резюме — копайлот адаптуватиме відповіді під ваші реальні кейси..."
+          className="gb-input h-auto py-2.5 font-mono text-xs leading-relaxed resize-y"
         />
       </div>
     </div>

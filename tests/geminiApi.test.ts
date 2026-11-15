@@ -1,16 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
-import { FLASH_MODELS, PRO_MODELS, getCleanGeminiKey } from "../src/lib/geminiApi";
+import { FLASH_MODELS, PRO_MODELS, HEDGE_STAGGER_MS, getCleanGeminiKey } from "../src/lib/geminiApi";
 
 describe("geminiApi helper", () => {
   it("defines cascade models with fallback sequence", () => {
     expect(FLASH_MODELS.length).toBeGreaterThanOrEqual(3);
-    expect(FLASH_MODELS[0]).toBe("gemini-3.5-flash");
-    expect(FLASH_MODELS[1]).toBe("gemini-3.8-flash");
+    expect(FLASH_MODELS[0]).toBe("gemini-3.8-flash");
+    expect(FLASH_MODELS[1]).toBe("gemini-2.5-flash");
     expect(FLASH_MODELS).toContain("gemini-flash-latest");
+    expect(HEDGE_STAGGER_MS).toBe(550);
 
     expect(PRO_MODELS.length).toBeGreaterThanOrEqual(2);
-    expect(PRO_MODELS[0]).toBe("gemini-3.5-flash");
-    expect(PRO_MODELS[1]).toBe("gemini-3.8-flash");
+    expect(PRO_MODELS[0]).toBe("gemini-3.8-flash");
+    expect(PRO_MODELS[1]).toBe("gemini-2.5-flash");
   });
 
   it("handles empty or missing key gracefully", () => {
@@ -45,21 +46,21 @@ describe("geminiApi helper", () => {
 
     // Default prioritized models match FLASH_MODELS
     const initial = getPrioritizedModels();
-    expect(initial[0]).toBe("gemini-3.5-flash");
+    expect(initial[0]).toBe("gemini-3.8-flash");
 
-    // If gemini-3.8-flash wins, it becomes preferredFastModel and tops the list
-    recordModelSuccess("gemini-3.8-flash", 280);
-    expect(getPreferredFastModel()).toBe("gemini-3.8-flash");
-    expect(getPrioritizedModels()[0]).toBe("gemini-3.8-flash");
+    // If gemini-2.5-flash wins, it becomes preferredFastModel and tops the list
+    recordModelSuccess("gemini-2.5-flash", 220);
+    expect(getPreferredFastModel()).toBe("gemini-2.5-flash");
+    expect(getPrioritizedModels()[0]).toBe("gemini-2.5-flash");
 
-    // If gemini-3.5-flash fails (timeout / 503), it gets demoted to the end of the list
-    recordModelFailure("gemini-3.5-flash");
+    // If gemini-3.8-flash fails (timeout / 503), it gets demoted to the end of the list
+    recordModelFailure("gemini-3.8-flash");
     const afterFailure = getPrioritizedModels();
-    expect(afterFailure[0]).toBe("gemini-3.8-flash");
-    expect(afterFailure[afterFailure.length - 1]).toBe("gemini-3.5-flash");
+    expect(afterFailure[0]).toBe("gemini-2.5-flash");
+    expect(afterFailure[afterFailure.length - 1]).toBe("gemini-3.8-flash");
 
     // Generation config sets maxOutputTokens to 850 and temperature to 0.3
-    const cfg = getFastStreamingGenerationConfig("gemini-3.5-flash");
+    const cfg = getFastStreamingGenerationConfig("gemini-3.8-flash");
     expect(cfg.maxOutputTokens).toBe(850);
     expect(cfg.temperature).toBe(0.3);
 
@@ -82,7 +83,7 @@ describe("geminiApi helper", () => {
       let callCount = 0;
       const fetchMock = vi.fn().mockImplementation(async (url: string) => {
         callCount++;
-        if (url.includes("gemini-3.5-flash")) {
+        if (url.includes("gemini-3.8-flash")) {
           return {
             ok: false,
             status: 429,
@@ -114,9 +115,9 @@ describe("geminiApi helper", () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(result.modelUsed).toBe("gemini-3.8-flash");
+      expect(result.modelUsed).toBe("gemini-2.5-flash");
       expect(result.text).toBe("Successful response from fallback model");
-      expect(isModelCircuitBroken("gemini-3.5-flash")).toBe(true);
+      expect(isModelCircuitBroken("gemini-3.8-flash")).toBe(true);
 
       resetModelHealth();
       resetModelCircuitBreaker();
@@ -134,7 +135,7 @@ describe("geminiApi helper", () => {
       resetModelCircuitBreaker();
 
       const fetchMock = vi.fn().mockImplementation(async (url: string) => {
-        if (url.includes("gemini-3.5-flash")) {
+        if (url.includes("gemini-3.8-flash")) {
           // Model returns ok status but empty text
           return {
             ok: true,
@@ -157,7 +158,7 @@ describe("geminiApi helper", () => {
             candidates: [
               {
                 content: {
-                  parts: [{ text: "Valid answer from gemini-3.8-flash" }],
+                  parts: [{ text: "Valid answer from gemini-2.5-flash" }],
                 },
               },
             ],
@@ -174,12 +175,91 @@ describe("geminiApi helper", () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(result.modelUsed).toBe("gemini-3.8-flash");
-      expect(result.text).toBe("Valid answer from gemini-3.8-flash");
+      expect(result.modelUsed).toBe("gemini-2.5-flash");
+      expect(result.text).toBe("Valid answer from gemini-2.5-flash");
 
       resetModelHealth();
       resetModelCircuitBreaker();
       vi.unstubAllGlobals();
+    });
+
+    it("retries immediately in 0ms without thinkingConfig on HTTP 400 and without tripping cooldown", async () => {
+      const {
+        callGeminiWithFallback,
+        resetModelCircuitBreaker,
+        isModelCircuitBroken,
+        resetModelHealth,
+      } = await import("../src/lib/geminiApi");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+
+      const bodies: Array<Record<string, unknown>> = [];
+      const fetchMock = vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
+        const parsed = JSON.parse(String(init?.body || "{}"));
+        bodies.push(parsed);
+        if (parsed.generationConfig?.thinkingConfig) {
+          return {
+            ok: false,
+            status: 400,
+            statusText: "Bad Request",
+            text: async () => JSON.stringify({ error: { message: "Invalid argument: thinkingConfig" } }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            candidates: [{ content: { parts: [{ text: "Retried without thinkingConfig" }] } }],
+          }),
+        };
+      });
+
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = await callGeminiWithFallback({
+        apiKey: "test-fake-key",
+        contents: [{ role: "user", parts: [{ text: "Explain MVCC" }] }],
+        timeoutMs: 2000,
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.modelUsed).toBe("gemini-3.8-flash");
+      expect(result.text).toBe("Retried without thinkingConfig");
+      expect(isModelCircuitBroken("gemini-3.8-flash")).toBe(false);
+      expect(bodies.length).toBe(2);
+      expect((bodies[0].generationConfig as Record<string, unknown>)?.thinkingConfig).toEqual({ thinkingBudget: 0 });
+      expect((bodies[1].generationConfig as Record<string, unknown>)?.thinkingConfig).toBeUndefined();
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+      vi.unstubAllGlobals();
+    });
+
+    it("activates Never-Dead Cooldown Bypass when all models are marked on cooldown simultaneously", async () => {
+      const {
+        getPrioritizedModels,
+        tripModelCircuitBreaker,
+        isModelCircuitBroken,
+        resetModelCircuitBreaker,
+        resetModelHealth,
+      } = await import("../src/lib/geminiApi");
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
+
+      for (const m of FLASH_MODELS) {
+        tripModelCircuitBreaker(m);
+        expect(isModelCircuitBroken(m)).toBe(true);
+      }
+
+      const recovered = getPrioritizedModels();
+      expect(recovered.length).toBeGreaterThanOrEqual(3);
+      expect(recovered[0]).toBe("gemini-3.8-flash");
+      expect(isModelCircuitBroken("gemini-3.8-flash")).toBe(false);
+
+      resetModelHealth();
+      resetModelCircuitBreaker();
     });
 
     it("times out when response body reading stalls", async () => {

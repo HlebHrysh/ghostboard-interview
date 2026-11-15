@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef, Suspense, use } from 'react';
+import React, { useEffect, useState, useRef, Suspense, use, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Lock,
@@ -9,21 +9,23 @@ import {
   ChevronRight,
   ShieldAlert,
   Sparkles,
-  Radio,
   Globe,
   Copy,
   Check,
   Zap,
   HelpCircle,
   Code2,
-  Maximize2,
   FlipHorizontal,
   Moon,
-  Sun,
   Eye,
 } from 'lucide-react';
-import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
-import { parseBilingualParts } from '@/lib/aiPromptCore';
+import {
+  cleanStreamText,
+  holdUnclosedTagBuffer,
+  stripRawMarkdownAsterisks,
+  splitBilingualSegments,
+  extractCode,
+} from '../../../../desktop/src/lib/answerParser';
 
 export interface SyncQAItem {
   id: string;
@@ -48,14 +50,258 @@ export type TeleprompterFontSize = 'sm' | 'md' | 'xl';
 
 export function stripRawAiTags(text: string): string {
   if (!text) return '';
-  return text
-    .replace(/<<<[A-Z0-9_]+>>>/gi, '')
+  const buffered = holdUnclosedTagBuffer(text)
     .replace(/<<<META[\s\S]*?>>>/gi, '')
+    .replace(/<<<[A-Z0-9_]+>>>/gi, '')
     .replace(/<<<END[A-Z0-9_]*>>>/gi, '')
-    .replace(/<<<[^>]*>>>/gi, '')
+    .replace(/<<<[^>]*>>>/gi, '');
+  return stripRawMarkdownAsterisks(cleanStreamText(buffered))
     .replace(/\r\n/g, '\n')
     .trim();
 }
+
+function renderCompanionBilingual(text: string, isBilingual: boolean): React.ReactNode {
+  const safe = stripRawAiTags(text);
+  if (!safe) return null;
+  const segments = splitBilingualSegments(safe, isBilingual);
+  if (segments.length <= 1 && !segments[0]?.isHint) {
+    return safe;
+  }
+  return segments.map((seg, idx) =>
+    seg.isHint ? (
+      <span key={idx} className="text-zinc-400 text-xs italic font-normal ml-1 inline-block">
+        {seg.text}
+      </span>
+    ) : (
+      <span key={idx}>{seg.text}</span>
+    )
+  );
+}
+
+const CompanionCodeBlock = React.memo(function CompanionCodeBlock({
+  codeSnippet,
+  copiedCode,
+  onCopy,
+}: {
+  codeSnippet: string;
+  copiedCode: boolean;
+  onCopy: (code: string) => void;
+}) {
+  const codeText = useMemo(() => {
+    const clean = stripRawAiTags(codeSnippet);
+    return extractCode(clean) || clean;
+  }, [codeSnippet]);
+
+  const lines = useMemo(() => codeText.split('\n'), [codeText]);
+
+  return (
+    <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08] font-mono text-zinc-200">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold flex items-center gap-1.5">
+          <Code2 className="w-3.5 h-3.5 text-zinc-200" />
+          Фаза 3 · Код / Реалізація
+        </span>
+        <button
+          type="button"
+          onClick={() => onCopy(codeText)}
+          className="text-xs font-mono text-zinc-300 hover:text-white px-2.5 py-1 rounded-lg bg-[#09090b] border border-white/[0.08] active:scale-95 transition flex items-center gap-1 cursor-pointer"
+        >
+          {copiedCode ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copiedCode ? 'Скопійовано' : 'Копіювати'}</span>
+        </button>
+      </div>
+      <div className="overflow-x-auto text-[13.5px] leading-[21px] text-zinc-200">
+        {lines.map((line, idx) => (
+          <div key={idx} className="flex items-start gap-3">
+            <span className="select-none text-zinc-600 w-6 text-right shrink-0 text-xs leading-[21px]">
+              {idx + 1}
+            </span>
+            <span className="whitespace-pre-wrap break-words flex-1">{line || '\u00A0'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const CompanionTeleprompterCard = React.memo(function CompanionTeleprompterCard({
+  activeQA,
+  cleanHook,
+  hookFontClass,
+  pillarFontClass,
+  showTranslation,
+  copiedCode,
+  onCopyCode,
+}: {
+  activeQA: SyncQAItem;
+  cleanHook: string;
+  hookFontClass: string;
+  pillarFontClass: string;
+  showTranslation: boolean;
+  copiedCode: boolean;
+  onCopyCode: (code: string) => void;
+}) {
+  const isBilingual = activeQA.meta?.language?.toLowerCase() === 'bilingual' || showTranslation;
+
+  return (
+    <div className="space-y-4">
+      {/* Context Pill (Domain / Level) */}
+      {activeQA.meta && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#111113] border border-white/[0.08] text-zinc-200 font-mono text-xs font-semibold">
+            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+            <span>{stripRawAiTags(activeQA.meta.domain)}</span>
+            <span className="text-zinc-600">•</span>
+            <span className="text-zinc-300">{stripRawAiTags(activeQA.meta.level)}</span>
+          </span>
+          {activeQA.tag && (
+            <span className="px-2 py-0.5 rounded-md bg-[#111113] text-zinc-400 font-mono text-xs border border-white/[0.08]">
+              {stripRawAiTags(activeQA.tag)}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Active Question Title */}
+      <div className="border-l-2 border-white/25 pl-3">
+        <div className="flex items-center justify-between gap-2 mb-0.5">
+          <span className="text-xs font-mono uppercase tracking-widest text-zinc-500 font-semibold block">
+            ЗАПИТАННЯ
+          </span>
+          {activeQA.isContinuationMerged && (
+            <span className="px-1.5 py-0.5 rounded bg-[#111113] border border-white/[0.08] text-xs font-mono font-semibold text-zinc-200">
+              ⚡ Уточнено
+            </span>
+          )}
+        </div>
+        <h2 className="text-sm sm:text-base font-semibold text-zinc-200 leading-snug">
+          {stripRawAiTags(activeQA.question)}
+        </h2>
+      </div>
+
+      {/* ── Фаза 1: ХУК — Кажи вголос (Lead Hook) ── */}
+      {cleanHook && (
+        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-mono uppercase tracking-widest text-zinc-400 font-semibold flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-white" />
+              Фаза 1 · ХУК — Кажи вголос
+            </span>
+            <span className="text-xs font-mono text-zinc-500 uppercase">First 5s</span>
+          </div>
+          <div className={`${hookFontClass} text-[#ffffff] border-l-2 border-white pl-3.5`}>
+            {renderCompanionBilingual(cleanHook, isBilingual)}
+          </div>
+        </div>
+      )}
+
+      {/* Native Language Subtitle / Translation Crib-Sheet */}
+      {showTranslation && activeQA.nativeTranslation && (
+        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08]">
+          <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold flex items-center gap-1.5 mb-1.5">
+            <Globe className="w-3.5 h-3.5 text-zinc-300" />
+            Переклад / Суть (рідною мовою):
+          </span>
+          <p className="text-xs sm:text-sm text-zinc-300 italic leading-relaxed font-sans">
+            {stripRawAiTags(activeQA.nativeTranslation)}
+          </p>
+        </div>
+      )}
+
+      {/* ── Фаза 2: КЛЮЧОВІ ТЕЗИ (Pillars with Bold Anchors) ── */}
+      {activeQA.hints && activeQA.hints.length > 0 && (
+        <div className="space-y-2 pt-1">
+          <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold block">
+            Фаза 2 · Ключові тези (Pillars)
+          </span>
+          <ul className="space-y-2">
+            {activeQA.hints.map((rawHint, i) => {
+              const hint = stripRawAiTags(rawHint);
+              if (!hint) return null;
+              const isCompleted = activeQA.completedPillarIndices?.includes(i);
+              const isActive = !isCompleted && activeQA.activePillarIndex === i;
+              const colonIdx = hint.indexOf(':');
+              const hasAnchor = colonIdx > 0 && colonIdx < 40;
+              const anchor = hasAnchor ? hint.slice(0, colonIdx).trim() : null;
+              const rest = hasAnchor ? hint.slice(colonIdx + 1).trimStart() : hint;
+              return (
+                <li
+                  key={i}
+                  className={`flex items-start gap-3 p-4 rounded-xl border transition-colors ${
+                    isActive
+                      ? 'bg-[#111113] border-white/30 text-white'
+                      : 'bg-[#111113] border-white/[0.08] text-zinc-200'
+                  }`}
+                >
+                  <span
+                    className={`font-mono text-xs font-semibold shrink-0 mt-0.5 w-6 h-6 rounded-md border flex items-center justify-center ${
+                      isCompleted || isActive
+                        ? 'bg-white/10 border-white/25 text-white'
+                        : 'bg-[#09090b] border-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    {isCompleted ? '✓' : `${i + 1}`}
+                  </span>
+                  <div className={`${pillarFontClass} text-zinc-200 flex-1 ${isCompleted ? 'line-through opacity-75' : ''}`}>
+                    {anchor && (
+                      <span className="text-white font-semibold bg-white/10 px-1.5 py-0.5 rounded mr-1.5">
+                        {anchor}
+                      </span>
+                    )}
+                    {renderCompanionBilingual(rest, isBilingual)}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Delivery Tip */}
+      {activeQA.deliveryTip && (
+        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08] text-xs text-zinc-200 leading-relaxed">
+          <span className="font-mono font-semibold uppercase tracking-wider text-xs text-zinc-400 block mb-1">
+            💡 Порада подачі
+          </span>
+          <p className="text-sm text-zinc-200">{stripRawAiTags(activeQA.deliveryTip)}</p>
+        </div>
+      )}
+
+      {/* ── Фаза 3: КОД / ПРИКЛАД ── */}
+      {activeQA.codeSnippet && (
+        <CompanionCodeBlock
+          codeSnippet={activeQA.codeSnippet}
+          copiedCode={copiedCode}
+          onCopy={onCopyCode}
+        />
+      )}
+
+      {/* ── Фаза 4: ПАСТКА ІНТЕРВʼЮЕРА (Follow-Up Trap Shield) ── */}
+      {activeQA.followUpTrap && (activeQA.followUpTrap.question || activeQA.followUpTrap.answer) && (
+        <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08] space-y-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+            <span className="text-xs font-mono font-semibold tracking-wider uppercase text-zinc-300">
+              Фаза 4 · Пастка інтервʼюера (Follow-Up Shield)
+            </span>
+          </div>
+          {activeQA.followUpTrap.question && (
+            <div className="text-[15px] leading-[24px] font-medium text-white">
+              <strong className="text-zinc-300 font-semibold mr-1.5">Q:</strong>
+              {stripRawAiTags(activeQA.followUpTrap.question)}
+            </div>
+          )}
+          {activeQA.followUpTrap.answer && (
+            <div className="text-[15px] leading-[24px] text-zinc-200 bg-[#09090b] p-3 rounded-xl border border-white/[0.08]">
+              <strong className="text-white font-semibold mr-1.5">A:</strong>
+              {stripRawAiTags(activeQA.followUpTrap.answer)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
 
 interface PageProps {
   params: Promise<{ sessionId: string }>;
@@ -98,7 +344,7 @@ function CompanionContent({ params }: PageProps) {
   // Auto-scroll reset on new question arrival and detect overflow
   useEffect(() => {
     if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollContainerRef.current.scrollTop = 0;
     }
     const timer = setTimeout(() => {
       checkScrollOverflow();
@@ -301,20 +547,20 @@ function CompanionContent({ params }: PageProps) {
     );
   }
 
-  // Font sizing styles based on Eyeline distance selector
+  // Font sizing styles based on Eyeline distance selector (strict minimum >= 14px)
   const hookFontClass =
     fontSize === 'xl'
-      ? 'text-[22px] sm:text-[26px] font-bold leading-snug tracking-tight'
+      ? 'text-[22px] leading-[32px] font-medium tracking-tight'
       : fontSize === 'md'
-      ? 'text-[18px] sm:text-[20px] font-semibold leading-relaxed tracking-tight'
-      : 'text-[15px] sm:text-[16px] font-medium leading-normal';
+      ? 'text-[18px] leading-[28px] font-medium tracking-tight'
+      : 'text-[16px] leading-[25px] font-medium';
 
   const pillarFontClass =
     fontSize === 'xl'
-      ? 'text-[16px] sm:text-[18px] font-semibold'
+      ? 'text-[17px] leading-[27px] font-normal'
       : fontSize === 'md'
-      ? 'text-[14px] sm:text-[15px] font-medium'
-      : 'text-[12px] sm:text-[13px] font-normal';
+      ? 'text-[15px] leading-[24px] font-normal'
+      : 'text-[14px] leading-[22px] font-normal';
 
   const rawHook = activeQA?.startHook || activeQA?.quickAnswer || '';
   const cleanHook = stripRawAiTags(rawHook);
@@ -334,25 +580,25 @@ function CompanionContent({ params }: PageProps) {
           <div className="flex items-center gap-2">
             <div
               className={`w-2.5 h-2.5 rounded-full ${
-                isCapturing ? 'bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse' : 'bg-zinc-600'
+                isCapturing ? 'bg-white animate-pulse' : 'bg-zinc-600'
               }`}
             />
-            <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-400 font-bold hidden xs:inline">
+            <span className="text-xs font-mono tracking-widest uppercase text-zinc-400 font-bold hidden xs:inline">
               {isCapturing ? 'LIVE' : 'STANDBY'}
             </span>
             {isConnected ? (
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(6,182,212,0.8)]" />
+              <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-[#111113] text-zinc-200 border border-white/[0.08] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-white" />
                 HUD SYNC
               </span>
             ) : (
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/30 flex items-center gap-1 animate-pulse">
+              <span className="px-2 py-0.5 rounded-full text-xs font-mono bg-[#111113] text-zinc-200 border border-white/[0.08] flex items-center gap-1 animate-pulse">
                 SYNCING
               </span>
             )}
             {isWakeLockActive && (
               <span
-                className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono bg-[#111113] text-zinc-200 border border-white/[0.08]"
                 title="Screen WakeLock Active"
               >
                 ● WAKE
@@ -360,14 +606,14 @@ function CompanionContent({ params }: PageProps) {
             )}
           </div>
 
-          {/* Quick Toolbar: Font Scaling, OLED Mode, Mirror, TR */}
+          {/* Quick Toolbar: Font Scaling, OLED Mode, Mirror, TR, Panic */}
           <div className="flex items-center gap-1 sm:gap-1.5">
             {/* Font Size Selector: A- / A+ / XL */}
-            <div className="flex items-center bg-white/[0.04] border border-white/10 rounded-xl p-0.5">
+            <div className="flex items-center bg-[#111113] border border-white/[0.08] rounded-xl p-0.5">
               <button
                 type="button"
                 onClick={() => setFontSize('sm')}
-                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                   fontSize === 'sm' ? 'bg-white text-black shadow' : 'text-zinc-400 hover:text-white'
                 }`}
                 title="Compact font"
@@ -377,7 +623,7 @@ function CompanionContent({ params }: PageProps) {
               <button
                 type="button"
                 onClick={() => setFontSize('md')}
-                className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold transition-all ${
+                className={`px-2 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
                   fontSize === 'md' ? 'bg-white text-black shadow' : 'text-zinc-400 hover:text-white'
                 }`}
                 title="Standard font"
@@ -387,9 +633,9 @@ function CompanionContent({ params }: PageProps) {
               <button
                 type="button"
                 onClick={() => setFontSize('xl')}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-black transition-all ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono font-black transition-all cursor-pointer ${
                   fontSize === 'xl'
-                    ? 'bg-amber-400 text-black shadow-[0_0_12px_rgba(251,191,36,0.4)]'
+                    ? 'bg-white text-black'
                     : 'text-zinc-400 hover:text-white'
                 }`}
                 title="50cm Eyeline Teleprompter XL font"
@@ -402,10 +648,10 @@ function CompanionContent({ params }: PageProps) {
             <button
               type="button"
               onClick={() => setIsOledMode((prev) => !prev)}
-              className={`p-2 rounded-xl border text-xs flex items-center transition-all ${
+              className={`p-2 rounded-xl border text-xs flex items-center transition-all cursor-pointer ${
                 isOledMode
-                  ? 'bg-white/15 border-white/30 text-white shadow-[0_0_10px_rgba(255,255,255,0.1)]'
-                  : 'bg-white/[0.03] border-white/10 text-zinc-500 hover:text-zinc-300'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] border-white/[0.08] text-zinc-400 hover:text-white'
               }`}
               title="OLED 100% Black Mode (Prevents screen glow on face)"
             >
@@ -416,10 +662,10 @@ function CompanionContent({ params }: PageProps) {
             <button
               type="button"
               onClick={() => setIsMirrorMode((prev) => !prev)}
-              className={`p-2 rounded-xl border text-xs flex items-center transition-all ${
+              className={`p-2 rounded-xl border text-xs flex items-center transition-all cursor-pointer ${
                 isMirrorMode
-                  ? 'bg-cyan-500/20 border-cyan-400/40 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.3)]'
-                  : 'bg-white/[0.03] border-white/10 text-zinc-500 hover:text-zinc-300'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] border-white/[0.08] text-zinc-400 hover:text-white'
               }`}
               title="Mirror Mode (Horizontal Flip for Teleprompter Glass)"
             >
@@ -430,20 +676,22 @@ function CompanionContent({ params }: PageProps) {
             <button
               type="button"
               onClick={() => setShowTranslation((prev) => !prev)}
-              className={`px-2 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1 transition-all ${
-                showTranslation ? 'bg-white/10 border-white/20 text-white' : 'bg-white/[0.03] border-white/10 text-zinc-500'
+              className={`px-2 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                showTranslation
+                  ? 'bg-white/10 border-white/25 text-white'
+                  : 'bg-[#111113] border-white/[0.08] text-zinc-400 hover:text-white'
               }`}
               title="Toggle native translation"
             >
               <Globe className="w-3 h-3" />
-              <span className="text-[10px]">TR</span>
+              <span className="text-xs">TR</span>
             </button>
 
             {/* Emergency Panic */}
             <button
               type="button"
               onClick={handleTogglePanic}
-              className="p-2 rounded-xl bg-rose-950/40 border border-rose-900/60 text-rose-400 hover:bg-rose-900/50 active:scale-95 transition-all"
+              className="p-2 rounded-xl bg-[#111113] border border-white/[0.08] text-zinc-200 hover:text-white hover:bg-white/[0.08] active:scale-95 transition-all cursor-pointer"
               title="Emergency Panic Shield"
             >
               <ShieldAlert className="w-3.5 h-3.5" />
@@ -459,217 +707,27 @@ function CompanionContent({ params }: PageProps) {
         >
           {!isCapturing && !activeQA ? (
             <div className="text-center flex flex-col items-center justify-center gap-4 py-20">
-              <div className="w-10 h-10 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center text-zinc-400">
-                <Eye className="w-5 h-5 animate-pulse text-amber-400" />
+              <div className="w-10 h-10 rounded-xl bg-[#111113] border border-white/[0.08] flex items-center justify-center text-zinc-400">
+                <Eye className="w-5 h-5 animate-pulse text-zinc-200" />
               </div>
               <p className="text-base font-bold font-mono tracking-widest text-zinc-300 uppercase">
                 EYELINE TELEPROMPTER READY
               </p>
-              <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
-                Встановіть телефон прямо під об'єктивом веб-камери. Суфлер автоматично покаже хук, тези та код.
+              <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
+                Встановіть телефон прямо під об&apos;єктивом веб-камери. Суфлер автоматично покаже хук, тези та код.
               </p>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* Context Pill (Domain / Level) */}
-              {activeQA?.meta && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25 text-cyan-300 font-mono text-[10px] font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                    <span>{stripRawAiTags(activeQA.meta.domain)}</span>
-                    <span className="text-zinc-600">•</span>
-                    <span className="text-zinc-300">{stripRawAiTags(activeQA.meta.level)}</span>
-                  </span>
-                  {activeQA.tag && (
-                    <span className="px-2 py-0.5 rounded-md bg-white/[0.04] text-zinc-400 font-mono text-[10px] border border-white/5">
-                      {stripRawAiTags(activeQA.tag)}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Active Question Title */}
-              {activeQA && (
-                <div className="border-l-2 border-white/20 pl-3">
-                  <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 font-bold block">
-                      ЗАПИТАННЯ
-                    </span>
-                    {activeQA.isContinuationMerged && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-[9px] font-mono font-bold text-amber-300">
-                        ⚡ Уточнено
-                      </span>
-                    )}
-                  </div>
-                  <h2 className="text-sm sm:text-base font-semibold text-zinc-200 leading-snug">
-                    {stripRawAiTags(activeQA.question)}
-                  </h2>
-                </div>
-              )}
-
-              {/* ── Фаза 1: ХУК — Кажи вголос (Lead Hook) ── */}
-              {cleanHook && (
-                <div className="pl-4 pr-3.5 py-3.5 border-l-4 border-l-amber-400 rounded-r-2xl bg-white/[0.03] border-y border-r border-white/[0.07] shadow-lg">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-black flex items-center gap-1">
-                      <Sparkles className="w-3 h-3 text-amber-400" />
-                      Фаза 1 · ХУК — Кажи вголос
-                    </span>
-                    <span className="text-[9px] font-mono text-zinc-500 uppercase">First 5 Seconds</span>
-                  </div>
-                  <div className={`${hookFontClass} text-white`}>
-                    {parseBilingualParts(cleanHook).map((part, idx) =>
-                      part.isTranslation ? (
-                        <span
-                          key={idx}
-                          className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
-                        >
-                          {part.text}
-                        </span>
-                      ) : (
-                        <span key={idx}>{part.text}</span>
-                      )
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Native Language Subtitle / Translation Crib-Sheet */}
-              {showTranslation && activeQA?.nativeTranslation && (
-                <div className="p-3 rounded-2xl bg-blue-950/20 border border-blue-500/25">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-blue-400 font-bold flex items-center gap-1.5 mb-1">
-                    <Globe className="w-3 h-3 text-blue-400" />
-                    Переклад / Суть (рідною мовою):
-                  </span>
-                  <p className="text-xs sm:text-sm text-blue-100/90 leading-relaxed font-sans">
-                    {stripRawAiTags(activeQA.nativeTranslation)}
-                  </p>
-                </div>
-              )}
-
-              {/* ── Фаза 2: КЛЮЧОВІ ТЕЗИ (Pillars with keyword capsules) ── */}
-              {/* ── Фаза 2: КЛЮЧОВІ ТЕЗИ (Pillars with keyword capsules & karaoke) ── */}
-              {activeQA?.hints && activeQA.hints.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-cyan-400 font-black block">
-                    Фаза 2 · Ключові тези (Pillars)
-                  </span>
-                  <ul className="space-y-2">
-                    {activeQA.hints.map((rawHint, i) => {
-                      const hint = stripRawAiTags(rawHint);
-                      if (!hint) return null;
-                      const isCompleted = activeQA.completedPillarIndices?.includes(i);
-                      const isActive = !isCompleted && activeQA.activePillarIndex === i;
-                      const colonIdx = hint.indexOf(':');
-                      const hasAnchor = colonIdx > 0 && colonIdx < 35;
-                      const anchor = hasAnchor ? hint.slice(0, colonIdx) : null;
-                      const rest = hasAnchor ? hint.slice(colonIdx + 1) : hint;
-                      return (
-                        <li
-                          key={i}
-                          className={`text-zinc-100 flex items-start gap-2.5 p-3 rounded-2xl border transition-all ${
-                            isCompleted
-                              ? 'bg-emerald-500/[0.08] border-emerald-500/30 text-emerald-100/90'
-                              : isActive
-                              ? 'bg-cyan-500/[0.09] border-cyan-500/40'
-                              : 'bg-white/[0.03] border-white/[0.07]'
-                          }`}
-                        >
-                          <span
-                            className={`font-mono text-xs font-black shrink-0 mt-0.5 w-5 h-5 rounded flex items-center justify-center ${
-                              isCompleted
-                                ? 'bg-emerald-500/20 text-emerald-300'
-                                : isActive
-                                ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400'
-                                : 'text-cyan-400'
-                            }`}
-                          >
-                            {isCompleted ? '✓' : `${i + 1}.`}
-                          </span>
-                          <div className={`leading-relaxed ${pillarFontClass} flex-1 ${isCompleted ? 'line-through opacity-75' : ''}`}>
-                            {anchor && (
-                              <span className="text-cyan-300 font-bold bg-cyan-500/10 px-2 py-0.5 rounded-md mr-1.5 text-xs border border-cyan-500/20">
-                                {anchor}
-                              </span>
-                            )}
-                            {parseBilingualParts(rest).map((part, pIdx) =>
-                              part.isTranslation ? (
-                                <span
-                                  key={pIdx}
-                                  className="text-zinc-400 text-xs italic bg-white/[0.04] px-1.5 py-0.5 rounded border border-white/5 ml-1.5 inline-block font-normal"
-                                >
-                                  {part.text}
-                                </span>
-                              ) : (
-                                <span key={pIdx}>{part.text}</span>
-                              )
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-
-              {/* Delivery Tip */}
-              {activeQA?.deliveryTip && (
-                <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 leading-relaxed">
-                  <span className="font-mono font-bold uppercase tracking-wider text-[10px] text-amber-300 block mb-1">
-                    💡 Delivery tip
-                  </span>
-                  <p>{stripRawAiTags(activeQA.deliveryTip)}</p>
-                </div>
-              )}
-
-              {/* ── Фаза 3: КОД / ПРИКЛАД ── */}
-              {activeQA?.codeSnippet && (
-                <div className="p-3.5 rounded-2xl bg-black border border-white/15 font-mono text-xs overflow-x-auto text-zinc-200 shadow-inner">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-black flex items-center gap-1.5">
-                      <Code2 className="w-3.5 h-3.5 text-emerald-400" />
-                      Фаза 3 · Код / Реалізація
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyCode(activeQA.codeSnippet!)}
-                      className="text-[10px] font-mono text-zinc-300 hover:text-white px-2.5 py-1 rounded-lg bg-white/10 active:scale-95 transition flex items-center gap-1 cursor-pointer"
-                    >
-                      {copiedCode ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                      <span>{copiedCode ? 'Скопійовано' : 'Копіювати'}</span>
-                    </button>
-                  </div>
-                  <pre className="whitespace-pre-wrap leading-relaxed text-zinc-300 selection:bg-white/20">
-                    {stripRawAiTags(activeQA.codeSnippet)}
-                  </pre>
-                </div>
-              )}
-
-              {/* ── Фаза 4: ПАСТКА ІНТЕРВʼЮЕРА (Follow-Up Trap Shield) ── */}
-              {activeQA?.followUpTrap && (activeQA.followUpTrap.question || activeQA.followUpTrap.answer) && (
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-400">
-                      Фаза 4 · Пастка інтервʼюера (Follow-Up Shield)
-                    </span>
-                  </div>
-                  {activeQA.followUpTrap.question && (
-                    <div className="text-xs font-medium text-amber-200/90 leading-relaxed">
-                      <strong className="text-amber-300 font-semibold mr-1">Q:</strong>
-                      {stripRawAiTags(activeQA.followUpTrap.question)}
-                    </div>
-                  )}
-                  {activeQA.followUpTrap.answer && (
-                    <div className="text-xs text-zinc-300 leading-relaxed bg-black/40 p-2 rounded-xl border border-white/5">
-                      <strong className="text-emerald-400 font-semibold mr-1">A:</strong>
-                      {stripRawAiTags(activeQA.followUpTrap.answer)}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          ) : activeQA ? (
+            <CompanionTeleprompterCard
+              activeQA={activeQA}
+              cleanHook={cleanHook}
+              hookFontClass={hookFontClass}
+              pillarFontClass={pillarFontClass}
+              showTranslation={showTranslation}
+              copiedCode={copiedCode}
+              onCopyCode={handleCopyCode}
+            />
+          ) : null}
         </main>
 
         {/* Floating Scroll Indicator */}
@@ -677,8 +735,12 @@ function CompanionContent({ params }: PageProps) {
           <div className="absolute bottom-36 left-0 right-0 z-30 flex justify-center pointer-events-none">
             <button
               type="button"
-              onClick={() => scrollContainerRef.current?.scrollBy({ top: 180, behavior: 'smooth' })}
-              className="pointer-events-auto flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-900/95 hover:bg-zinc-800 border border-amber-400/50 text-[11px] font-mono font-bold text-amber-300 shadow-[0_4px_24px_rgba(0,0,0,0.9)] backdrop-blur-md transition-all active:scale-95 animate-bounce cursor-pointer"
+              onClick={() => {
+                if (scrollContainerRef.current) {
+                  scrollContainerRef.current.scrollTop += 180;
+                }
+              }}
+              className="pointer-events-auto flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#111113] hover:bg-white/[0.08] border border-white/[0.12] text-xs font-mono font-bold text-zinc-200 shadow-[0_4px_24px_rgba(0,0,0,0.9)] transition-all active:scale-95 animate-bounce cursor-pointer"
             >
               <span>↓ Більше тез унизу</span>
             </button>
@@ -689,12 +751,12 @@ function CompanionContent({ params }: PageProps) {
         <footer className="pt-2 border-t border-white/[0.08] space-y-2.5 shrink-0">
           {/* Live Transcript ticker (if listening) */}
           {liveTranscript && (
-            <div className="px-3 py-1.5 bg-black/80 rounded-xl border border-white/[0.08] backdrop-blur-md">
-              <div className="text-[9px] font-mono text-zinc-500 flex items-center gap-1.5 mb-0.5">
-                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+            <div className="px-3 py-1.5 bg-[#111113] rounded-xl border border-white/[0.08]">
+              <div className="text-xs font-mono text-zinc-400 flex items-center gap-1.5 mb-0.5">
+                <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
                 ЧУЮ ЗАРАЗ
               </div>
-              <div className="text-xs text-zinc-300 italic truncate font-sans">{liveTranscript}</div>
+              <div className="text-xs text-zinc-200 italic truncate font-sans">{liveTranscript}</div>
             </div>
           )}
 
@@ -704,56 +766,56 @@ function CompanionContent({ params }: PageProps) {
             <button
               type="button"
               onClick={() => sendRemoteAction('MAKE_CONCISE')}
-              className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+              className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
                 activeRemoteAction === 'MAKE_CONCISE'
-                  ? 'bg-amber-400 text-black border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.6)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span className="text-[11px] font-mono font-bold leading-tight">Коротше</span>
+              <Zap className={`w-4 h-4 ${activeRemoteAction === 'MAKE_CONCISE' ? 'text-black' : 'text-zinc-200'}`} />
+              <span className="text-xs font-mono font-bold leading-tight">Коротше</span>
             </button>
 
             {/* 2. Простіше */}
             <button
               type="button"
               onClick={() => sendRemoteAction('SIMPLIFY')}
-              className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+              className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
                 activeRemoteAction === 'SIMPLIFY'
-                  ? 'bg-cyan-400 text-black border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.6)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
-              <HelpCircle className="w-4 h-4 text-cyan-400" />
-              <span className="text-[11px] font-mono font-bold leading-tight">Простіше</span>
+              <HelpCircle className={`w-4 h-4 ${activeRemoteAction === 'SIMPLIFY' ? 'text-black' : 'text-zinc-200'}`} />
+              <span className="text-xs font-mono font-bold leading-tight">Простіше</span>
             </button>
 
             {/* 3. Показати Код */}
             <button
               type="button"
               onClick={() => sendRemoteAction('SHOW_CODE')}
-              className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+              className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
                 activeRemoteAction === 'SHOW_CODE'
-                  ? 'bg-emerald-400 text-black border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.6)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
-              <Code2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-[11px] font-mono font-bold leading-tight">Код</span>
+              <Code2 className={`w-4 h-4 ${activeRemoteAction === 'SHOW_CODE' ? 'text-black' : 'text-zinc-200'}`} />
+              <span className="text-xs font-mono font-bold leading-tight">Код</span>
             </button>
 
             {/* 4. Пауза / Freeze */}
             <button
               type="button"
               onClick={handleToggleFreeze}
-              className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
+              className={`p-2.5 rounded-xl border text-center transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 ${
                 isFrozen
-                  ? 'bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.4)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-zinc-200'
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#111113] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
               {isFrozen ? <Lock className="w-4 h-4 text-black" /> : <Unlock className="w-4 h-4 text-zinc-400" />}
-              <span className="text-[11px] font-mono font-bold leading-tight">
+              <span className="text-xs font-mono font-bold leading-tight">
                 {isFrozen ? 'Заморожено' : 'Пауза'}
               </span>
             </button>
@@ -762,24 +824,26 @@ function CompanionContent({ params }: PageProps) {
           {/* Card Prev / Next Navigation Controls */}
           <div className="flex items-center justify-between pt-1">
             <button
+              type="button"
               onClick={handlePrevCard}
               disabled={!activeQA || qas.length <= 1}
-              className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/10 border border-white/10 text-xs font-mono disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-zinc-200 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-[#111113] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-zinc-200 cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>Назад</span>
             </button>
 
-            <span className="text-[10px] font-mono text-zinc-500">
+            <span className="text-xs font-mono text-zinc-500">
               {activeQA && qas.length > 0
                 ? `${qas.findIndex((q) => q.id === activeQA.id) + 1} / ${qas.length}`
                 : '0 / 0'}
             </span>
 
             <button
+              type="button"
               onClick={handleNextCard}
               disabled={!activeQA || qas.length <= 1}
-              className="px-3.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/10 border border-white/10 text-xs font-mono disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-zinc-200 cursor-pointer"
+              className="px-3.5 py-1.5 rounded-xl bg-[#111113] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1 text-zinc-200 cursor-pointer"
             >
               <span>Вперед</span>
               <ChevronRight className="w-4 h-4" />

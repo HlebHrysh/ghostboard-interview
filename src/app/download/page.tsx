@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import {
   Download,
   Shield,
@@ -679,9 +681,9 @@ export default function DownloadPage() {
         {/* First-Screen Ecosystem Grid: 3 Pillars */}
         <section className="space-y-6">
           {/* Block 1: Ghostboard Desktop Hero Card */}
-          <div className="bento-card p-6 sm:p-8 bg-gradient-to-br from-white/[0.04] via-zinc-950/80 to-black border border-white/10 relative overflow-hidden">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="space-y-2 max-w-xl">
+          <div className="bento-card rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-white/[0.05] via-zinc-950/80 to-black border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] relative overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+              <div className="lg:col-span-7 space-y-3">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-semibold">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>БЛОК 1: ДЕСКТОПНИЙ КЛІЄНТ • v1.2.0</span>
@@ -689,14 +691,30 @@ export default function DownloadPage() {
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                   Ghostboard Desktop
                 </h2>
-                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed max-w-xl">
                   Апаратне виключення із захоплення екрана (<code className="font-mono text-zinc-200">WDA_EXCLUDEFROMCAPTURE</code> / <code className="font-mono text-zinc-200">NSWindowSharingNone</code>), прямий системний loopback аудіо та плаваючий стелс-HUD.
                 </p>
+
+                <div className="pt-2">
+                  <SmartDownloadButton />
+                </div>
               </div>
 
-              {/* Smart Download Button with auto-detected OS */}
-              <div className="shrink-0 flex flex-col items-start md:items-end gap-2">
-                <SmartDownloadButton />
+              {/* Apple Spatial Glass PiP Video Capsule */}
+              <div className="lg:col-span-5">
+                <SpatialVideoCapsule
+                  compact
+                  layoutGroupId="download-desktop-pip"
+                  aspectClassName="aspect-[16/10]"
+                  videos={[
+                    {
+                      id: 'download-ghost2',
+                      src: '/videos/ghost2.mp4',
+                      label: 'Stealth HUD',
+                      caption: 'Kernel Stealth Overlay · v1.2.0 — Invisible on Zoom / Meet / Teams',
+                    },
+                  ]}
+                />
               </div>
             </div>
 
@@ -771,7 +789,7 @@ export default function DownloadPage() {
           {/* Block 2 & Block 3: 2-Column Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Block 2: Chrome Extension for LeetCode */}
-            <div id="extension" className="bento-card p-6 sm:p-7 flex flex-col justify-between scroll-mt-24 border-amber-500/20 bg-gradient-to-br from-amber-950/15 via-zinc-950 to-black">
+            <div id="extension" className="bento-card rounded-3xl p-6 sm:p-7 flex flex-col justify-between scroll-mt-24 border-amber-500/20 bg-gradient-to-br from-amber-950/15 via-zinc-950 to-black shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-300 font-mono text-xs font-semibold">
@@ -819,14 +837,14 @@ export default function DownloadPage() {
             </div>
 
             {/* Block 3: Mobile Eyeline Companion */}
-            <div className="bento-card p-6 sm:p-7 flex flex-col justify-between border-emerald-500/20 bg-gradient-to-br from-emerald-950/15 via-zinc-950 to-black">
+            <div className="bento-card rounded-3xl p-6 sm:p-7 flex flex-col justify-between border-emerald-500/20 bg-gradient-to-br from-emerald-950/15 via-zinc-950 to-black shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono text-xs font-semibold">
                     <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
                     <span>БЛОК 3: EYELINE COMPANION</span>
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="text-xs font-mono px-2.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     OLED Black
                   </span>
                 </div>
@@ -843,8 +861,8 @@ export default function DownloadPage() {
                     {qrCodeDataUri ? (
                       <img src={qrCodeDataUri} alt="Phone QR Pairing" className="w-20 h-20" />
                     ) : (
-                      <div className="w-20 h-20 bg-zinc-100 flex items-center justify-center text-zinc-400 text-[10px]">
-                        Генерація QR...
+                      <div className="w-20 h-20 bg-zinc-100 flex items-center justify-center text-zinc-500 text-xs">
+                        QR...
                       </div>
                     )}
                   </div>
@@ -891,7 +909,7 @@ export default function DownloadPage() {
         </section>
 
         {/* First-Launch OS Security Assistant */}
-        <section className="bento-card p-6 sm:p-8 space-y-6 relative overflow-hidden">
+        <section className="bento-card rounded-3xl p-6 sm:p-8 space-y-6 relative overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-white/[0.08]">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-300 font-bold uppercase">
@@ -906,44 +924,35 @@ export default function DownloadPage() {
               </p>
             </div>
 
-            {/* Platform Selector Buttons */}
-            <div className="flex items-center p-1 rounded-xl bg-white/[0.04] border border-white/10 shrink-0 self-stretch sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setActiveGuideTab('win')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                  activeGuideTab === 'win'
-                    ? 'bg-white text-black font-semibold shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Laptop className="w-3.5 h-3.5" />
-                <span>Windows</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveGuideTab('mac')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                  activeGuideTab === 'mac'
-                    ? 'bg-white text-black font-semibold shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Monitor className="w-3.5 h-3.5" />
-                <span>macOS</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveGuideTab('linux')}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
-                  activeGuideTab === 'linux'
-                    ? 'bg-white text-black font-semibold shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Terminal className="w-3.5 h-3.5" />
-                <span>Linux</span>
-              </button>
+            {/* Platform Selector Buttons with Framer Motion Spring */}
+            <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/10 shrink-0 self-stretch sm:self-auto">
+              {[
+                { id: 'win' as const, label: 'Windows', Icon: Laptop },
+                { id: 'mac' as const, label: 'macOS', Icon: Monitor },
+                { id: 'linux' as const, label: 'Linux', Icon: Terminal },
+              ].map(({ id, label, Icon }) => {
+                const active = activeGuideTab === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setActiveGuideTab(id)}
+                    className={`relative flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-mono transition-colors cursor-pointer z-10 ${
+                      active ? 'text-black font-semibold' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="download-os-tab"
+                        transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                        className="absolute inset-0 rounded-xl bg-white shadow-md -z-10"
+                      />
+                    )}
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

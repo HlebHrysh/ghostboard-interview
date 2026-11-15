@@ -78,8 +78,10 @@ const SPRING_TRANSITION = {
 };
 
 export function QaTestDock() {
-  // Only render when NEXT_PUBLIC_QA_MODE is explicitly enabled
-  const isQaEnabled = process.env.NEXT_PUBLIC_QA_MODE === 'true';
+  // Only render when NEXT_PUBLIC_QA_MODE is explicitly enabled in non-production environments
+  const isQaEnabled =
+    process.env.NODE_ENV !== 'production' &&
+    process.env.NEXT_PUBLIC_QA_MODE === 'true';
 
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);

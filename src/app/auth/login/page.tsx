@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import {
   ArrowRight,
   ShieldCheck,
@@ -257,24 +258,36 @@ export default function LoginPage() {
               <span className="text-lg font-black font-mono tracking-widest text-white group-hover:text-zinc-200 transition-colors">
                 GHOSTBOARD
               </span>
-              <span className="text-[10px] font-mono text-zinc-500 tracking-wider">
+              <span className="text-xs font-mono text-zinc-400 tracking-wider">
                 DETECTIVE CLEARANCE PORTAL
               </span>
             </div>
           </Link>
           <div className="flex items-center gap-3">
             <LangDropdown />
-            <span className="hidden sm:inline-flex text-[10px] px-2.5 py-1 rounded-full bg-white/10 text-white font-mono border border-white/20 uppercase tracking-widest">
+            <span className="hidden sm:inline-flex text-xs px-2.5 py-1 rounded-full bg-white/10 text-white font-mono border border-white/20 uppercase tracking-widest">
               SECURE v2.5
             </span>
           </div>
         </div>
 
-        {/* Hero Quote */}
+        {/* Hero Quote + Floating Mascot Badge */}
         <div className="my-12 md:my-auto max-w-xl relative z-10">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-mono text-zinc-400 mb-6">
-            <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-            {t.statEngineers}
+          <div className="mb-6 inline-flex items-center gap-3 p-2.5 pr-4 rounded-2xl spatial-glass border border-white/[0.12]">
+            <motion.img
+              src="/ghost-transparent.png"
+              alt="Ghostboard Mascot"
+              animate={{ y: [0, -6, 0], rotateZ: [-1.5, 1.5, -1.5] }}
+              transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut" }}
+              className="w-10 h-10 object-contain drop-shadow-[0_8px_16px_rgba(139,92,246,0.35)]"
+            />
+            <div className="text-left">
+              <div className="text-xs font-mono text-white font-semibold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{t.statEngineers}</span>
+              </div>
+              <div className="text-xs text-zinc-400">Zero-Latency Eyeline HUD</div>
+            </div>
           </div>
           <h2 className="display-xl text-white mb-6 leading-tight font-display">
             {t.heroQuote} <br />
@@ -321,7 +334,7 @@ export default function LoginPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="status-dot !w-1.5 !h-1.5" />
-              <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase">
+              <span className="text-xs font-mono tracking-widest text-zinc-400 uppercase">
                 {t.badge}
               </span>
             </div>
@@ -430,7 +443,7 @@ export default function LoginPage() {
           {/* Divider with text */}
           <div className="flex items-center gap-3">
             <div className="flex-1 h-[1px] bg-white/[0.08]" />
-            <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest">{t.orEmail}</span>
+            <span className="text-xs font-mono text-zinc-400 uppercase tracking-widest">{t.orEmail}</span>
             <div className="flex-1 h-[1px] bg-white/[0.08]" />
           </div>
 

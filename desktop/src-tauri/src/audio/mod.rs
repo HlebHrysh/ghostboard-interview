@@ -173,6 +173,20 @@ impl AudioEngine {
             CaptureSource::Microphone | CaptureSource::Dual
         );
 
+        // Strict hardware isolation: ensure inactive source streams/threads are completely dropped
+        if !should_start_loopback {
+            self.loopback_stream = None;
+            self.loopback_consumer = None;
+            self.loopback_resampler = None;
+            self.loopback_vad = None;
+        }
+        if !should_start_mic {
+            self.mic_stream = None;
+            self.mic_consumer = None;
+            self.mic_resampler = None;
+            self.mic_vad = None;
+        }
+
         // 1. Initialize System Loopback Stream (Remote Interlocutor)
         if should_start_loopback {
             #[cfg(target_os = "linux")]

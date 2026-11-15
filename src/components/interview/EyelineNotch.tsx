@@ -28,8 +28,8 @@ export function emphasize(text: string): React.ReactNode[] {
 }
 
 const BULLET_TONES = [
-  'bg-emerald-400/15 text-emerald-300 border-emerald-400/30',
-  'bg-indigo-400/15 text-indigo-300 border-indigo-400/30',
+  'bg-white/[0.08] text-zinc-200 border-white/[0.12]',
+  'bg-white/[0.08] text-zinc-200 border-white/[0.12]',
   'bg-white/10 text-zinc-200 border-white/20',
 ];
 
@@ -174,7 +174,7 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
         style={{ opacity: opacityPct / 100 }}
         className={`gb-glass pointer-events-auto w-full select-none overflow-hidden transition-shadow ${
           showBody ? 'max-w-[700px] rounded-2xl' : 'max-w-[620px] rounded-full'
-        } ${isCapturing ? 'gb-beam shadow-[0_8px_32px_rgba(16,185,129,0.12)]' : 'shadow-[0_8px_32px_rgba(0,0,0,0.6)]'}`}
+        } ${isCapturing ? 'gb-beam ' : 'shadow-[0_8px_32px_rgba(0,0,0,0.6)]'}`}
         aria-label="Eyeline notch"
       >
         {/* Compact bar — 40-44px high */}
@@ -196,10 +196,10 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
               className="flex items-center gap-1.5 shrink-0 pl-0.5 group cursor-pointer"
               title="Головний екран Ghostboard"
             >
-              <div className="relative flex items-center justify-center w-4.5 h-4.5 drop-shadow-[0_0_6px_rgba(255,255,255,0.45)] group-hover:scale-105 transition-transform">
+              <div className="relative flex items-center justify-center w-4.5 h-4.5  group-hover:scale-105 transition-transform">
                 <Ghost className="w-3.5 h-3.5 text-white stroke-[2]" />
               </div>
-              <span className="font-mono text-[10px] font-bold tracking-[0.16em] text-zinc-100 group-hover:text-white uppercase select-none transition-colors">
+              <span className="font-mono text-xs font-bold tracking-[0.16em] text-zinc-100 group-hover:text-white uppercase select-none transition-colors">
                 GHOSTBOARD
               </span>
             </Link>
@@ -223,26 +223,26 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
             {/* Delicate divider */}
             <div className="w-px h-3.5 bg-white/10 shrink-0" />
 
-            {/* User profile avatar with online dot — link to http://localhost:3001/profile */}
-            <a
-              href="http://localhost:3001/profile"
+            {/* User profile avatar with online dot — link to /profile */}
+            <Link
+              href="/profile"
               className="relative w-5.5 h-5.5 rounded-full bg-[#13151b] border border-white/12 flex items-center justify-center text-zinc-300 hover:border-white/30 hover:scale-105 transition-all cursor-pointer shrink-0"
-              title="Профіль кандидата (http://localhost:3001/profile)"
+              title="Профіль кандидата"
               aria-label="User profile"
             >
               <User className="w-2.5 h-2.5 text-zinc-300" />
-              <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-400 border border-[#0d0f14] shadow-[0_0_4px_rgba(16,185,129,0.7)]" />
-            </a>
+              <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-white border border-[#0d0f14] " />
+            </Link>
 
-            {/* Stack / Profession button-link to http://localhost:3001/profile */}
-            <a
-              href="http://localhost:3001/profile"
-              className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white/[0.045] border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.08] text-zinc-200 hover:text-white text-[10.5px] font-medium transition-all shrink-0 cursor-pointer"
-              title="Змінити спеціалізацію на http://localhost:3001/profile"
+            {/* Stack / Profession button-link to /profile */}
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-white/[0.045] border border-white/[0.08] hover:border-white/20 hover:bg-white/[0.08] text-zinc-200 hover:text-white text-xs font-medium transition-all shrink-0 cursor-pointer"
+              title="Змінити спеціалізацію"
             >
               <Code2 className="w-3 h-3 text-zinc-400" />
               <span className="truncate max-w-[120px]">{targetStack}</span>
-            </a>
+            </Link>
           </div>
 
           {/* Center/Right: Language switcher & Action icons */}
@@ -262,7 +262,7 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
               onClick={onToggleFreeze}
               className={`cursor-pointer rounded-full p-1.5 transition-colors ${
                 isFrozen
-                  ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                  ? 'bg-white/[0.08] text-zinc-200 border border-white/[0.12] '
                   : 'text-zinc-400 hover:bg-white/10 hover:text-white'
               }`}
               title={`${t.kbd.pause} (Space)`}
@@ -316,7 +316,7 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
                     <GlowBadge tone="indigo" icon={<Languages className="h-3 w-3" />} className="mt-0.5 shrink-0">
                       {t.translation}
                     </GlowBadge>
-                    <p className="text-sm font-medium leading-snug text-indigo-100">{activeQA.nativeTranslation}</p>
+                    <p className="text-sm font-medium leading-snug text-zinc-200">{activeQA.nativeTranslation}</p>
                   </div>
                 )}
 
@@ -340,7 +340,7 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
                         className="flex items-start gap-2.5 text-[15px] leading-snug"
                       >
                         <span
-                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border font-mono text-[10px] font-bold ${BULLET_TONES[i % 3]}`}
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border font-mono text-xs font-bold ${BULLET_TONES[i % 3]}`}
                         >
                           {i + 1}
                         </span>
@@ -350,7 +350,7 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
                   </ul>
                 )}
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-2.5 text-[10px] text-zinc-500">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-white/[0.05] pt-2.5 text-xs text-zinc-500">
                   <span className="flex items-center gap-1.5">
                     <KbdObsidian>Space</KbdObsidian>
                     {t.kbd.pause}

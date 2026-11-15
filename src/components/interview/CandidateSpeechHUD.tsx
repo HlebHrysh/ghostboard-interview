@@ -181,7 +181,7 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
         <button
           type="button"
           onClick={() => setIsExpanded(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#0D0D10]/90 border border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white shadow-[0_8px_25px_rgba(0,0,0,0.5)] backdrop-blur-xl transition-all cursor-pointer group"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#111113] border border-white/[0.08] hover:border-white/20 text-zinc-300 hover:text-white shadow-[0_8px_25px_rgba(0,0,0,0.5)]   transition-all cursor-pointer group"
           title={txt.expand}
         >
           <span className="relative flex h-2 w-2">
@@ -190,23 +190,23 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
             )}
             <span
               className={`relative inline-flex rounded-full h-2 w-2 transition-colors ${
-                isSpeaking ? 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'bg-zinc-600'
+                isSpeaking ? 'bg-white ' : 'bg-zinc-600'
               }`}
             />
           </span>
 
           <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-white' : 'text-zinc-500'}`} />
 
-          <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-400 group-hover:text-zinc-200">
+          <span className="font-mono text-xs uppercase tracking-wider text-zinc-400 group-hover:text-zinc-200">
             {txt.title}
           </span>
 
           {candidateLiveTranscript ? (
-            <span className="font-sans text-[11px] text-zinc-200 max-w-[120px] truncate italic">
+            <span className="font-sans text-xs text-zinc-200 max-w-[120px] truncate italic">
               «{candidateLiveTranscript}»
             </span>
           ) : (
-            <span className="text-[9px] font-mono text-zinc-500 px-1.5 py-0.5 rounded bg-white/[0.04]">
+            <span className="text-xs font-mono text-zinc-500 px-1.5 py-0.5 rounded bg-white/[0.04]">
               {txt.badge}
             </span>
           )}
@@ -215,12 +215,12 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
         </button>
       ) : (
         /* ── Slide-down Drawer when explicitly opened ── */
-        <div className="w-[320px] rounded-2xl bg-[#0D0D10]/95 border border-white/[0.08] shadow-[0_16px_40px_rgba(0,0,0,0.8)] p-3.5 backdrop-blur-2xl animate-in zoom-in-95 duration-150">
+        <div className="w-[320px] rounded-2xl bg-[#111113] border border-white/[0.08] shadow-[0_16px_40px_rgba(0,0,0,0.8)] p-3.5   animate-in zoom-in-95 duration-150">
           <div className="flex items-center justify-between pb-2 border-b border-white/[0.06] text-xs font-mono">
             <div className="flex items-center gap-2">
               <Mic className={`w-3.5 h-3.5 ${isSpeaking ? 'text-white' : 'text-zinc-500'}`} />
-              <span className="font-bold text-white uppercase text-[11px]">{txt.title}</span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono">
+              <span className="font-bold text-white uppercase text-xs">{txt.title}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono">
                 {txt.badge}
               </span>
             </div>
@@ -234,7 +234,7 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
           </div>
 
           <div className="py-2.5">
-            <span className="text-[10px] font-mono uppercase text-zinc-500 block mb-1">
+            <span className="text-xs font-mono uppercase text-zinc-500 block mb-1">
               {txt.liveLabel}
             </span>
             <p className="text-xs text-zinc-200 font-sans leading-relaxed italic bg-white/[0.02] p-2 rounded-lg border border-white/[0.04] min-h-[36px]">
@@ -244,7 +244,7 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
 
           {speechHistory.length > 0 && (
             <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+              <div className="flex items-center justify-between text-xs font-mono text-zinc-500">
                 <span>{txt.recentHeading}</span>
                 {onClearHistory && (
                   <button
@@ -261,7 +261,7 @@ export const CandidateSpeechHUD: React.FC<CandidateSpeechHUDProps> = ({
                 {speechHistory.map((item) => (
                   <div key={item.id} className="p-1.5 rounded bg-white/[0.02] text-zinc-300 flex items-start justify-between gap-2">
                     <span className="leading-snug">{item.text}</span>
-                    <span className="text-[9px] font-mono text-zinc-600 shrink-0">{formatTime(item.timestamp)}</span>
+                    <span className="text-xs font-mono text-zinc-600 shrink-0">{formatTime(item.timestamp)}</span>
                   </div>
                 ))}
               </div>

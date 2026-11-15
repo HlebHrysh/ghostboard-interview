@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
+import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import {
   ShieldCheck,
   Smartphone,
@@ -62,20 +64,24 @@ export default function GuidePage() {
         <main className="max-w-5xl mx-auto space-y-10">
           {/* Header Hero */}
           <div className="text-center max-w-3xl mx-auto">
-            {/* 3D Book Mascot Animation */}
-            <div className="relative mx-auto w-24 h-24 sm:w-28 sm:h-28 mb-4 overflow-hidden rounded-2xl">
-              <video
-                src="/videos/book.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="auto"
-                className="w-full h-full object-cover"
+            {/* Apple Spatial Glass PiP Book Animation */}
+            <div className="max-w-xs mx-auto mb-5">
+              <SpatialVideoCapsule
+                compact
+                layoutGroupId="guide-book-pip"
+                aspectClassName="aspect-[16/10]"
+                videos={[
+                  {
+                    id: 'guide-book',
+                    src: '/videos/book.mp4',
+                    label: locale === 'ua' ? 'Гайд' : 'Playbook',
+                    caption: locale === 'ua' ? 'Передпольотна підготовка до інтервʼю' : '5-min stealth & audio setup',
+                  },
+                ]}
               />
             </div>
 
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-zinc-300 font-mono text-[11px] font-bold tracking-[0.2em] uppercase mb-3">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-zinc-300 font-mono text-xs font-bold tracking-[0.18em] uppercase mb-3">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>{g.heroBadge}</span>
             </div>
@@ -166,49 +172,40 @@ export default function GuidePage() {
               TASK 3.2: 3 INTERACTIVE TAB CARDS (AUDIO, STEALTH, PSYCHOLOGY)
           ═══════════════════════════════════════════════════════════════════════ */}
           <div className="space-y-6">
-            {/* Category Segmented Control */}
-            <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-[#0c0d12] border border-white/10 max-w-2xl mx-auto font-mono text-xs">
-              <button
-                type="button"
-                onClick={() => setMainSection('audio')}
-                className={`py-2.5 px-3 rounded-xl transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 ${
-                  mainSection === 'audio'
-                    ? 'bg-white text-black shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Volume2 className="w-4 h-4" />
-                <span>{g.tabAudio}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setMainSection('stealth')}
-                className={`py-2.5 px-3 rounded-xl transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 ${
-                  mainSection === 'stealth'
-                    ? 'bg-white text-black shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>{g.tabStealth}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setMainSection('psychology')}
-                className={`py-2.5 px-3 rounded-xl transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 ${
-                  mainSection === 'psychology'
-                    ? 'bg-white text-black shadow-md'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Eye className="w-4 h-4" />
-                <span>{g.tabPsychology}</span>
-              </button>
+            {/* Category Segmented Control with Spring Pill */}
+            <div className="grid grid-cols-3 gap-1.5 p-1.5 rounded-2xl spatial-glass-window border border-white/[0.12] max-w-2xl mx-auto font-mono text-xs">
+              {[
+                { id: 'audio' as const, label: g.tabAudio, Icon: Volume2 },
+                { id: 'stealth' as const, label: g.tabStealth, Icon: ShieldCheck },
+                { id: 'psychology' as const, label: g.tabPsychology, Icon: Eye },
+              ].map(({ id, label, Icon }) => {
+                const active = mainSection === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setMainSection(id)}
+                    className={`relative py-2.5 px-3 rounded-xl transition-colors cursor-pointer font-bold flex items-center justify-center gap-1.5 z-10 ${
+                      active ? 'text-black' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="guide-main-tab"
+                        transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                        className="absolute inset-0 rounded-xl bg-white shadow-md -z-10"
+                      />
+                    )}
+                    <Icon className="w-4 h-4" />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* TAB 1: AUDIO & LOOPBACK */}
             {mainSection === 'audio' && (
-              <div className="bento-card p-6 sm:p-8 space-y-6 rounded-3xl border border-white/10 bg-gradient-to-br from-[#0c0d12] to-black">
+              <div className="bento-card p-6 sm:p-8 space-y-6 rounded-3xl border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] bg-gradient-to-br from-[#0c0d12]/80 to-black/70">
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-2 text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
                     <Volume2 className="w-3.5 h-3.5" />
@@ -222,56 +219,36 @@ export default function GuidePage() {
                   </p>
                 </div>
 
-                {/* Audio OS Switcher Tabs */}
-                <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/10 font-mono text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setAudioOs('browser')}
-                    className={`py-2 px-3.5 rounded-lg transition-all cursor-pointer font-semibold flex items-center gap-1.5 ${
-                      audioOs === 'browser'
-                        ? 'bg-white text-black shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Radio className="w-3.5 h-3.5" />
-                    <span>Браузер (Meet / Zoom)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAudioOs('windows')}
-                    className={`py-2 px-3.5 rounded-lg transition-all cursor-pointer font-semibold flex items-center gap-1.5 ${
-                      audioOs === 'windows'
-                        ? 'bg-white text-black shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Laptop className="w-3.5 h-3.5" />
-                    <span>Windows (WASAPI)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAudioOs('macos')}
-                    className={`py-2 px-3.5 rounded-lg transition-all cursor-pointer font-semibold flex items-center gap-1.5 ${
-                      audioOs === 'macos'
-                        ? 'bg-white text-black shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Monitor className="w-3.5 h-3.5" />
-                    <span>macOS (Loopback)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAudioOs('linux')}
-                    className={`py-2 px-3.5 rounded-lg transition-all cursor-pointer font-semibold flex items-center gap-1.5 ${
-                      audioOs === 'linux'
-                        ? 'bg-white text-black shadow'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>Linux (PipeWire)</span>
-                  </button>
+                {/* Audio OS Switcher Tabs with Spring Pill */}
+                <div className="flex flex-wrap items-center gap-1.5 p-1.5 rounded-2xl bg-white/[0.03] border border-white/10 font-mono text-xs">
+                  {[
+                    { id: 'browser' as const, label: 'Браузер (Meet / Zoom)', Icon: Radio },
+                    { id: 'windows' as const, label: 'Windows (WASAPI)', Icon: Laptop },
+                    { id: 'macos' as const, label: 'macOS (Loopback)', Icon: Monitor },
+                    { id: 'linux' as const, label: 'Linux (PipeWire)', Icon: Terminal },
+                  ].map(({ id, label, Icon }) => {
+                    const active = audioOs === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setAudioOs(id)}
+                        className={`relative py-2 px-3.5 rounded-xl transition-colors cursor-pointer font-semibold flex items-center gap-1.5 z-10 ${
+                          active ? 'text-black' : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {active && (
+                          <motion.span
+                            layoutId="guide-os-tab"
+                            transition={{ type: 'spring', stiffness: 300, damping: 26 }}
+                            className="absolute inset-0 rounded-xl bg-white shadow -z-10"
+                          />
+                        )}
+                        <Icon className="w-3.5 h-3.5" />
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* Sub-Tab Guide Card */}
@@ -384,7 +361,7 @@ export default function GuidePage() {
                     </div>
                     <h4 className="text-sm font-bold text-white font-mono flex items-center justify-between">
                       <span>Панік-щит</span>
-                      <kbd className="kbd-obsidian text-rose-300 text-[10px]">Esc</kbd>
+                      <kbd className="kbd-obsidian text-rose-300 text-xs">Esc</kbd>
                     </h4>
                     <p className="text-xs text-zinc-300 leading-relaxed font-sans">
                       Одне натискання клавіші <code className="font-mono text-white">Esc</code> миттєво згортає всі вікна суфлера та очищує екранний буфер без сліду.
@@ -397,7 +374,7 @@ export default function GuidePage() {
                     </div>
                     <h4 className="text-sm font-bold text-white font-mono flex items-center justify-between">
                       <span>Click-through</span>
-                      <kbd className="kbd-obsidian text-cyan-300 text-[10px]">Ctrl+Alt+T</kbd>
+                      <kbd className="kbd-obsidian text-cyan-300 text-xs">Ctrl+Alt+T</kbd>
                     </h4>
                     <p className="text-xs text-zinc-300 leading-relaxed font-sans">
                       Напівпрозоре скло дозволяє взаємодіяти з кодом у VS Code прямо під суфлером. Кліки миші проходять крізь інтерфейс підказок.
@@ -477,7 +454,7 @@ export default function GuidePage() {
                     <div className="flex items-center gap-2 font-mono text-xs font-bold text-purple-300 uppercase">
                       <Sparkles className="w-4 h-4 text-purple-400" />
                       <span>{g.bridgeFeatureTitle}</span>
-                      <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-[10px] font-mono border border-purple-500/30 ml-auto">
+                      <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs font-mono border border-purple-500/30 ml-auto">
                         [B] KEY
                       </span>
                     </div>

@@ -46,9 +46,7 @@ export async function GET(req: NextRequest) {
     req.headers.get('x-ghostboard-client') === 'desktop-app' ||
     req.headers.get('origin')?.startsWith('tauri://') ||
     req.headers.get('origin')?.includes('tauri.localhost');
-  const isDemo =
-    req.headers.get('x-ghostboard-demo') === 'true' ||
-    req.nextUrl.searchParams.get('demo') === '1';
+  const isDemo = req.nextUrl.searchParams.get('demo') === '1';
   const isStudioClient = req.headers.get('x-ghostboard-client') === 'studio-session';
   const isExternalClientIp = Boolean(
     req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for')

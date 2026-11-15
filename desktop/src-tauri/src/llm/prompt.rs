@@ -79,11 +79,28 @@ MODIFIER: ALTERNATIVE ANGLE & PRODUCTION TRADE-OFFS.
 - Propose an alternative architectural approach used in modern production systems.
 "#;
 
+pub const UNDER_THE_HOOD_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: LOW-LEVEL INTERNALS & KERNEL MECHANICS (UNDER THE HOOD).
+- Focus on OS memory layout, kernel primitives (epoll/kqueue), virtual address spaces, cache lines, or concurrency atomics.
+- Unpack what happens beneath the runtime/compiler abstraction.
+"#;
+
+pub const BRIDGE_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: DIPLOMATIC BRIDGE & TRANSITION.
+- Provide a smooth, senior conversational pivot from the previous topic into this core question.
+- Connect previous architectural context seamlessly before delivering the crisp answer.
+"#;
+
 pub const EXPLAIN_LINE_SYSTEM_PROMPT_EXTENSION: &str = r#"
 MODIFIER: MICRO-EXPLAINER (EXPLAIN LINE).
 - Deliver a concise 2-sentence spoken explanation of WHY that specific line/construct is used.
 - Explicitly state its exact time and space complexity in plain words.
 - Skip long preambles, provide immediate spoken clarity.
+"#;
+
+pub const NORMAL_SYSTEM_PROMPT_EXTENSION: &str = r#"
+MODIFIER: BALANCED LIVE DELIVERY.
+- Natural spoken fluency, crisp architectural pillars, practical depth.
 "#;
 
 /// Resolves max output tokens per patch slot to minimize TTFT & generation cost.
@@ -161,8 +178,10 @@ pub fn build_system_prompt_with_patch_slot(
         "simpler" => prompt.push_str(SIMPLER_SYSTEM_PROMPT_EXTENSION),
         "code" | "code_example" => prompt.push_str(CODE_SYSTEM_PROMPT_EXTENSION),
         "re_angle" | "tradeoffs" => prompt.push_str(RE_ANGLE_SYSTEM_PROMPT_EXTENSION),
+        "more_technical" | "under_the_hood" => prompt.push_str(UNDER_THE_HOOD_SYSTEM_PROMPT_EXTENSION),
+        "bridge" => prompt.push_str(BRIDGE_SYSTEM_PROMPT_EXTENSION),
         "explain_line" => prompt.push_str(EXPLAIN_LINE_SYSTEM_PROMPT_EXTENSION),
-        _ => {}
+        _ => prompt.push_str(NORMAL_SYSTEM_PROMPT_EXTENSION),
     }
 
     // Apply language rules
@@ -170,11 +189,17 @@ pub fn build_system_prompt_with_patch_slot(
     let helper = helper_language.unwrap_or("uk");
 
     if out_lang == "bilingual" {
+        let helper_name = match helper {
+            "ru" => "Russian (Русский)",
+            "pl" => "Polish (Polski)",
+            "de" => "German (Deutsch)",
+            _ => "Ukrainian (Українська)",
+        };
         prompt.push_str("\nBILINGUAL PROMPTER MODE:\n");
-        prompt.push_str("- Spoken text in Phase 1 & 2 must be in natural, conversational Technical English (B2 level).\n");
+        prompt.push_str("- Spoken words MUST be in natural, conversational, clear Technical English (B2/C1 level - straightforward and easy for the candidate to read aloud smoothly).\n");
         prompt.push_str(&format!(
-            "- Beside each spoken phrase and bullet point in parentheses, append a short gist in {}: e.g. \"(Суть: оптимістичне блокування з версіями рядків)\".\n",
-            if helper == "ru" { "Russian" } else { "Ukrainian" }
+            "- Beside or beneath each spoken phrase and bullet point, provide a short, clear hint/gist in parentheses in {} so the candidate instantly grasps the exact nuance without mental strain!\nExample: In production, I solve this with optimistic locking. (У продакшені я вирішую це через оптимістичні блокування)\n",
+            helper_name
         ));
     } else if out_lang != "auto" {
         prompt.push_str(&format!(
@@ -234,6 +259,12 @@ pub struct CandidateProfileDto {
     #[serde(default)]
     pub custom_bio: Option<String>,
     #[serde(default)]
+    pub cv_context: Option<String>,
+    #[serde(default)]
+    pub resume_context: Option<String>,
+    #[serde(default)]
+    pub custom_context: Option<String>,
+    #[serde(default)]
     pub tech_stack: Option<Vec<String>>,
 }
 
@@ -242,7 +273,7 @@ impl CandidateProfileDto {
         let mut parts = Vec::new();
         if let Some(r) = &self.role {
             if !r.trim().is_empty() {
-                parts.push(format!("Role: {}", r.trim()));
+                parts.push(format!("Target Role: {}", r.trim()));
             }
         }
         if let Some(l) = &self.experience_level {
@@ -252,16 +283,31 @@ impl CandidateProfileDto {
         }
         if let Some(s) = &self.primary_stack {
             if !s.trim().is_empty() {
-                parts.push(format!("Primary Stack: {}", s.trim()));
+                parts.push(format!("Stack: {}", s.trim()));
             }
         } else if let Some(ts) = &self.tech_stack {
             if !ts.is_empty() {
-                parts.push(format!("Tech Stack: {}", ts.join(", ")));
+                parts.push(format!("Stack: {}", ts.join(", ")));
+            }
+        }
+        if let Some(cv) = &self.cv_context {
+            if !cv.trim().is_empty() {
+                parts.push(format!("CV Context: {}", cv.trim()));
+            }
+        }
+        if let Some(resume) = &self.resume_context {
+            if !resume.trim().is_empty() {
+                parts.push(format!("Resume: {}", resume.trim()));
             }
         }
         if let Some(bio) = &self.custom_bio {
             if !bio.trim().is_empty() {
                 parts.push(format!("Bio: {}", bio.trim()));
+            }
+        }
+        if let Some(ctx) = &self.custom_context {
+            if !ctx.trim().is_empty() {
+                parts.push(format!("Context: {}", ctx.trim()));
             }
         }
         parts.join("\n")
@@ -275,12 +321,85 @@ pub struct HistoryTurnDto {
     pub speaker: String,
     #[serde(default)]
     pub text: String,
+    #[serde(default)]
+    pub question: Option<String>,
+    #[serde(default)]
+    pub answer: Option<String>,
+    #[serde(default)]
+    pub short_hook: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct FollowUpContextTurn {
     pub question: String,
     pub short_hook: Option<String>,
+}
+
+/// Normalizes mixed history payloads into at most the last 2 Q&A turns (`FollowUpContextTurn`).
+pub fn normalize_history_turns(history: &[HistoryTurnDto]) -> Vec<FollowUpContextTurn> {
+    let mut turns: Vec<FollowUpContextTurn> = Vec::new();
+    let mut pending_question: Option<String> = None;
+
+    for item in history {
+        if let Some(q) = item.question.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if let Some(pq) = pending_question.take() {
+                turns.push(FollowUpContextTurn {
+                    question: pq,
+                    short_hook: None,
+                });
+            }
+            let hook = item
+                .short_hook
+                .as_deref()
+                .or(item.answer.as_deref())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            turns.push(FollowUpContextTurn {
+                question: q.to_string(),
+                short_hook: hook,
+            });
+            continue;
+        }
+
+        let text = item.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+
+        if item.speaker == "interviewer" {
+            if let Some(pq) = pending_question.take() {
+                turns.push(FollowUpContextTurn {
+                    question: pq,
+                    short_hook: None,
+                });
+            }
+            pending_question = Some(text.to_string());
+        } else if item.speaker == "candidate" {
+            if let Some(pq) = pending_question.take() {
+                turns.push(FollowUpContextTurn {
+                    question: pq,
+                    short_hook: Some(text.to_string()),
+                });
+            } else if let Some(last) = turns.last_mut() {
+                if last.short_hook.is_none() {
+                    last.short_hook = Some(text.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(pq) = pending_question.take() {
+        turns.push(FollowUpContextTurn {
+            question: pq,
+            short_hook: None,
+        });
+    }
+
+    if turns.len() > 2 {
+        turns.split_off(turns.len() - 2)
+    } else {
+        turns
+    }
 }
 
 /// Builds user prompt with rolling 2-turn follow-up context memory (resolving pronouns "this", "that", "це").
@@ -297,7 +416,7 @@ pub fn build_user_prompt_with_history(
             let slice = if turns.len() > 2 { &turns[turns.len() - 2..] } else { turns };
             for (i, t) in slice.iter().enumerate() {
                 let ans = t.short_hook.as_deref().unwrap_or("").trim();
-                let short_ans = if ans.len() > 160 { &ans[..160] } else { ans };
+                let short_ans: String = ans.chars().take(160).collect();
                 prompt.push_str(&format!("Turn {} Q: {}\nTurn {} A: {}\n", i + 1, t.question.trim(), i + 1, short_ans));
             }
             prompt.push_str("\n");

@@ -1,31 +1,36 @@
-import React, { memo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { memo, useEffect, useId, useRef, useState } from 'react';
 import {
-  Sparkles,
   ArrowDownCircle,
-  Send,
-  Scissors,
-  Lightbulb,
   Code,
-  RotateCcw,
+  Lightbulb,
+  Maximize2,
+  MessageCircle,
   MessageSquare,
-  Clock,
+  Mic,
+  MicOff,
+  PanelLeftClose,
+  Pause,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Scissors,
+  Send,
+  Sparkles,
   Zap,
 } from 'lucide-react';
-import { ChatMessageRow } from './ChatMessageRow';
-import { AnswerView } from './AnswerView';
-import type {
-  ChatMessage,
-  AnswerEntry,
-  SessionState,
-} from '../lib/session';
-import {
-  viewedAnswer,
-  latestAnswer,
-  isViewingHistory,
-  answerForMessage,
-  queuedAnswersCount,
-} from '../lib/session';
+import type { SttStatus } from '../hooks/useCopilotSession';
 import type { DirectorModifier } from '../lib/answerStream';
+import {
+  answerForMessage,
+  isViewingHistory,
+  latestAnswer,
+  queuedAnswersCount,
+  viewedAnswer,
+  type ChatMessage,
+  type SessionState,
+} from '../lib/session';
+import { AnswerView } from './AnswerView';
+import { ChatMessageRow } from './ChatMessageRow';
 
 export interface SplitChatProps {
   sessionState: SessionState;
@@ -35,6 +40,16 @@ export interface SplitChatProps {
   onTogglePillar?: (answerId: string, pillarIndex: number) => void;
   onExplainLine?: (answerId: string, lineIndex: number, lineText: string) => void;
   fontSizePx: number;
+  outputLanguage?: string;
+  focusMode?: boolean;
+  onToggleFocusMode?: () => void;
+  isPaused?: boolean;
+  onTogglePause?: () => void;
+  isAudioActive?: boolean;
+  onToggleAudio?: () => void;
+  stt?: SttStatus;
+  nativeError?: { code: string; message: string } | null;
+  onRestartAudio?: () => void;
   isBridgeActive?: boolean;
   bridgePhrase?: string;
   onTriggerBridge?: () => void;
@@ -42,12 +57,36 @@ export interface SplitChatProps {
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
-const MODIFIERS: Array<{ label: string; modifier: DirectorModifier; icon: React.ReactNode }> = [
-  { label: '✂️ Коротше', modifier: 'shorter', icon: <Scissors size={11} /> },
-  { label: '💡 Простіше', modifier: 'simpler', icon: <Lightbulb size={11} /> },
-  { label: '💻 Дай код', modifier: 'code', icon: <Code size={11} /> },
-  { label: '🔄 Інший підхід', modifier: 're_angle', icon: <RotateCcw size={11} /> },
-  { label: '⚙️ Під капотом', modifier: 'under_the_hood', icon: <Zap size={11} /> },
+const MODIFIERS: Array<{
+  label: string;
+  keyHint: string;
+  modifier: DirectorModifier;
+  icon: React.ReactNode;
+}> = [
+  {
+    label: 'Коротше',
+    keyHint: '1',
+    modifier: 'shorter',
+    icon: <Scissors size={11} className="shrink-0 text-amber-300" />,
+  },
+  {
+    label: 'Простіше',
+    keyHint: '2',
+    modifier: 'simpler',
+    icon: <Lightbulb size={11} className="shrink-0 text-zinc-200" />,
+  },
+  {
+    label: 'Дай код',
+    keyHint: '3',
+    modifier: 'code',
+    icon: <Code size={11} className="shrink-0 text-sky-300" />,
+  },
+  {
+    label: 'Інший підхід',
+    keyHint: '4',
+    modifier: 're_angle',
+    icon: <RotateCcw size={11} className="shrink-0 text-zinc-300" />,
+  },
 ];
 
 export const SplitChat = memo(function SplitChat({
@@ -58,329 +97,401 @@ export const SplitChat = memo(function SplitChat({
   onTogglePillar,
   onExplainLine,
   fontSizePx,
+  outputLanguage,
+  focusMode,
+  onToggleFocusMode,
+  isPaused = false,
+  onTogglePause,
+  isAudioActive = true,
+  onToggleAudio,
+  stt,
+  nativeError,
+  onRestartAudio,
   isBridgeActive = false,
   bridgePhrase = '',
   onTriggerBridge,
   onDismissBridge,
   inputRef,
 }: SplitChatProps) {
+  const inputId = useId();
   const [manualInput, setManualInput] = useState('');
-  const internalInputRef = useRef<HTMLInputElement>(null);
-  const activeInputRef = inputRef || internalInputRef;
-  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [localFocusMode, setLocalFocusMode] = useState(false);
+
+  const isFullFocus = focusMode ?? localFocusMode;
+  const toggleFocus = onToggleFocusMode ?? (() => setLocalFocusMode((prev) => !prev));
+
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const answerScrollRef = useRef<HTMLDivElement>(null);
 
-  const viewed = viewedAnswer(sessionState);
-  const latest = latestAnswer(sessionState);
+  const activeAnswer = viewedAnswer(sessionState);
+  const liveAnswer = latestAnswer(sessionState);
   const viewingHistory = isViewingHistory(sessionState);
-  const queuedCount = queuedAnswersCount(sessionState);
+  const queued = queuedAnswersCount(sessionState);
 
-  // Auto-scroll left chat when new messages or interim arrive
+  // Contained scroll inside Transcript column only
   useEffect(() => {
-    if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-    }
-  }, [sessionState.messages.length, sessionState.interim?.text]);
+    const el = transcriptScrollRef.current;
+    if (!el || isFullFocus) return;
+    el.scrollTop = el.scrollHeight;
+  }, [sessionState.messages.length, sessionState.interim?.text, isFullFocus]);
 
-  // Reset scroll to top when switching viewed answer cards
+  // Reset answer viewport cleanly when switching to another answer card
   useEffect(() => {
-    if (answerScrollRef.current && viewed?.status !== 'streaming') {
-      answerScrollRef.current.scrollTop = 0;
-    }
-  }, [viewed?.id]);
+    const el = answerScrollRef.current;
+    if (!el || !activeAnswer?.id) return;
+    el.scrollTop = 0;
+  }, [activeAnswer?.id]);
 
-  // Auto-scroll right answer view when new streaming answer arrives or changes
+  // Tab shortcut toggles Focus mode when cursor is outside input
   useEffect(() => {
-    if (answerScrollRef.current && viewed?.status === 'streaming') {
-      answerScrollRef.current.scrollTop = answerScrollRef.current.scrollHeight;
-    }
-  }, [viewed?.raw, viewed?.status]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        toggleFocus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleFocus]);
 
-  const handleManualSubmit = (e?: React.FormEvent) => {
+  const handleSubmitQuestion = (e?: React.FormEvent) => {
     e?.preventDefault();
-    const q = manualInput.trim();
-    if (!q) return;
-    onAsk(q);
+    const trimmed = manualInput.trim();
+    if (!trimmed) return;
+    onAsk(trimmed);
     setManualInput('');
   };
 
-  const handleApplyModifier = (mod: DirectorModifier) => {
-    const targetQuestion = viewed?.question || latest?.question || 'Поясни це питання';
-    onAsk(targetQuestion, { modifier: mod });
+  const handleModifier = (modifier: DirectorModifier) => {
+    const q = activeAnswer?.question || liveAnswer?.question;
+    if (!q) return;
+    onAsk(q, {
+      modifier,
+      messageId: activeAnswer?.messageId ?? liveAnswer?.messageId ?? undefined,
+    });
   };
 
   const handleQuickTest = () => {
-    onAsk('Як працює Event Loop у JavaScript та черги microtask vs macrotask?');
+    onAsk(
+      'Як би ви спроєктували distributed rate limiter для мільйона RPS на Redis + Go/TypeScript?',
+      { modifier: 'normal' }
+    );
   };
+
+  const sttProblem = stt?.status === 'reconnecting' || stt?.status === 'failed' || Boolean(nativeError);
 
   return (
     <div
-      className="flex-1 flex flex-col min-h-0 bg-[#09090b] text-zinc-100 select-none overflow-hidden"
-      style={{ ['--hud-font' as string]: `${fontSizePx}px` }}
+      style={{ '--hud-font': `${fontSizePx}px` } as React.CSSProperties}
+      className="flex flex-1 min-h-0 flex-col bg-transparent gap-1.5 pt-1.5"
     >
-      {/* 2-COLUMN MAIN CONTENT (38% Left / 62% Right) */}
-      <div className="flex-1 flex min-h-0 divide-x divide-white/[0.08]">
-        {/* LEFT COLUMN: ЖИВИЙ ДІАЛОГ (38%) */}
-        <section className="w-[38%] min-w-[260px] flex flex-col min-h-0 bg-[#09090b]">
-          {/* Header */}
-          <div className="h-8 px-3 flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02]">
-            <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-zinc-400">
-              <MessageSquare size={12} className="text-zinc-500" />
-              <span>Живий діалог</span>
-            </div>
-            <span className="text-[10px] font-mono text-zinc-500">
-              {sessionState.messages.length} реплік
-            </span>
-          </div>
-
-          {/* Messages List */}
-          <div
-            ref={chatScrollRef}
-            className="flex-1 overflow-y-auto gb-scroll p-2.5 space-y-2 select-text"
+      {/* Main Columns: 26% Transcript / 74% Answer -> 0% / 100% in Focus Mode */}
+      <div className="flex flex-1 min-h-0 gap-1.5">
+        {/* LEFT COLUMN (26%) */}
+        {!isFullFocus && (
+          <section
+            aria-label="Стрічка діалогу"
+            className="flex basis-[26%] min-w-[200px] max-w-[290px] flex-col min-h-0 rounded-xl border border-white/[0.08] bg-[#09090b]/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.09)] overflow-hidden"
           >
-            {sessionState.messages.length === 0 && !sessionState.interim && (
-              <div className="h-full flex flex-col items-center justify-center text-center p-4 text-zinc-500">
-                <span className="w-2 h-2 rounded-full bg-emerald-400/80 animate-ping mb-2" />
-                <p className="text-xs font-mono">СЛУХАЮ АУДІО...</p>
-                <p className="text-xs mt-1 text-zinc-400">
-                  Запитання інтерв'юера з'являться тут автоматично
-                </p>
-              </div>
-            )}
-
-            {sessionState.messages.map((msg) => {
-              const answer = answerForMessage(sessionState, msg);
-              const isSelected = viewed?.id === msg.answerId;
-              return (
-                <ChatMessageRow
-                  key={msg.id}
-                  message={msg}
-                  answer={answer}
-                  isSelected={isSelected}
-                  onSelect={onActivateMessage}
-                  onAsk={(m) => onAsk(m.text, { messageId: m.id })}
-                />
-              );
-            })}
-
-            {/* Interim live transcription preview */}
-            {sessionState.interim && (
-              <div className="rounded-xl p-2.5 bg-white/[0.02] border border-dashed border-white/10 text-zinc-400 text-xs italic animate-pulse">
-                <span className="font-mono text-[10px] uppercase text-zinc-500 not-italic mr-1.5">
-                  [Транскрибування...]
-                </span>
-                {sessionState.interim.text}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* RIGHT COLUMN: ШІ-СУФЛЕР (62%) */}
-        <section className="flex-1 flex flex-col min-h-0 bg-[#0c0d10] relative">
-          {/* Header */}
-          <div className="h-8 px-3.5 flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02]">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1 shrink-0">
-                <Sparkles size={12} />
-                <span>ШІ-суфлер</span>
+            <div className="flex h-8 shrink-0 items-center justify-between border-b border-white/[0.07] px-3">
+              <span className="inline-flex items-center gap-1.5 text-[10.5px] font-mono font-semibold uppercase tracking-wider text-zinc-300">
+                <MessageSquare size={11} className="text-emerald-400" />
+                Діалог ({sessionState.messages.length})
               </span>
-
-              {sessionState.paused && (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/35 shrink-0 shadow-[0_0_8px_rgba(34,211,238,0.2)]">
-                  ЗАМОРОЖЕНО
-                </span>
-              )}
-
-              {queuedCount > 0 && (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/35 animate-pulse shrink-0">
-                  +{queuedCount} в черзі
-                </span>
-              )}
-
-              {viewed && (
-                <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-300 shrink-0">
-                  #{viewed.seq}
-                </span>
-              )}
-
-              {viewed?.isContinuationMerged && (
-                <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 border border-cyan-400/35 shrink-0 shadow-[0_0_8px_rgba(34,211,238,0.2)]">
-                  ⚡ Уточнено
-                </span>
-              )}
-
-              {viewed?.modifier && (
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/20 shrink-0">
-                  {viewed.modifier}
-                </span>
-              )}
-
-              {viewed?.question && (
-                <span className="text-xs text-zinc-400 truncate max-w-[280px]" title={viewed.question}>
-                  — {viewed.question}
-                </span>
-              )}
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
 
-            {/* Timings */}
-            <div className="flex items-center gap-2 text-xs font-mono text-zinc-400 shrink-0">
-              {viewed?.ttftMs && <span>TTFT: {viewed.ttftMs}ms</span>}
-              {viewed?.totalMs && <span>Total: {viewed.totalMs}ms</span>}
+            <div
+              ref={transcriptScrollRef}
+              className="flex-1 min-h-0 overflow-y-auto gb-scroll p-2.5 space-y-2"
+            >
+              {sessionState.messages.length === 0 && !sessionState.interim?.text && (
+                <div className="flex h-full flex-col items-center justify-center px-2 text-center select-none">
+                  <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-[#141418] text-zinc-400">
+                    <MessageCircle size={16} />
+                  </div>
+                  <p className="text-xs font-medium text-zinc-300">Слухаю інтерв’юера...</p>
+                  <p className="mt-1 text-[10.5px] leading-relaxed text-zinc-500">
+                    Питання з’являться тут автоматично з прив’язкою до відповідей.
+                  </p>
+                </div>
+              )}
+
+              {sessionState.messages.map((msg) => {
+                const linkedAns = answerForMessage(sessionState, msg);
+                const isSelected = Boolean(
+                  linkedAns && activeAnswer && linkedAns.id === activeAnswer.id
+                );
+                return (
+                  <ChatMessageRow
+                    key={msg.id}
+                    message={msg}
+                    answer={linkedAns}
+                    isSelected={isSelected}
+                    onSelect={(m) => onActivateMessage(m)}
+                    onAsk={(m) => onAsk(m.text, { messageId: m.id })}
+                  />
+                );
+              })}
+
+              {sessionState.interim?.text && (
+                <div className="rounded-xl border border-emerald-500/30 bg-[#141418] p-2.5 text-xs text-zinc-200 animate-pulse">
+                  <span className="mr-1.5 font-mono text-[10px] font-semibold uppercase text-emerald-300">
+                    LIVE:
+                  </span>
+                  {sessionState.interim.text}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* RIGHT COLUMN (74% -> 100% Focus Mode) */}
+        <section
+          aria-label="ШІ-Відповідь"
+          className="relative flex flex-1 min-w-0 flex-col min-h-0 rounded-xl border border-white/[0.08] bg-[#09090b]/95 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] overflow-hidden"
+        >
+          {/* Compact Answer Header */}
+          <div className="flex h-8 shrink-0 items-center justify-between border-b border-white/[0.07] px-3.5">
+            <div className="min-w-0 flex items-center gap-2">
+              <Sparkles size={12} className="shrink-0 text-emerald-400" />
+              <span className="truncate text-[11.5px] font-medium text-zinc-200">
+                {activeAnswer
+                  ? activeAnswer.question
+                  : 'Готовий генерувати 4-фазні відповіді'}
+              </span>
+            </div>
+
+            <div
+              data-tauri-drag-region="false"
+              onMouseDown={(e) => e.stopPropagation()}
+              className="flex items-center gap-2 shrink-0"
+            >
+              {activeAnswer && (
+                <span className="font-mono text-[10.5px] text-zinc-400 tabular-nums">
+                  #{activeAnswer.seq}
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={toggleFocus}
+                title="Перемкнути режим Фокусу 100% (Tab)"
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-medium transition-colors cursor-pointer ${
+                  isFullFocus
+                    ? 'border-white/35 bg-white text-zinc-950'
+                    : 'border-white/10 bg-[#141418] text-zinc-300 hover:border-white/25 hover:text-white'
+                }`}
+              >
+                {isFullFocus ? <Maximize2 size={10} /> : <PanelLeftClose size={10} />}
+                <span>◧ Фокус (Tab)</span>
+              </button>
             </div>
           </div>
 
-          {/* Emergency Bridge Banner */}
-          {isBridgeActive && bridgePhrase && (
-            <div className="mx-3.5 mt-2.5 px-3 py-2 rounded-xl bg-[#19150d] border border-amber-500/40 flex items-start gap-2.5 animate-in fade-in slide-in-from-top-1 duration-200 shadow-lg shadow-amber-950/20 z-20">
-              <Sparkles size={14} className="text-amber-400 shrink-0 mt-0.5 animate-pulse" />
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-300 mb-0.5 flex items-center justify-between">
-                  <span>⚡ Speak Now · Фраза для виграшу часу (Bridge):</span>
-                  <span className="text-[9px] text-amber-400/70 font-mono">Автозникнення 8с</span>
-                </div>
-                <p className="text-xs text-amber-100 font-medium leading-relaxed select-text font-sans">
-                  {bridgePhrase}
-                </p>
-              </div>
-              {onDismissBridge && (
+          {/* Inline STT Warning / Recovery Strip if needed */}
+          {sttProblem && (
+            <div className="flex items-center justify-between gap-2 border-b border-rose-500/25 bg-rose-500/10 px-3.5 py-1.5 text-[11px] text-rose-200">
+              <span className="truncate">
+                {nativeError?.message ||
+                  stt?.message ||
+                  (stt?.status === 'failed'
+                    ? 'Збій каналу транскрипції STT'
+                    : 'Перепідключення потоку STT...')}
+              </span>
+              {onRestartAudio && (
                 <button
                   type="button"
-                  onClick={onDismissBridge}
-                  className="text-amber-400/60 hover:text-amber-200 text-xs px-1 -mr-1 -mt-0.5 transition-colors"
+                  onClick={onRestartAudio}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-400/35 bg-[#09090b] px-2 py-0.5 text-[10.5px] font-medium text-white hover:bg-rose-500/20 cursor-pointer"
                 >
-                  ✕
+                  <RefreshCw size={10} /> Перезапустити
                 </button>
               )}
             </div>
           )}
 
-          {/* Floating pill: Return to latest answer when viewing history (placed at bottom right to avoid covering phase 1 copy button) */}
-          {viewingHistory && (
-            <div className="absolute bottom-4 right-4 z-30 animate-in fade-in slide-in-from-bottom-2 duration-150">
-              <button
-                type="button"
-                data-tauri-drag-region="false"
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={() => onSelectAnswer(null)}
-                className="gb-nodrag inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#0a1b14] hover:bg-[#0e241b] border border-emerald-400/50 text-emerald-300 text-xs font-semibold shadow-lg transition-all active:scale-95"
-              >
-                <ArrowDownCircle size={13} className="text-emerald-400 animate-bounce" />
-                <span>До останньої відповіді{queuedCount > 0 ? ` (+${queuedCount})` : ''}</span>
-              </button>
-            </div>
-          )}
-
-          {/* Teleprompter Answer Content */}
+          {/* Answer Body Container */}
           <div
             ref={answerScrollRef}
-            className="flex-1 overflow-y-auto gb-scroll p-4 select-text"
+            className="flex-1 min-h-0 overflow-y-auto gb-scroll p-3.5 sm:p-4"
           >
-            {viewed ? (
+            {activeAnswer ? (
               <AnswerView
-                answer={viewed}
-                onRetry={(ans) => onAsk(ans.question)}
+                answer={activeAnswer}
+                outputLanguage={outputLanguage}
+                onRetry={(ans) => onAsk(ans.question, { messageId: ans.messageId })}
                 onTogglePillar={onTogglePillar}
                 onExplainLine={onExplainLine}
               />
             ) : (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-zinc-500 select-none">
-                <div className="w-10 h-10 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center text-emerald-400 mb-3 shadow-[0_0_15px_rgba(52,211,153,0.15)]">
-                  <Sparkles size={18} />
+              <div className="flex h-full flex-col items-center justify-center p-6 text-center select-none">
+                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-[#111114] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
+                  <Sparkles size={20} className="text-zinc-200" />
                 </div>
-                <p className="text-sm font-semibold text-zinc-200">Очікую запитання</p>
-                <p className="text-xs text-zinc-400 max-w-sm mt-1.5 leading-relaxed">
-                  ШІ-суфлер слухає діалог. Щойно прозвучить запитання — тут з'явиться відповідь у 3 фазах: швидкий старт, опорні тези та код.
+                <p className="text-sm font-semibold text-white">Очікую запитання</p>
+                <p className="mt-1.5 max-w-sm text-xs leading-relaxed text-zinc-400">
+                  ШІ-суфлер слухає потік. Щойно прозвучить запитання — відповідь з’явиться у 4 фазах: Hook, тези, код та пастка інтерв’юера.
                 </p>
                 <button
                   type="button"
                   data-tauri-drag-region="false"
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={handleQuickTest}
-                  className="gb-nodrag mt-4 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/10 text-xs text-zinc-200 font-medium transition-all shadow-sm"
+                  className="gb-nodrag mt-4 inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-[#141418] px-3.5 py-2 text-xs font-medium text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] transition-colors hover:border-white/30 cursor-pointer"
                 >
-                  <Zap size={13} className="text-amber-400" />
-                  <span>Згенерувати тестову відповідь</span>
+                  <Zap size={13} className="text-emerald-400" />
+                  Згенерувати тестову відповідь
                 </button>
               </div>
             )}
           </div>
+
+          {/* Floating pill when viewing an archived question */}
+          {viewingHistory && liveAnswer && (
+            <button
+              type="button"
+              data-tauri-drag-region="false"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => onSelectAnswer(null)}
+              className="gb-nodrag absolute bottom-3 right-3 z-30 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-[#111114] px-3 py-1.5 text-[11px] font-semibold text-emerald-200 shadow-[inset_0_1px_0_0_rgba(167,243,208,0.2),0_10px_28px_rgba(0,0,0,0.8)] hover:border-emerald-400 cursor-pointer"
+            >
+              <ArrowDownCircle size={13} className="text-emerald-400" />
+              <span>🟢 Повернутися до поточної відповіді #{liveAnswer.seq}</span>
+            </button>
+          )}
         </section>
       </div>
 
-      {/* BOTTOM ACTION DOCK */}
+      {/* Bridge Phrase Toast (Modifier [5]) */}
+      {isBridgeActive && bridgePhrase && (
+        <div
+          data-tauri-drag-region="false"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={onDismissBridge}
+          className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/35 bg-[#141418] px-3.5 py-2 text-xs text-emerald-100 shadow-[inset_0_1px_0_0_rgba(167,243,208,0.2)] cursor-pointer"
+        >
+          <span>
+            <strong className="font-mono text-[10.5px] uppercase text-emerald-400 mr-1.5">
+              ⏳ Пауза-місток:
+            </strong>
+            “{bridgePhrase}”
+          </span>
+          <span className="shrink-0 font-mono text-[10px] text-zinc-400">Клік щоб сховати</span>
+        </div>
+      )}
+
+      {/* BOTTOM MODIFIER & QUICK INPUT DOCK */}
       <footer
         data-tauri-drag-region="false"
         onMouseDown={(e) => e.stopPropagation()}
-        className="border-t border-white/[0.08] bg-[#0c0d10] px-3 py-2 flex flex-col gap-2 shrink-0 select-none z-20 gb-nodrag"
+        className="gb-nodrag shrink-0 flex flex-col gap-2 rounded-b-xl border border-white/[0.08] bg-[#09090b]/95 px-3 py-2 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] select-none z-20"
       >
-        {/* Modifier buttons */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-          <span className="text-[10px] font-mono uppercase text-zinc-500 mr-1 shrink-0">
-            Режими:
-          </span>
-          {MODIFIERS.map((m, idx) => (
-            <button
-              key={m.modifier}
-              type="button"
-              data-tauri-drag-region="false"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={() => handleApplyModifier(m.modifier)}
-              className="gb-nodrag inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-300 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-white/20 active:scale-95 px-2.5 py-1 rounded-md transition-all shrink-0"
-            >
-              <span>{m.label}</span>
-              <kbd className="text-[9px] font-mono text-zinc-500 bg-white/[0.04] px-1 rounded">{idx + 1}</kbd>
-            </button>
-          ))}
-          <button
-            type="button"
-            data-tauri-drag-region="false"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={handleQuickTest}
-            title="Миттєвий тест генерації відповіді ШІ"
-            className="gb-nodrag inline-flex items-center gap-1 text-[11px] font-semibold text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 active:scale-95 border border-amber-400/30 px-2.5 py-1 rounded-md transition-all shrink-0 ml-1"
-          >
-            <Zap size={11} className="text-amber-400" />
-            <span>Тест ШІ</span>
-          </button>
-          {onTriggerBridge && (
-            <button
-              type="button"
-              data-tauri-drag-region="false"
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={onTriggerBridge}
-              title="Фраза для виграшу часу [B]"
-              className={`gb-nodrag inline-flex items-center gap-1.5 text-[11px] font-semibold border active:scale-95 px-2.5 py-1 rounded-md transition-all shrink-0 ml-1 ${
-                isBridgeActive
-                  ? 'bg-amber-500/25 text-amber-300 border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-                  : 'text-amber-400 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 border-amber-400/30'
-              }`}
-            >
-              <Zap size={11} className="text-amber-400 fill-amber-400" />
-              <span>Брідж</span>
-              <kbd className="text-[9px] font-mono text-amber-400/80 bg-white/[0.04] px-1 rounded">B</kbd>
-            </button>
-          )}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5">
+            {MODIFIERS.map((m) => (
+              <button
+                key={m.modifier}
+                type="button"
+                onClick={() => handleModifier(m.modifier)}
+                disabled={!activeAnswer && !liveAnswer}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#141418] px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white disabled:opacity-40 cursor-pointer shrink-0"
+              >
+                <kbd className="rounded border border-white/10 bg-[#09090b] px-1 py-0.2 font-mono text-[9.5px] text-zinc-400">
+                  {m.keyHint}
+                </kbd>
+                {m.icon}
+                <span>{m.label}</span>
+              </button>
+            ))}
+
+            {onTriggerBridge && (
+              <button
+                type="button"
+                onClick={onTriggerBridge}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#141418] px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer shrink-0"
+              >
+                <kbd className="rounded border border-white/10 bg-[#09090b] px-1 py-0.2 font-mono text-[9.5px] text-zinc-400">
+                  5
+                </kbd>
+                <span>⏳ Пауза-місток</span>
+              </button>
+            )}
+          </div>
+
+          {/* Freeze (Space) & Mic Pause (Ctrl+M) controls */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onToggleAudio && (
+              <button
+                type="button"
+                onClick={onToggleAudio}
+                title="Пауза / Старт мікрофона (Ctrl+M)"
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium cursor-pointer ${
+                  isAudioActive
+                    ? 'border-white/[0.08] bg-[#141418] text-zinc-300 hover:border-white/25'
+                    : 'border-rose-500/35 bg-rose-500/15 text-rose-200'
+                }`}
+              >
+                {isAudioActive ? <Mic size={11} className="text-emerald-400" /> : <MicOff size={11} />}
+                <span className="hidden md:inline">Ctrl+M</span>
+              </button>
+            )}
+
+            {onTogglePause && (
+              <button
+                type="button"
+                onClick={onTogglePause}
+                title="Freeze / Розморозити екран (Space)"
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium cursor-pointer ${
+                  isPaused
+                    ? 'border-sky-400/35 bg-sky-500/15 text-sky-200'
+                    : 'border-white/[0.08] bg-[#141418] text-zinc-300 hover:border-white/25'
+                }`}
+              >
+                {isPaused ? <Play size={11} /> : <Pause size={11} />}
+                <span>{isPaused ? `Live${queued > 0 ? ` (+${queued})` : ''}` : 'Space · Freeze'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Manual question input */}
-        <form onSubmit={handleManualSubmit} className="flex items-center gap-2">
+        {/* IME-safe manual question input bar */}
+        <form onSubmit={handleSubmitQuestion} className="flex items-center gap-2">
+          <label htmlFor={inputId} className="sr-only">
+            Ручний запит до ШІ-копайлота
+          </label>
           <input
-            ref={activeInputRef}
+            ref={inputRef}
+            id={inputId}
             type="text"
-            data-tauri-drag-region="false"
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
-            placeholder="Введіть запитання або задачу... (Enter або Ctrl+K)"
-            className="gb-nodrag flex-1 bg-white/[0.03] hover:bg-white/[0.05] focus:bg-white/[0.06] border border-white/10 focus:border-white/30 rounded-lg px-3 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 outline-none transition-all select-text"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                  return;
+                }
+                e.preventDefault();
+                handleSubmitQuestion();
+              }
+            }}
+            placeholder="Запитайте ШІ вручну або вставте текст задачі (Ctrl+K або /)..."
+            className="gb-input h-8 flex-1 text-xs"
           />
           <button
             type="submit"
             disabled={!manualInput.trim()}
-            title="Надіслати запитання [Enter]"
-            className="gb-nodrag inline-flex items-center justify-center gap-1 bg-white hover:bg-zinc-200 disabled:opacity-40 disabled:hover:bg-white text-zinc-950 font-semibold text-xs px-3.5 py-1.5 rounded-lg transition-all active:scale-95 shrink-0 shadow-sm"
+            aria-label="Надіслати запит"
+            className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-semibold text-zinc-950 transition-colors hover:bg-zinc-100 disabled:opacity-40 cursor-pointer shrink-0"
           >
             <Send size={12} />
-            <span>ШІ</span>
+            <span className="hidden sm:inline">Запитати</span>
           </button>
         </form>
       </footer>

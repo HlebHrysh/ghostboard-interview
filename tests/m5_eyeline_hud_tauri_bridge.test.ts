@@ -135,40 +135,29 @@ interface KafkaMessage<T> {
   });
 
   describe('3. Ergonomic Under-Webcam Eyeline HUD Specifications', () => {
-    it('verifies EyeLineTeleprompter.tsx enforces under-webcam max-w-[760px] and max-w-[65ch]', () => {
-      const prompterPath = path.resolve(__dirname, '../desktop/src/components/EyeLineTeleprompter.tsx');
-      const content = fs.readFileSync(prompterPath, 'utf8');
+    it('verifies EyelineNotch.tsx enforces under-webcam max-w-[760px], max-w-[65ch] and zero backdrop-blur', () => {
+      const notchPath = path.resolve(__dirname, '../desktop/src/hud/EyelineNotch.tsx');
+      const notchContent = fs.readFileSync(notchPath, 'utf8');
+      const answerPath = path.resolve(__dirname, '../desktop/src/hud/AnswerView.tsx');
+      const answerContent = fs.readFileSync(answerPath, 'utf8');
 
-      // Maximum 760px layout constraint for webcam eyeline tracking
-      expect(content).toContain('max-w-[760px]');
+      // Under-webcam layout constraints
+      expect(notchContent).toContain('max-w-[760px]');
+      expect(answerContent).toContain('max-w-[65ch]');
 
-      // Maximum 65 characters per line constraint
-      expect(content).toContain('max-w-[65ch]');
+      // 60fps WebKitGTK dense surface (no backdrop-blur on container)
+      expect(notchContent).toContain('bg-[#09090b]/95');
+      expect(notchContent).not.toContain('backdrop-blur');
 
-      // Frosted top control pill styling
-      expect(content).toContain('backdrop-blur-md bg-zinc-900/80 border border-white/10');
+      // Tauri window dragging data attribute & Hook Copy
+      expect(notchContent).toContain('data-tauri-drag-region');
+      expect(notchContent).toContain('handleCopyHook');
 
-      // Tauri window dragging data attribute
-      expect(content).toContain('data-tauri-drag-region');
-
-      // Hotkey triggers
-      expect(content).toContain('⌘↵');
-      expect(content).toContain('⌘⇧S');
-      expect(content).toContain('⌘⇧␣');
-      expect(content).toContain('⌘⇧⌫');
-
-      // Single-line ticker tape auto-scroll and speaker badge
-      expect(content).toContain('Співрозмовник');
-      expect(content).toContain('scrollLeft');
-
-      // 3-Phase Drawer Fold
-      expect(content).toContain('Фаза 1: Голосовий старт');
-      expect(content).toContain('Фаза 2: Ключові тези (3 Pillars)');
-      expect(content).toContain('Фаза 3: Архітектурний Deep Dive');
-
-      // Copy hook with ⌘C feedback
-      expect(content).toContain('handleCopyHook');
-      expect(content).toContain('⌘C');
+      // 4-Phase Teleprompter in AnswerView
+      expect(answerContent).toContain('Фаза 1: голосовий старт');
+      expect(answerContent).toContain('Фаза 2: ключові тези');
+      expect(answerContent).toContain('Фаза 3: глибоке занурення та код');
+      expect(answerContent).toContain('Очікуй питання на засипку');
     });
 
     it('verifies useHudStream.ts subscribes to startCopilotStream and dispatches reactive state', () => {
@@ -186,17 +175,13 @@ interface KafkaMessage<T> {
       expect(content).toContain('clearSession');
     });
 
-    it('verifies App.tsx wires useHudStream and EyeLineTeleprompter seamlessly', () => {
-      const appPath = path.resolve(__dirname, '../desktop/src/App.tsx');
-      const content = fs.readFileSync(appPath, 'utf8');
+    it('verifies HudWindow.tsx wires Tauri stealth, opacity, click-through, and Dual/Eyeline layouts', () => {
+      const hudPath = path.resolve(__dirname, '../desktop/src/hud/HudWindow.tsx');
+      const content = fs.readFileSync(hudPath, 'utf8');
 
-      expect(content).toContain('useHudStream');
-      expect(content).toContain('EyeLineTeleprompter');
-      expect(content).toContain('handleManualAnswer');
-      expect(content).toContain('handleClearSession');
-      expect(content).toContain('onTriggerAnswer');
-      expect(content).toContain('onTriggerScreenshot');
-      expect(content).toContain('onClearSession');
+      expect(content).toContain('useCopilotSession');
+      expect(content).toContain('EyelineNotch');
+      expect(content).toContain('SplitChat');
       expect(content).toContain('setScreenShareStealth');
       expect(content).toContain('setWindowOpacity');
       expect(content).toContain('toggleClickThrough');

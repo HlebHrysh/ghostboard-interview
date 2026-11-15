@@ -131,22 +131,28 @@ describe('Stage 3: Frontend Stabilization, Error Boundary & STT Status Verificat
       expect(content).toContain('sttStatus');
     });
 
-    it('verifies EyeLineTeleprompter and App.tsx render STT status badges and restart controls', () => {
-      const prompterPath = path.resolve(__dirname, '../desktop/src/components/EyeLineTeleprompter.tsx');
-      const prompterContent = fs.readFileSync(prompterPath, 'utf8');
+    it('verifies EyelineNotch and HudWindow render STT status badges and restart controls', () => {
+      const notchPath = path.resolve(__dirname, '../desktop/src/hud/EyelineNotch.tsx');
+      const notchContent = fs.readFileSync(notchPath, 'utf8');
 
-      expect(prompterContent).toContain("sttStatus?.status === 'reconnecting'");
-      expect(prompterContent).toContain("sttStatus?.status === 'failed'");
-      expect(prompterContent).toContain('Перепідключення STT');
-      expect(prompterContent).toContain('Збій STT');
+      expect(notchContent).toContain("stt?.status === 'reconnecting'");
+      expect(notchContent).toContain("stt?.status === 'failed'");
+      expect(notchContent).toContain('Перепідключення STT');
+      expect(notchContent).toContain('Збій STT');
+      expect(notchContent).toContain('onRestartAudio');
 
-      const appPath = path.resolve(__dirname, '../desktop/src/App.tsx');
-      const appContent = fs.readFileSync(appPath, 'utf8');
+      const splitPath = path.resolve(__dirname, '../desktop/src/hud/SplitChat.tsx');
+      const splitContent = fs.readFileSync(splitPath, 'utf8');
+      expect(splitContent).toContain("stt?.status === 'reconnecting'");
+      expect(splitContent).toContain("stt?.status === 'failed'");
+      expect(splitContent).toContain('nativeError');
+      expect(splitContent).toContain('onRestartAudio');
 
-      expect(appContent).toContain("hudStream.sttStatus.status === 'reconnecting'");
-      expect(appContent).toContain("hudStream.sttStatus.status === 'failed'");
-      expect(appContent).toContain('AUDIO_PIPELINE_ERROR');
-      expect(appContent).toContain('hudStream.restartCapture()');
+      const hudPath = path.resolve(__dirname, '../desktop/src/hud/HudWindow.tsx');
+      const hudContent = fs.readFileSync(hudPath, 'utf8');
+      expect(hudContent).toContain('handleRestartAudio');
+      expect(hudContent).toContain('session.stt');
+      expect(hudContent).toContain('session.nativeError');
     });
   });
 

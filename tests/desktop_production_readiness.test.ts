@@ -142,18 +142,24 @@ describe('Desktop Production Readiness (R1 - R4 Lifecycle & Sanity QA)', () => {
       expect(content).toContain('Super+Shift+X');
     });
 
-    it('confirms EyeLineTeleprompter renders 720px width, latency, audio switcher, and pinned 3 pillars', () => {
-      const prompterFile = path.join(desktopDir, 'src/components/EyeLineTeleprompter.tsx');
-      expect(fs.existsSync(prompterFile)).toBe(true);
-      const content = fs.readFileSync(prompterFile, 'utf8');
+    it('confirms EyelineNotch and Stealth HUD render 720px width, latency, audio switcher, and DesktopAuthGate handshake', () => {
+      const notchFile = path.join(desktopDir, 'src/hud/EyelineNotch.tsx');
+      const topIslandFile = path.join(desktopDir, 'src/hud/TopIsland.tsx');
+      const authGateFile = path.join(desktopDir, 'src/components/DesktopAuthGate.tsx');
+      expect(fs.existsSync(notchFile)).toBe(true);
+      expect(fs.existsSync(topIslandFile)).toBe(true);
+      expect(fs.existsSync(authGateFile)).toBe(true);
 
-      expect(content).toContain('max-w-[720px]');
-      expect(content).toContain('connectionLatencyMs');
-      expect(content).toContain('cycleAudioSource');
-      expect(content).toContain('3 PILLARS PINNED');
-      expect(content).toContain('handleSnapToLive');
-      expect(content).toContain('startPkceLogin');
-      expect(content).toContain('startDeviceCodeFlow');
+      const notchContent = fs.readFileSync(notchFile, 'utf8');
+      const topIslandContent = fs.readFileSync(topIslandFile, 'utf8');
+      const authContent = fs.readFileSync(authGateFile, 'utf8');
+
+      expect(notchContent).toContain('max-w-[720px]');
+      expect(notchContent).toContain('latencyLabel');
+      expect(topIslandContent).toContain('cycleListenMode');
+      expect(topIslandContent).toContain('onTogglePause');
+      expect(authContent).toContain('initHandshake');
+      expect(authContent).toContain('pollHandshake');
     });
   });
 });

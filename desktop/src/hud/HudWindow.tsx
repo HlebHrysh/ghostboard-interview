@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Eye } from 'lucide-react';
 import { TopIsland } from './TopIsland';
 import { SplitChat } from './SplitChat';
 import { EyelineNotch } from './EyelineNotch';
@@ -26,7 +27,7 @@ import { detectBackendUrl } from '../lib/apiClient';
 import { formatScreenshotAnswer } from '../lib/screenshotAnswer';
 import { startListening, stopListening } from '../lib/audioSession';
 import { consumeDemoPending } from '../lib/demoInterview';
-import { nextLocalId, viewedAnswer } from '../lib/session';
+import { nextLocalId, viewedAnswer, queuedAnswersCount } from '../lib/session';
 import { getRandomBridgePhrase } from '../lib/bridgePhrases';
 import type { HudEvent, ScreenRadarSummary } from '../types/hud';
 
@@ -323,10 +324,21 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
   }, []);
 
   const [isAudioActive, setIsAudioActive] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [isBridgeActive, setIsBridgeActive] = useState(false);
   const [bridgePhrase, setBridgePhrase] = useState('');
   const bridgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleToggleFocusMode = useCallback(() => {
+    setFocusMode((prev) => !prev);
+  }, []);
+
+  const handleRestartAudio = useCallback(async () => {
+    await stopListening().catch(() => {});
+    await startListening(settings);
+    setIsAudioActive(true);
+  }, [settings]);
 
   const handleTriggerBridge = useCallback(() => {
     const phrase = getRandomBridgePhrase(settings.hintLanguage);
@@ -456,23 +468,28 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
         return;
       }
 
-      // Ctrl/Cmd + K: Focus manual question input
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      // Ctrl/Cmd + K or '/': Focus manual question input
+      if (((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') || (e.key === '/' && !isInput)) {
         e.preventDefault();
         inputRef.current?.focus();
         return;
       }
 
       // 1..5: Rapid modifiers for active answer (when not focused in text inputs)
+      // Key 1 -> shorter, Key 2 -> simpler, Key 3 -> code, Key 4 -> re_angle, Key 5 -> Bridge Phrase
       if (!isInput && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (activeAnswer?.question && ['1', '2', '3', '4', '5'].includes(e.key)) {
+        if (e.key === '5') {
           e.preventDefault();
-          const mods: Record<string, 'shorter' | 'simpler' | 'code' | 're_angle' | 'under_the_hood'> = {
+          handleTriggerBridge();
+          return;
+        }
+        if (activeAnswer?.question && ['1', '2', '3', '4'].includes(e.key)) {
+          e.preventDefault();
+          const mods: Record<string, 'shorter' | 'simpler' | 'code' | 're_angle'> = {
             '1': 'shorter',
             '2': 'simpler',
             '3': 'code',
             '4': 're_angle',
-            '5': 'under_the_hood',
           };
           const mod = mods[e.key];
           if (mod) {
@@ -497,10 +514,12 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
     activeAnswer?.status !== 'streaming' &&
     !session.state.paused;
 
+  const queuedCount = queuedAnswersCount(session.state);
+
   return (
     <div
       data-tauri-drag-region="true"
-      className="fixed inset-0 flex flex-col gb-hud-shell overflow-hidden select-none border border-white/[0.1] shadow-2xl"
+      className="gb-hud-shell fixed inset-0 flex flex-col overflow-hidden select-none"
     >
       {/* Top Floating Island Header + 0ms Vision Radar Instant Trigger */}
       <div className="relative shrink-0">
@@ -509,10 +528,15 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
           updateSettings={updateSettings}
           layoutMode={layoutMode}
           onToggleLayout={toggleLayout}
+          focusMode={focusMode}
+          onToggleFocusMode={handleToggleFocusMode}
           isStreaming={activeAnswer?.status === 'streaming'}
           activeAnswer={activeAnswer}
           isPaused={session.state.paused}
           onTogglePause={session.togglePause}
+          queuedCount={queuedCount}
+          stt={session.stt}
+          onRestartAudio={() => void handleRestartAudio()}
           isClickThrough={session.clickThrough}
           onToggleClickThrough={handleToggleClickThrough}
           onScreenshot={handleSmartScreenshot}
@@ -532,7 +556,7 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
               className={
                 showInlineTopBarRadar
                   ? 'absolute top-[5px] left-[220px] right-[308px] flex justify-center pointer-events-none z-50'
-                  : 'absolute top-[42px] right-2.5 pointer-events-none z-50'
+                  : 'absolute top-[44px] right-2.5 pointer-events-none z-50'
               }
             >
               <motion.button
@@ -549,13 +573,14 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
                 onClick={() => void analyzeZeroMsRadar()}
                 disabled={session.screenBusy || radarBusy}
                 title={`ROI ${radarReady?.roiWidth ?? 0}×${radarReady?.roiHeight ?? 0}px (Δ ${radarReady?.hammingDistance ?? 0}b) готовий у RAM — клік або Ctrl+Shift+S для 0ms аналізу`}
-                className="gb-nodrag pointer-events-auto h-7 inline-flex items-center gap-1.5 px-2.5 rounded-full bg-gradient-to-r from-emerald-500/20 via-cyan-500/20 to-emerald-500/20 hover:from-emerald-500/30 hover:to-cyan-500/30 border border-emerald-400/50 text-emerald-200 text-[11px] font-mono font-semibold shadow-[0_0_16px_rgba(16,185,129,0.3),inset_0_1px_0_0_rgba(255,255,255,0.12)] backdrop-blur-xl transition-colors disabled:opacity-50"
+                className="gb-nodrag pointer-events-auto min-h-7 py-1 inline-flex items-center gap-1.5 px-3 rounded-full border border-emerald-400/40 bg-[#111114] text-emerald-100 text-xs font-mono font-semibold shadow-[inset_0_1px_0_0_rgba(167,243,208,0.2),0_12px_32px_rgba(0,0,0,0.75)] transition-colors disabled:opacity-50"
               >
                 <span className="relative flex h-2 w-2 shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
                 </span>
-                <span className="truncate">👁️ Задачу розпізнано (0ms)</span>
+                <Eye size={12} className="text-emerald-300 shrink-0" />
+                <span className="truncate">Задачу розпізнано (0ms)</span>
               </motion.button>
             </div>
           )}
@@ -572,6 +597,16 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
           onTogglePillar={session.togglePillar}
           onExplainLine={session.setLineExplanation}
           fontSizePx={settings.hudFontSize}
+          outputLanguage={settings.hintLanguage}
+          focusMode={focusMode}
+          onToggleFocusMode={handleToggleFocusMode}
+          isPaused={session.state.paused}
+          onTogglePause={session.togglePause}
+          isAudioActive={isAudioActive}
+          onToggleAudio={handleToggleAudio}
+          stt={session.stt}
+          nativeError={session.nativeError}
+          onRestartAudio={() => void handleRestartAudio()}
           isBridgeActive={isBridgeActive}
           bridgePhrase={bridgePhrase}
           onTriggerBridge={handleTriggerBridge}
@@ -583,6 +618,10 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
           activeAnswer={activeAnswer}
           onExpandToChat={() => void switchLayout('chat')}
           fontSizePx={settings.hudFontSize}
+          isPaused={session.state.paused}
+          onTogglePause={session.togglePause}
+          stt={session.stt}
+          onRestartAudio={() => void handleRestartAudio()}
           onAsk={session.ask}
         />
       )}

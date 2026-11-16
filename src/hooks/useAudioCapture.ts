@@ -15,6 +15,8 @@ interface UseAudioCaptureOptions {
   sessionDuration: number;
   setSessionDuration: (val: number) => void;
   candidateProfileRef?: React.MutableRefObject<CandidateProfile>;
+  /** When false, RMS/VU levels stay in volumeRef + ghostboard:audio_volume events without triggering React state re-renders */
+  trackVolumeInState?: boolean;
 }
 
 export function useAudioCapture({
@@ -26,11 +28,19 @@ export function useAudioCapture({
   sessionDuration,
   setSessionDuration,
   candidateProfileRef,
+  trackVolumeInState = true,
 }: UseAudioCaptureOptions) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [liveVolume, setLiveVolume] = useState<number>(0);
   const [interviewerVolume, setInterviewerVolume] = useState<number>(0);
   const [candidateVolume, setCandidateVolume] = useState<number>(0);
+  const trackVolumeInStateRef = useRef<boolean>(trackVolumeInState);
+  trackVolumeInStateRef.current = trackVolumeInState;
+  const volumeRef = useRef<{ volume: number; interviewer: number; candidate: number }>({
+    volume: 0,
+    interviewer: 0,
+    candidate: 0,
+  });
   const [sttStatus, setSttStatus] = useState<'connected' | 'reconnecting' | 'idle' | 'disconnected'>('idle');
   const [hasTabAudio, setHasTabAudio] = useState<boolean>(true);
   const [liveTranscript, setLiveTranscript] = useState<string>('');
@@ -232,11 +242,13 @@ export function useAudioCapture({
       stopCapture();
     }
 
-    // Determine target source: default to 'tab' so Meet/Zoom interviewer is captured!
-    const source: 'mic' | 'tab' =
+    // Determine target source: in interviewer_only mode NEVER allow mic capture
+    const requested: 'mic' | 'tab' =
       sourceParam === 'mic' ? 'mic' :
       sourceParam === 'tab' ? 'tab' :
       audioSourceRef.current;
+    const source: 'mic' | 'tab' =
+      audioModeRef.current === 'interviewer_only' ? 'tab' : requested;
 
     // Check cached Deepgram key
     if (!deepgramApiKeyRef.current) {
@@ -287,6 +299,8 @@ export function useAudioCapture({
         customStackOrCv,
         onConnectionStateChange: handleSttStatusChange,
         onVolumeChange: (vol, candVol = 0) => {
+          volumeRef.current = { volume: Math.max(vol, candVol), interviewer: vol, candidate: candVol };
+          if (!trackVolumeInStateRef.current) return;
           const now = Date.now();
           if (now - lastVolUpdateRef.current > 200) {
             lastVolUpdateRef.current = now;
@@ -408,6 +422,7 @@ export function useAudioCapture({
     liveVolume,
     interviewerVolume,
     candidateVolume,
+    volumeRef,
     sttStatus,
     hasTabAudio,
     liveTranscript,

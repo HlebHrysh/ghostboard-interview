@@ -7,7 +7,6 @@ import {
   Unlock,
   ChevronLeft,
   ChevronRight,
-  ShieldAlert,
   Sparkles,
   Globe,
   Copy,
@@ -25,7 +24,9 @@ import {
   stripRawMarkdownAsterisks,
   splitBilingualSegments,
   extractCode,
+  parseBlocks,
 } from '../../../../desktop/src/lib/answerParser';
+import { highlightCode, TOKEN_CLASS } from '../../../../desktop/src/lib/highlight';
 
 export interface SyncQAItem {
   id: string;
@@ -87,38 +88,100 @@ const CompanionCodeBlock = React.memo(function CompanionCodeBlock({
   copiedCode: boolean;
   onCopy: (code: string) => void;
 }) {
-  const codeText = useMemo(() => {
-    const clean = stripRawAiTags(codeSnippet);
-    return extractCode(clean) || clean;
-  }, [codeSnippet]);
-
-  const lines = useMemo(() => codeText.split('\n'), [codeText]);
+  const cleanText = useMemo(() => stripRawAiTags(codeSnippet), [codeSnippet]);
+  const blocks = useMemo(() => parseBlocks(cleanText), [cleanText]);
+  const copyPayload = useMemo(() => extractCode(cleanText) || cleanText, [cleanText]);
 
   return (
-    <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08] font-mono text-zinc-200">
-      <div className="flex items-center justify-between mb-3">
+    <div className="p-4 rounded-xl bg-[#111113] border border-white/[0.08] space-y-3 text-zinc-200">
+      <div className="flex items-center justify-between">
         <span className="text-xs font-mono uppercase tracking-wider text-zinc-400 font-semibold flex items-center gap-1.5">
           <Code2 className="w-3.5 h-3.5 text-zinc-200" />
           Фаза 3 · Код / Реалізація
         </span>
-        <button
-          type="button"
-          onClick={() => onCopy(codeText)}
-          className="text-xs font-mono text-zinc-300 hover:text-white px-2.5 py-1 rounded-lg bg-[#09090b] border border-white/[0.08] active:scale-95 transition flex items-center gap-1 cursor-pointer"
-        >
-          {copiedCode ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copiedCode ? 'Скопійовано' : 'Копіювати'}</span>
-        </button>
+        {copyPayload && (
+          <button
+            type="button"
+            onClick={() => onCopy(copyPayload)}
+            className="text-xs font-mono text-zinc-300 hover:text-white px-2.5 py-1 rounded-lg bg-[#09090b] border border-white/[0.08] active:scale-95 transition flex items-center gap-1 cursor-pointer"
+          >
+            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedCode ? 'Скопійовано ✓' : 'Копіювати'}</span>
+          </button>
+        )}
       </div>
-      <div className="overflow-x-auto text-[13.5px] leading-[21px] text-zinc-200">
-        {lines.map((line, idx) => (
-          <div key={idx} className="flex items-start gap-3">
-            <span className="select-none text-zinc-600 w-6 text-right shrink-0 text-xs leading-[21px]">
-              {idx + 1}
-            </span>
-            <span className="whitespace-pre-wrap break-words flex-1">{line || '\u00A0'}</span>
-          </div>
-        ))}
+
+      <div className="space-y-2.5">
+        {blocks.map((block, bIdx) => {
+          if (block.type === 'code') {
+            const lines = block.code.split('\n');
+            return (
+              <div
+                key={bIdx}
+                className="overflow-hidden rounded-lg border border-white/10 bg-[#09090b]"
+              >
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-white/[0.03]">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                    {block.lang || 'code'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onCopy(block.code)}
+                    className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-white/[0.12] hover:text-white transition-colors cursor-pointer"
+                  >
+                    {copiedCode ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedCode ? 'Скопійовано ✓' : 'Копіювати'}</span>
+                  </button>
+                </div>
+                <pre className="bg-[#09090b] p-3 font-mono text-[13px] leading-relaxed overflow-x-auto text-zinc-200">
+                  <code>
+                    {lines.map((line, idx) => {
+                      const tokens = highlightCode(line);
+                      return (
+                        <div key={idx} className="flex items-start gap-3">
+                          <span className="select-none text-zinc-600 w-6 text-right shrink-0 text-xs tabular-nums">
+                            {idx + 1}
+                          </span>
+                          <span className="whitespace-pre flex-1">
+                            {tokens.length > 0
+                              ? tokens.map((t, j) => (
+                                  <span key={j} className={TOKEN_CLASS[t.kind]}>
+                                    {t.value}
+                                  </span>
+                                ))
+                              : '\u00A0'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </code>
+                </pre>
+              </div>
+            );
+          }
+
+          const text = block.tokens.map((t) => t.value).join('');
+          if (block.type === 'li') {
+            return (
+              <div key={bIdx} className="flex items-start gap-2.5 text-sm leading-relaxed text-zinc-200 font-sans">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-white/70" />
+                <p className="min-w-0 flex-1">{text}</p>
+              </div>
+            );
+          }
+          if (block.type === 'h') {
+            return (
+              <h4 key={bIdx} className="text-xs font-mono font-semibold uppercase tracking-wider text-white">
+                {text}
+              </h4>
+            );
+          }
+          return (
+            <p key={bIdx} className="text-sm leading-relaxed text-zinc-200 font-sans">
+              {text}
+            </p>
+          );
+        })}
       </div>
     </div>
   );
@@ -317,7 +380,6 @@ function CompanionContent({ params }: PageProps) {
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const [isCapturing, setIsCapturing] = useState<boolean>(false);
   const [isFrozen, setIsFrozen] = useState<boolean>(false);
-  const [isPanic, setIsPanic] = useState<boolean>(false);
   const [showTranslation, setShowTranslation] = useState<boolean>(true);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
@@ -426,13 +488,8 @@ function CompanionContent({ params }: PageProps) {
             if (typeof data.payload.isFrozen === 'boolean') {
               setIsFrozen(data.payload.isFrozen);
             }
-            if (typeof data.payload.isPanic === 'boolean') {
-              setIsPanic(data.payload.isPanic);
-            }
           } else if (data.type === 'FREEZE_TOGGLE' && data.payload) {
             setIsFrozen(!!data.payload.isFrozen);
-          } else if (data.type === 'PANIC_TOGGLE' && data.payload) {
-            setIsPanic(!!data.payload.isPanic);
           }
         } catch {}
       };
@@ -455,7 +512,6 @@ function CompanionContent({ params }: PageProps) {
             setIsCapturing(data.isCapturing);
             setLiveTranscript(data.liveTranscript || '');
             if (typeof data.isFrozen === 'boolean') setIsFrozen(data.isFrozen);
-            if (typeof data.isPanic === 'boolean') setIsPanic(data.isPanic);
 
             if (data.qas && Array.isArray(data.qas)) {
               setQas(data.qas);
@@ -500,12 +556,6 @@ function CompanionContent({ params }: PageProps) {
     sendRemoteAction('FREEZE_TOGGLE', { isFrozen: next });
   };
 
-  const handleTogglePanic = () => {
-    const next = !isPanic;
-    setIsPanic(next);
-    sendRemoteAction('PANIC_TOGGLE', { isPanic: next });
-  };
-
   const handlePrevCard = () => {
     if (!activeQA || qas.length <= 1) return;
     const currentIdx = qas.findIndex((q) => q.id === activeQA.id);
@@ -531,21 +581,6 @@ function CompanionContent({ params }: PageProps) {
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
-
-  if (isPanic) {
-    return (
-      <div
-        onClick={handleTogglePanic}
-        className="min-h-screen bg-black text-zinc-500 font-mono p-6 flex flex-col justify-center items-center text-center cursor-pointer select-none"
-      >
-        <div className="w-14 h-14 rounded-full border border-zinc-800 flex items-center justify-center mb-4 text-zinc-600 animate-pulse">
-          <ShieldAlert className="w-7 h-7" />
-        </div>
-        <p className="text-sm font-semibold tracking-wider text-zinc-400 uppercase">PANIC SHIELD ACTIVE</p>
-        <p className="text-xs text-zinc-600 mt-2">Tap anywhere on the screen to restore teleprompter</p>
-      </div>
-    );
-  }
 
   // Font sizing styles based on Eyeline distance selector (strict minimum >= 14px)
   const hookFontClass =
@@ -606,7 +641,7 @@ function CompanionContent({ params }: PageProps) {
             )}
           </div>
 
-          {/* Quick Toolbar: Font Scaling, OLED Mode, Mirror, TR, Panic */}
+          {/* Quick Toolbar: Font Scaling, OLED Mode, Mirror, TR */}
           <div className="flex items-center gap-1 sm:gap-1.5">
             {/* Font Size Selector: A- / A+ / XL */}
             <div className="flex items-center bg-[#111113] border border-white/[0.08] rounded-xl p-0.5">
@@ -685,16 +720,6 @@ function CompanionContent({ params }: PageProps) {
             >
               <Globe className="w-3 h-3" />
               <span className="text-xs">TR</span>
-            </button>
-
-            {/* Emergency Panic */}
-            <button
-              type="button"
-              onClick={handleTogglePanic}
-              className="p-2 rounded-xl bg-[#111113] border border-white/[0.08] text-zinc-200 hover:text-white hover:bg-white/[0.08] active:scale-95 transition-all cursor-pointer"
-              title="Emergency Panic Shield"
-            >
-              <ShieldAlert className="w-3.5 h-3.5" />
             </button>
           </div>
         </header>

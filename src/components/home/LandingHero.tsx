@@ -13,20 +13,15 @@ import {
   ChevronDown,
   ChevronRight,
   ShieldCheck,
-  Zap,
   Sparkles,
   Apple,
   Monitor,
   Terminal,
-  Code2,
-  AudioLines,
-  Cpu,
-  EyeOff,
+  Zap,
 } from 'lucide-react';
 import type { HomeTranslations } from '@/lib/homeI18n';
 import { trackFunnelEvent } from '@/lib/croTelemetry';
 import { useLocale } from '@/contexts/LocaleContext';
-import { SpatialVideoCapsule, type SpatialVideoItem } from '@/components/ui/SpatialVideoCapsule';
 
 interface Props {
   t: HomeTranslations;
@@ -34,18 +29,16 @@ interface Props {
 
 type ClientPlatform = 'mac-arm' | 'mac-intel' | 'windows' | 'linux';
 
-interface GhostModeItem {
-  id: 'stealth' | 'coding' | 'voice' | 'speed' | 'hud';
-  label: string;
-  image: string;
-  isHudFrame?: boolean;
-  chipTitle: string;
-  chipMetric: string;
-  glowClass: string;
-  icon: React.ReactNode;
-}
-
 const SPRING_SNAPPY = { type: 'spring' as const, stiffness: 300, damping: 26 };
+
+const AMBIENT_MOTES = [
+  { id: 1, x: '16%', y: '72%', delay: 0, duration: 5.2, size: 'w-1.5 h-1.5 bg-violet-400/75' },
+  { id: 2, x: '82%', y: '66%', delay: 1.1, duration: 6.0, size: 'w-1.5 h-1.5 bg-emerald-400/75' },
+  { id: 3, x: '24%', y: '30%', delay: 0.7, duration: 5.8, size: 'w-1 h-1 bg-sky-300/80' },
+  { id: 4, x: '76%', y: '26%', delay: 2.0, duration: 6.4, size: 'w-1.5 h-1.5 bg-violet-300/70' },
+  { id: 5, x: '48%', y: '14%', delay: 1.5, duration: 5.5, size: 'w-1 h-1 bg-emerald-300/80' },
+  { id: 6, x: '64%', y: '80%', delay: 0.4, duration: 6.2, size: 'w-1 h-1 bg-white/60' },
+];
 
 export function LandingHero({ t }: Props) {
   const { locale } = useLocale();
@@ -54,22 +47,26 @@ export function LandingHero({ t }: Props) {
   const [platform, setPlatform] = useState<ClientPlatform>('windows');
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [activeModeIndex, setActiveModeIndex] = useState(0);
+  const [pulseCount, setPulseCount] = useState(0);
 
-  // 3D Pointer Parallax for Levitating Ghost Stage
+  // Interactive 3D Pointer Parallax & Cursor Halo for Open Ghost Logo Stage
   const stageRef = useRef<HTMLDivElement>(null);
   const pointerX = useMotionValue(0);
   const pointerY = useMotionValue(0);
 
-  const springX = useSpring(pointerX, { stiffness: 300, damping: 26 });
-  const springY = useSpring(pointerY, { stiffness: 300, damping: 26 });
+  const springX = useSpring(pointerX, { stiffness: 220, damping: 24 });
+  const springY = useSpring(pointerY, { stiffness: 220, damping: 24 });
 
-  const rotateX = useTransform(springY, [-0.5, 0.5], [10, -10]);
-  const rotateY = useTransform(springX, [-0.5, 0.5], [-12, 12]);
-  const ghostShiftX = useTransform(springX, [-0.5, 0.5], [-14, 14]);
-  const ghostShiftY = useTransform(springY, [-0.5, 0.5], [-10, 10]);
-  const badgeShiftX = useTransform(springX, [-0.5, 0.5], [18, -18]);
-  const badgeShiftY = useTransform(springY, [-0.5, 0.5], [12, -12]);
+  const rotateX = useTransform(springY, [-0.5, 0.5], [14, -14]);
+  const rotateY = useTransform(springX, [-0.5, 0.5], [-16, 16]);
+  const ghostShiftX = useTransform(springX, [-0.5, 0.5], [-20, 20]);
+  const ghostShiftY = useTransform(springY, [-0.5, 0.5], [-16, 16]);
+  const ringShiftX = useTransform(springX, [-0.5, 0.5], [14, -14]);
+  const ringShiftY = useTransform(springY, [-0.5, 0.5], [12, -12]);
+  const badgeShiftX = useTransform(springX, [-0.5, 0.5], [24, -24]);
+  const badgeShiftY = useTransform(springY, [-0.5, 0.5], [16, -16]);
+  const haloLeft = useTransform(springX, [-0.5, 0.5], ['25%', '75%']);
+  const haloTop = useTransform(springY, [-0.5, 0.5], ['25%', '75%']);
 
   useEffect(() => {
     setMounted(true);
@@ -95,90 +92,6 @@ export function LandingHero({ t }: Props) {
   const handleStageMouseLeave = () => {
     pointerX.set(0);
     pointerY.set(0);
-  };
-
-  const ghostModes: GhostModeItem[] = [
-    {
-      id: 'stealth',
-      label: 'Stealth',
-      image: '/ghost-transparent.png',
-      chipTitle: isUa ? 'Апаратна невидимість' : 'Hardware Stealth',
-      chipMetric: 'WDA_EXCLUDEFROMCAPTURE',
-      glowClass: 'from-violet-500/35 via-indigo-500/20 to-emerald-500/25',
-      icon: <EyeOff className="w-3.5 h-3.5 text-emerald-400" />,
-    },
-    {
-      id: 'coding',
-      label: 'Coding',
-      image: '/hero-ghost.png',
-      chipTitle: isUa ? 'Алгоритми та Live Code' : 'Live Code & LeetCode',
-      chipMetric: 'DOM + OCR Instant',
-      glowClass: 'from-fuchsia-500/35 via-violet-500/25 to-cyan-500/20',
-      icon: <Code2 className="w-3.5 h-3.5 text-violet-300" />,
-    },
-    {
-      id: 'voice',
-      label: 'Voice',
-      image: '/hero-ghost.jpg',
-      isHudFrame: true,
-      chipTitle: isUa ? 'Тільки голос інтервʼюера' : 'Interviewer Loopback',
-      chipMetric: 'Deepgram Nova-3 16kHz',
-      glowClass: 'from-sky-500/30 via-indigo-500/20 to-emerald-500/20',
-      icon: <AudioLines className="w-3.5 h-3.5 text-sky-400" />,
-    },
-    {
-      id: 'speed',
-      label: 'AI Speed',
-      image: '/hud_minimal_retina.png',
-      isHudFrame: true,
-      chipTitle: isUa ? 'Реакція телесуфлера' : 'Sub-Second TTFT',
-      chipMetric: '⚡ 180ms Edge Stream',
-      glowClass: 'from-emerald-500/30 via-teal-500/20 to-sky-500/20',
-      icon: <Zap className="w-3.5 h-3.5 text-amber-300" />,
-    },
-    {
-      id: 'hud',
-      label: 'Spatial HUD',
-      image: '/hud_minimal_banner.png',
-      isHudFrame: true,
-      chipTitle: isUa ? 'Eyeline-суфлер під камерою' : 'Retina Eyeline HUD',
-      chipMetric: '0% Screen Share Leak',
-      glowClass: 'from-cyan-500/25 via-emerald-500/20 to-indigo-500/25',
-      icon: <Cpu className="w-3.5 h-3.5 text-cyan-300" />,
-    },
-  ];
-
-  const heroVideos: SpatialVideoItem[] = [
-    {
-      id: 'mascot',
-      src: '/videos/ghost-mascot.mp4',
-      label: isUa ? 'Ghostboard 3D Core' : 'Ghostboard 3D Core',
-      caption: isUa ? 'Адаптивний суфлер нового покоління' : 'Next-gen adaptive spatial copilot',
-    },
-    {
-      id: 'stealth',
-      src: '/videos/ghost.mp4',
-      label: isUa ? 'Stealth Режим' : 'Stealth Mode',
-      caption: isUa ? 'Прозорість для Zoom, Meet та Discord' : 'Invisible across Zoom, Meet & Discord',
-    },
-    {
-      id: 'loopback',
-      src: '/videos/headphones.mp4',
-      label: isUa ? 'Audio Loopback' : 'Audio Loopback',
-      caption: isUa ? 'Чисте перехоплення системного аудіо' : 'Clean system loopback transcription',
-    },
-    {
-      id: 'capture',
-      src: '/videos/ghost2.mp4',
-      label: isUa ? 'Обхід захоплення' : 'Capture Bypass',
-      caption: isUa ? 'Ізоляція шару на рівні драйвера ОС' : 'OS compositor capture isolation',
-    },
-  ];
-
-  const activeMode = ghostModes[activeModeIndex] || ghostModes[0];
-
-  const cycleGhostMode = () => {
-    setActiveModeIndex((prev) => (prev + 1) % ghostModes.length);
   };
 
   const getPlatformLabel = () => {
@@ -224,7 +137,7 @@ export function LandingHero({ t }: Props) {
       />
 
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-8 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-6 items-center">
           {/* LEFT COLUMN: Precision Editorial Copy & Magnetic Actions */}
           <div className="lg:col-span-6 flex flex-col items-center lg:items-start text-center lg:text-left">
             {/* Stealth Status Pill */}
@@ -446,155 +359,169 @@ export function LandingHero({ t }: Props) {
             </motion.div>
           </div>
 
-          {/* RIGHT COLUMN: Levitating 3D Ghost Stage + Mode Switcher + PiP Video */}
-          <div className="lg:col-span-6 flex flex-col gap-4">
+          {/* RIGHT COLUMN: Open Monumental Ghost Logo Mascot with Spatial Orbitals & Interactive Effects */}
+          <div className="lg:col-span-6 flex items-center justify-center">
             <div
               ref={stageRef}
               onMouseMove={handleStageMouseMove}
               onMouseLeave={handleStageMouseLeave}
-              className="relative rounded-3xl bg-[#0a0c11]/70 backdrop-blur-2xl border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_32px_80px_-16px_rgba(0,0,0,0.85)] p-5 sm:p-7 overflow-hidden"
-              style={{ perspective: 1100 }}
+              onClick={() => setPulseCount((c) => c + 1)}
+              title={isUa ? 'Клікніть по Ghostboard для імпульсу стелсу' : 'Click for stealth spectral pulse'}
+              className="relative w-full max-w-[500px] h-[390px] sm:h-[470px] lg:h-[520px] flex items-center justify-center cursor-pointer select-none"
+              style={{ perspective: 1200 }}
             >
-              {/* Soft optical radial aura behind ghost */}
-              <div
+              {/* Reactive Cursor-Tracking Spectral Nebula Halo */}
+              <motion.div
                 aria-hidden="true"
-                className={`pointer-events-none absolute inset-6 rounded-full bg-gradient-to-tr ${activeMode.glowClass} blur-3xl opacity-65 transition-all duration-700`}
+                style={{ left: haloLeft, top: haloTop }}
+                animate={{
+                  scale: [1, 1.12, 1],
+                  opacity: [0.55, 0.78, 0.55],
+                }}
+                transition={{ duration: 5.5, repeat: Infinity, ease: 'easeInOut' }}
+                className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 w-[320px] h-[320px] sm:w-[400px] sm:h-[400px] rounded-full bg-gradient-to-tr from-violet-600/30 via-fuchsia-500/20 to-emerald-400/25 blur-[90px]"
               />
 
-              {/* Top Stage Status Bar */}
-              <div className="relative z-10 flex items-center justify-between gap-3 mb-2">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.06] border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] text-xs font-mono text-zinc-200">
-                  {activeMode.icon}
-                  <span>{activeMode.chipTitle}</span>
-                </div>
-                <span className="text-xs font-mono text-emerald-300/90 hidden sm:inline">
-                  {activeMode.chipMetric}
-                </span>
-              </div>
-
-              {/* 3D Interactive Levitation Container */}
+              {/* Gyroscope Outer Orbit Ring (Depth Layer -1) */}
               <motion.div
-                style={{ rotateX, rotateY, transformStyle: 'preserve-3d' }}
-                onClick={cycleGhostMode}
-                title={isUa ? 'Клікніть, щоб змінити образ Ghostboard' : 'Click to switch Ghostboard mode'}
-                className="relative z-10 h-[255px] sm:h-[300px] flex flex-col items-center justify-center cursor-pointer select-none"
+                aria-hidden="true"
+                style={{ x: ringShiftX, y: ringShiftY }}
+                className="pointer-events-none absolute inset-0 flex items-center justify-center"
               >
-                {/* Floating Orbital Badge Left */}
                 <motion.div
-                  style={{ x: badgeShiftX, y: badgeShiftY }}
-                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#0e1118]/85 border border-white/12 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_12px_30px_rgba(0,0,0,0.65)] absolute top-5 left-2 z-20"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+                  className="relative w-[300px] h-[300px] sm:w-[390px] sm:h-[390px] rounded-full border border-white/[0.08]"
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-xs font-mono text-zinc-200">⚡ 180ms Edge</span>
+                  <span className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.95)]" />
+                  <span className="absolute bottom-8 right-6 w-1.5 h-1.5 rounded-full bg-violet-400 shadow-[0_0_12px_rgba(167,139,250,0.95)]" />
                 </motion.div>
 
-                {/* Floating Orbital Badge Right */}
+                {/* Counter-rotating Inner Dashed Scanner Circle */}
                 <motion.div
-                  style={{ x: ghostShiftX, y: badgeShiftY }}
-                  className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-[#0e1118]/85 border border-white/12 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_12px_30px_rgba(0,0,0,0.65)] absolute bottom-12 right-2 z-20"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 text-violet-300" />
-                  <span className="text-xs font-mono text-zinc-200">0% Screen Share</span>
-                </motion.div>
+                  animate={{ rotate: -360 }}
+                  transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+                  className="absolute w-[240px] h-[240px] sm:w-[310px] sm:h-[310px] rounded-full border border-dashed border-violet-300/18"
+                />
 
-                {/* Levitating Ghost / Visual Render */}
+                {/* Inclined 3D Orbital Belt */}
                 <motion.div
-                  style={{ x: ghostShiftX, y: ghostShiftY }}
-                  className="relative flex items-center justify-center w-full h-full"
-                >
-                  <motion.div
-                    animate={{
-                      y: [0, -16, 0],
-                      rotateZ: [-1.5, 1.5, -1.5],
-                    }}
-                    transition={{
-                      duration: 5,
-                      repeat: Infinity,
-                      ease: 'easeInOut',
-                    }}
-                    className="relative flex items-center justify-center"
-                  >
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={activeMode.id}
-                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.92, y: -10 }}
-                        transition={SPRING_SNAPPY}
-                        className="flex items-center justify-center"
-                      >
-                        {activeMode.isHudFrame ? (
-                          <div className="relative max-w-[330px] sm:max-w-[380px] rounded-2xl overflow-hidden border border-white/15 bg-black/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_28px_70px_rgba(0,0,0,0.8)]">
-                            <img
-                              src={activeMode.image}
-                              alt={`Ghostboard ${activeMode.label}`}
-                              className="w-full h-auto max-h-[210px] object-contain"
-                            />
-                          </div>
-                        ) : (
-                          <img
-                            src={activeMode.image}
-                            alt={`Ghostboard ${activeMode.label} mascot`}
-                            className="w-52 h-52 sm:w-64 sm:h-64 object-contain drop-shadow-[0_24px_45px_rgba(139,92,246,0.35)]"
-                          />
-                        )}
-                      </motion.div>
-                    </AnimatePresence>
-                  </motion.div>
-                </motion.div>
+                  animate={{ rotateZ: [-14, -10, -14] }}
+                  transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ rotateX: 72 }}
+                  className="absolute w-[330px] h-[330px] sm:w-[420px] sm:h-[420px] rounded-full border border-emerald-400/20 shadow-[0_0_30px_rgba(52,211,153,0.1)]"
+                />
+              </motion.div>
 
-                {/* Synchronized Dynamic Shadow / Floor Glow */}
-                <motion.div
+              {/* Ambient Spectral Particle Motes */}
+              {AMBIENT_MOTES.map((mote) => (
+                <motion.span
+                  key={mote.id}
+                  aria-hidden="true"
+                  style={{ left: mote.x, top: mote.y }}
                   animate={{
-                    scale: [1, 0.82, 1],
-                    opacity: [0.55, 0.24, 0.55],
+                    y: [0, -34, -64],
+                    opacity: [0, 0.9, 0],
+                    scale: [0.6, 1.15, 0.4],
                   }}
                   transition={{
-                    duration: 5,
+                    duration: mote.duration,
+                    delay: mote.delay,
+                    repeat: Infinity,
+                    ease: 'easeOut',
+                  }}
+                  className={`pointer-events-none absolute rounded-full blur-[0.5px] ${mote.size}`}
+                />
+              ))}
+
+              {/* Interactive Click Spectral Shockwave Ripples */}
+              <AnimatePresence>
+                {pulseCount > 0 && (
+                  <motion.div
+                    key={pulseCount}
+                    aria-hidden="true"
+                    initial={{ scale: 0.4, opacity: 0.75 }}
+                    animate={{ scale: 1.7, opacity: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+                    className="pointer-events-none absolute w-64 h-64 sm:w-80 sm:h-80 rounded-full border border-violet-300/60 shadow-[0_0_40px_rgba(167,139,250,0.45)]"
+                  />
+                )}
+              </AnimatePresence>
+
+              {/* Main Large 3D Ghost PNG Logo Subject */}
+              <motion.div
+                style={{
+                  x: ghostShiftX,
+                  y: ghostShiftY,
+                  rotateX,
+                  rotateY,
+                  transformStyle: 'preserve-3d',
+                }}
+                whileTap={{ scale: 0.96 }}
+                className="relative z-10 flex flex-col items-center justify-center"
+              >
+                <motion.div
+                  animate={{
+                    y: [0, -18, 4, -12, 0],
+                    rotateZ: [-2.2, 2.2, -1.2, 1.8, -2.2],
+                    rotateY: [-5, 5, -3, 4, -5],
+                    scale: [1, 1.028, 0.995, 1.02, 1],
+                  }}
+                  transition={{
+                    duration: 7,
+                    repeat: Infinity,
+                    ease: 'easeInOut',
+                  }}
+                  className="relative"
+                >
+                  {/* Chromatic aura bloom tightly hugging the ghost PNG */}
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-8 rounded-full bg-gradient-to-tr from-violet-500/35 via-indigo-400/20 to-emerald-400/25 blur-3xl opacity-80"
+                  />
+
+                  <img
+                    src="/ghost-transparent.png"
+                    alt="Ghostboard Holographic Mascot Logo"
+                    draggable={false}
+                    className="relative z-10 w-64 h-64 sm:w-80 sm:h-80 lg:w-[410px] lg:h-[410px] object-contain drop-shadow-[0_32px_65px_rgba(139,92,246,0.42)]"
+                  />
+                </motion.div>
+
+                {/* Synchronized Floor Levitation Shadow */}
+                <motion.div
+                  animate={{
+                    scale: [1, 0.78, 1.02, 0.84, 1],
+                    opacity: [0.6, 0.25, 0.55, 0.3, 0.6],
+                  }}
+                  transition={{
+                    duration: 7,
                     repeat: Infinity,
                     ease: 'easeInOut',
                   }}
                   aria-hidden="true"
-                  className="w-40 h-5 rounded-full bg-gradient-to-r from-violet-500/45 via-emerald-400/35 to-sky-400/45 blur-xl mt-1"
+                  className="w-48 sm:w-64 h-6 rounded-full bg-gradient-to-r from-violet-500/45 via-emerald-400/30 to-sky-400/40 blur-xl -mt-3"
                 />
               </motion.div>
 
-              {/* Interactive 5-State Image Switcher Pills */}
-              <div className="relative z-10 mt-3 p-1.5 rounded-2xl bg-black/45 border border-white/[0.08] flex flex-wrap sm:flex-nowrap items-center justify-center gap-1">
-                {ghostModes.map((mode, idx) => {
-                  const isSelected = idx === activeModeIndex;
-                  return (
-                    <button
-                      key={mode.id}
-                      type="button"
-                      onClick={() => setActiveModeIndex(idx)}
-                      className={`relative flex-1 min-w-[78px] flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-mono font-medium transition-colors cursor-pointer ${
-                        isSelected ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      {isSelected && (
-                        <motion.span
-                          layoutId="hero-ghost-mode-pill"
-                          transition={SPRING_SNAPPY}
-                          className="absolute inset-0 rounded-xl bg-white/[0.12] border border-white/15 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16)]"
-                        />
-                      )}
-                      <span className="relative z-10 flex items-center gap-1.5">
-                        {mode.icon}
-                        <span>{mode.label}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+              {/* Minimal Parallax Telemetry Badges (Open Floating Glass Pills) */}
+              <motion.div
+                style={{ x: badgeShiftX, y: badgeShiftY }}
+                className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#0c0f16]/75 border border-white/15 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_14px_34px_rgba(0,0,0,0.6)] absolute top-10 left-2 sm:left-4 z-20 pointer-events-none"
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-xs font-mono text-zinc-100">~180ms Edge Stream</span>
+              </motion.div>
 
-            {/* Embedded Spatial PiP Mini-Video Capsule Strip (/public/videos/) */}
-            <SpatialVideoCapsule
-              videos={heroVideos}
-              layoutGroupId="hero-pip-video-tabs"
-              aspectClassName="h-36 sm:h-40"
-            />
+              <motion.div
+                style={{ x: ringShiftX, y: badgeShiftY }}
+                className="hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#0c0f16]/75 border border-white/15 backdrop-blur-xl shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_14px_34px_rgba(0,0,0,0.6)] absolute bottom-16 right-0 sm:right-2 z-20 pointer-events-none"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-violet-300" />
+                <span className="text-xs font-mono text-zinc-100">0% Screen Capture</span>
+              </motion.div>
+            </div>
           </div>
         </div>
       </div>

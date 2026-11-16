@@ -561,9 +561,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
 
   // 2. NON-TAURI DEV / BROWSER FALLBACK (fetch to Next.js API route)
   void (async () => {
-    let accumulated = '';
-    let ttftMs: number | null = null;
-    let model: string | null = null;
+    const ttftMs: number | null = null;
     try {
       const [baseUrl, token] = await Promise.all([detectBackendUrl(), getAccessToken()]);
       const headers: Record<string, string> = {
@@ -597,7 +595,7 @@ export function streamAnswer(req: AnswerRequest, handlers: AnswerStreamHandlers)
         abortSignal: controller.signal,
         handlers,
         emitProgress,
-        defaultModel: 'Gemini 3.5 Flash-Lite',
+        defaultModel: 'Gemini 3.8 Flash',
       });
     } catch {
       if (controller.signal.aborted) return;

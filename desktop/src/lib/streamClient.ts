@@ -191,7 +191,9 @@ export function parseDualStreamDelimiters(rawText: string): {
     /<<<PHASE_2:PILLARS>>>([\s\S]*?)(?:<<<PHASE_3:DEEP_DIVE>>>|<<<END>>>|\[DONE\]|$)/i
   );
   if (pillarsMatch) {
-    const rawPillars = cleanPhaseContent(pillarsMatch[1]);
+    const rawPillars = cleanPhaseContent(pillarsMatch[1])
+      .replace(/([^\n])\s*•\s+/g, '$1\n- ')
+      .replace(/^\s*•\s+/gm, '- ');
     pillars = rawPillars
       .split('\n')
       .map((line) => {

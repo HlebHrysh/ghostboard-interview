@@ -7,25 +7,23 @@ const log = logger.child({ component: 'geminiApi' });
 
 export const FLASH_MODELS = [
   'gemini-3.8-flash',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
   'gemini-3-flash-preview',
   'gemini-flash-lite-latest',
   'gemini-3.1-flash-lite',
-  'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
 
 export const PRO_MODELS = [
   'gemini-3.8-flash',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
   'gemini-3.5-flash',
   'gemini-3-flash-preview',
   'gemini-flash-lite-latest',
   'gemini-3.1-flash-lite',
-  'gemini-2.0-flash',
   'gemini-flash-latest',
 ];
 
@@ -799,19 +797,22 @@ export async function runHedgedStreamRace(
     const primaryModel = prioritizedGemini[geminiIndex++];
     launchedGemini.add(primaryModel);
     void startGeminiContender(primaryModel);
-
-    // Parallel Sub-Second Boost: simultaneously launch low-latency live Gemini Flash contenders
-    // at t=0ms so the first token arrives in ~600-800ms even if primaryModel stalls or rate-limits.
-    for (const fastCandidate of ['gemini-3.5-flash-lite', 'gemini-3-flash-preview', 'gemini-flash-lite-latest']) {
-      if (prioritizedGemini.includes(fastCandidate) && !launchedGemini.has(fastCandidate)) {
-        launchedGemini.add(fastCandidate);
-        void startGeminiContender(fastCandidate);
-      }
-    }
   }
 
+  const pickNextStaggeredModel = (): string | null => {
+    for (const fastCandidate of ['gemini-3.5-flash-lite', 'gemini-3-flash-preview', 'gemini-flash-lite-latest']) {
+      if (prioritizedGemini.includes(fastCandidate) && !launchedGemini.has(fastCandidate)) {
+        return fastCandidate;
+      }
+    }
+    while (geminiIndex < prioritizedGemini.length && launchedGemini.has(prioritizedGemini[geminiIndex])) {
+      geminiIndex++;
+    }
+    return geminiIndex < prioritizedGemini.length ? prioritizedGemini[geminiIndex++] : null;
+  };
+
   const hedgeScheduler = async () => {
-    while (!winnerDeclared && geminiIndex < prioritizedGemini.length) {
+    while (!winnerDeclared && launchedGemini.size < prioritizedGemini.length) {
       await new Promise<void>((resolve) => {
         let timer: NodeJS.Timeout | null = null;
         const finishListener = () => {
@@ -821,7 +822,7 @@ export async function runHedgedStreamRace(
           }
         };
         onContenderFinished = finishListener;
-        // 550ms First-Token Hedge Race: launch secondary contender if primary hasn't yielded first chunk within 550ms
+        // 550ms First-Token Hedge Race: launch 1 staggered fast contender if primary hasn't yielded within 550ms
         timer = setTimeout(() => {
           cleanup();
           resolve();
@@ -833,13 +834,12 @@ export async function runHedgedStreamRace(
         };
       });
 
-      while (geminiIndex < prioritizedGemini.length && launchedGemini.has(prioritizedGemini[geminiIndex])) {
-        geminiIndex++;
-      }
-      if (!winnerDeclared && geminiIndex < prioritizedGemini.length) {
-        const nextModel = prioritizedGemini[geminiIndex++];
+      const nextModel = !winnerDeclared ? pickNextStaggeredModel() : null;
+      if (nextModel) {
         launchedGemini.add(nextModel);
         void startGeminiContender(nextModel);
+      } else {
+        break;
       }
     }
 
@@ -847,7 +847,7 @@ export async function runHedgedStreamRace(
       // Never-Dead Cooldown Breaker: if all models are on cooldown or fail on the first pass,
       // immediately clear all cooldowns and execute one direct retry on fast fallback model
       resetModelHealth();
-      const recoveryModel = 'gemini-3.5-flash-lite';
+      const recoveryModel = launchedGemini.has('gemini-3.8-flash') ? 'gemini-3.5-flash-lite' : FLASH_MODELS[0];
       await startGeminiContender(recoveryModel, true);
       if (!winnerDeclared && activeContendersCount === 0) {
         resolveWinner(null);

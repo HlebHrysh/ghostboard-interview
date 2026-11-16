@@ -5,6 +5,7 @@ import { Mic, Zap, Eye } from "lucide-react";
 import type { HomeTranslations } from "@/lib/homeI18n";
 import { Reveal } from "./Reveal";
 import { LuminousBorderCard } from "@/components/ui/LuminousBorderCard";
+import { SpatialSquircleBadge } from "@/components/ui/SpatialSquircleBadge";
 
 interface Props {
   t: HomeTranslations["workflow"];
@@ -32,18 +33,14 @@ export function WorkflowGrid({ t }: Props) {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 relative z-10">
         <Reveal className="text-center max-w-2xl mx-auto mb-12 sm:mb-16">
-          {/* 3D Holographic Ghost Mascot Animation */}
-          <div className="relative mx-auto w-32 h-32 sm:w-40 sm:h-40 mb-6 overflow-hidden rounded-[1.9rem] sm:rounded-[2.2rem] border border-white/10 shadow-[0_0_30px_rgba(255,255,255,0.05)]">
-            <video
-              src="/videos/ghost2.mp4"
-              autoPlay
-              loop
-              muted
-              playsInline
-              preload="auto"
-              className="w-full h-full object-cover"
-            />
-          </div>
+          {/* 3D Holographic Ghost Squircle Emblem */}
+          <SpatialSquircleBadge
+            src="/videos/ghost2.mp4"
+            accent="violet"
+            size="hero"
+            centered
+            className="mb-6"
+          />
 
           <div className="shimmer-pill inline-flex items-center px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-xs text-zinc-300 mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse mr-2" />

@@ -4,7 +4,10 @@ pub mod prompt;
 
 use crate::ipc::events::HudEvent;
 use crate::ipc::HudChannelState;
-use crate::llm::client::{LlmConfig, LlmProviderType, LlmStreamOutcome, SpeculativeLlmClient};
+use crate::llm::client::{
+    LlmCascadeMode, LlmConfig, LlmProviderType, LlmStreamOutcome, SpeculativeLlmClient,
+    GEMINI_FLASH_MODELS,
+};
 use crate::llm::eot::{EotDetector, EotTrigger};
 use crate::llm::prompt::build_system_prompt_with_options;
 use eventsource_stream::Eventsource;
@@ -23,6 +26,7 @@ pub struct LlmOrchestrator {
     active_cancellation: Arc<Mutex<Option<(u64, CancellationToken)>>>,
     generation: Arc<AtomicU64>,
     config: Arc<Mutex<LlmConfig>>,
+    cascade_mode: Arc<Mutex<LlmCascadeMode>>,
     candidate_profile: Arc<Mutex<Option<String>>>,
     concise_mode: Arc<Mutex<bool>>,
     output_language: Arc<Mutex<Option<String>>>,
@@ -42,7 +46,7 @@ impl LlmOrchestrator {
         crate::load_env_files();
         // Detect available API keys in environment: GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY
         let (provider, api_key, model) = if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
-            (LlmProviderType::Gemini, k, "gemini-3.5-flash-lite".to_string())
+            (LlmProviderType::Gemini, k, GEMINI_FLASH_MODELS[0].to_string())
         } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Groq, k, "llama-3.3-70b-versatile".to_string())
         } else if let Some(k) = std::env::var("OPENAI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -50,7 +54,7 @@ impl LlmOrchestrator {
         } else if let Some(k) = std::env::var("ANTHROPIC_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
             (LlmProviderType::Anthropic, k, "claude-3-5-haiku-20241022".to_string())
         } else {
-            (LlmProviderType::Gemini, String::new(), "gemini-3.5-flash-lite".to_string())
+            (LlmProviderType::Gemini, String::new(), GEMINI_FLASH_MODELS[0].to_string())
         };
 
         Self {
@@ -63,7 +67,9 @@ impl LlmOrchestrator {
                 api_key,
                 model,
                 endpoint_url: None,
+                cascade_mode: LlmCascadeMode::HedgedRace,
             })),
+            cascade_mode: Arc::new(Mutex::new(LlmCascadeMode::HedgedRace)),
             candidate_profile: Arc::new(Mutex::new(None)),
             concise_mode: Arc::new(Mutex::new(false)),
             output_language: Arc::new(Mutex::new(None)),
@@ -73,10 +79,22 @@ impl LlmOrchestrator {
         }
     }
 
-    /// Sets the LLM provider configuration.
-    pub async fn set_config(&self, config: LlmConfig) {
+    /// Sets the LLM provider configuration, preserving any active cascade mode preference.
+    pub async fn set_config(&self, mut config: LlmConfig) {
+        let mode = *self.cascade_mode.lock().await;
+        config.cascade_mode = mode;
         let mut conf = self.config.lock().await;
         *conf = config;
+    }
+
+    /// Sets the preferred cascade mode ("hedged_race", "gemini_flash", "groq_llama").
+    pub async fn set_cascade_mode(&self, mode: LlmCascadeMode) {
+        {
+            let mut m = self.cascade_mode.lock().await;
+            *m = mode;
+        }
+        let mut conf = self.config.lock().await;
+        conf.cascade_mode = mode;
     }
 
     /// Sets candidate contextual background profile.
@@ -178,7 +196,7 @@ impl LlmOrchestrator {
             if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                 config.provider = LlmProviderType::Gemini;
                 config.api_key = k;
-                config.model = "gemini-3.5-flash-lite".to_string();
+                config.model = GEMINI_FLASH_MODELS[0].to_string();
                 let mut conf_lock = self.config.lock().await;
                 *conf_lock = config.clone();
             } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -189,6 +207,7 @@ impl LlmOrchestrator {
                 *conf_lock = config.clone();
             }
         }
+        config.cascade_mode = *self.cascade_mode.lock().await;
 
         let candidate_profile = {
             let p_lock = self.candidate_profile.lock().await;
@@ -449,7 +468,7 @@ impl LlmOrchestrator {
             if let Some(k) = std::env::var("GEMINI_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
                 config.provider = LlmProviderType::Gemini;
                 config.api_key = k;
-                config.model = "gemini-3.5-flash-lite".to_string();
+                config.model = GEMINI_FLASH_MODELS[0].to_string();
                 let mut conf_lock = self.config.lock().await;
                 *conf_lock = config.clone();
             } else if let Some(k) = std::env::var("GROQ_API_KEY").ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -460,6 +479,7 @@ impl LlmOrchestrator {
                 *conf_lock = config.clone();
             }
         }
+        config.cascade_mode = *self.cascade_mode.lock().await;
 
         let recent_turns = if let Some(ref history) = history_dto {
             let turns = crate::llm::prompt::normalize_history_turns(history);
@@ -680,8 +700,8 @@ async fn stream_from_local_nextjs_backend(
     }
 
     if cfg!(debug_assertions) {
-        push_endpoint(&mut urls, "http://localhost:3000/api/ai/dual-stream");
         push_endpoint(&mut urls, "http://localhost:3001/api/ai/dual-stream");
+        push_endpoint(&mut urls, "http://localhost:3000/api/ai/dual-stream");
     }
     push_endpoint(&mut urls, "https://ghostboard.ai/api/ai/dual-stream");
 
@@ -741,12 +761,8 @@ async fn stream_from_local_nextjs_backend(
             req = req.header("Authorization", format!("Bearer {}", token));
         }
 
-        match req
-            .json(&payload)
-            .send()
-            .await
-        {
-            Ok(resp) if resp.status().is_success() => {
+        match tokio::time::timeout(std::time::Duration::from_millis(4500), req.json(&payload).send()).await {
+            Ok(Ok(resp)) if resp.status().is_success() => {
                 response_opt = Some(resp);
                 break;
             }
@@ -777,7 +793,7 @@ async fn stream_from_local_nextjs_backend(
                         if data == "[DONE]" || data == "<<<END>>>" {
                             break;
                         }
-                        if event.event == "chunk" {
+                        if event.event == "chunk" || event.event == "message" || event.event.is_empty() {
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(data) {
                                 if let Some(txt) = v.get("text").and_then(|t| t.as_str()) {
                                     full_text.push_str(txt);
@@ -789,7 +805,10 @@ async fn stream_from_local_nextjs_backend(
                                     is_first = false;
                                 }
                             }
-                        } else if event.event == "complete" {
+                        } else if event.event == "error" {
+                            tracing::warn!(target: "ghostboard::llm", payload = %data, "Local backend SSE emitted error event");
+                            break;
+                        } else if event.event == "complete" || event.event == "done" {
                             break;
                         }
                     }

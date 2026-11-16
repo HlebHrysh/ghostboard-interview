@@ -7,19 +7,22 @@ use tokio_util::sync::CancellationToken;
 
 pub const GEMINI_FLASH_MODELS: &[&str] = &[
     "gemini-3.8-flash",
-    "gemini-2.5-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
     "gemini-3-flash-preview",
     "gemini-flash-lite-latest",
     "gemini-3.1-flash-lite",
-    "gemini-2.0-flash",
     "gemini-flash-latest",
 ];
 
 pub const HEDGE_STAGGER_MS: u64 = 550;
+const PREFERRED_FAST_MODEL_TTL: Duration = Duration::from_secs(180);
 
 static CIRCUIT_BREAKER: std::sync::OnceLock<StdMutex<HashMap<String, std::time::Instant>>> =
+    std::sync::OnceLock::new();
+
+static PREFERRED_FAST_MODEL: std::sync::OnceLock<StdMutex<Option<(String, u64, std::time::Instant)>>> =
     std::sync::OnceLock::new();
 
 static MODELS_REJECTING_THINKING: std::sync::OnceLock<StdMutex<HashSet<String>>> =
@@ -66,6 +69,7 @@ pub fn mark_model_cooldown(model: &str, duration: Duration) {
     if let Ok(mut guard) = cb.lock() {
         guard.insert(model.to_string(), std::time::Instant::now() + duration);
     }
+    clear_preferred_fast_model_if(model);
 }
 
 /// Clears cooldown status for a model upon successful connection.
@@ -73,6 +77,58 @@ pub fn clear_model_cooldown(model: &str) {
     let cb = CIRCUIT_BREAKER.get_or_init(|| StdMutex::new(HashMap::new()));
     if let Ok(mut guard) = cb.lock() {
         guard.remove(model);
+    }
+}
+
+/// Records the fastest healthy Gemini model so subsequent turns start sub-second cleanly.
+pub fn record_model_success(model: &str, latency_ms: u64) {
+    if !model.starts_with("gemini") {
+        return;
+    }
+    clear_model_cooldown(model);
+    let slot = PREFERRED_FAST_MODEL.get_or_init(|| StdMutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        let should_promote = match &*guard {
+            None => true,
+            Some((cur, cur_ms, at)) => {
+                at.elapsed() >= PREFERRED_FAST_MODEL_TTL
+                    || cur == model
+                    || latency_ms <= cur_ms.saturating_add(150)
+                    || model == GEMINI_FLASH_MODELS[0]
+            }
+        };
+        if should_promote {
+            *guard = Some((model.to_string(), latency_ms, std::time::Instant::now()));
+        }
+    }
+}
+
+/// Returns the cached fastest healthy Gemini model if fresh (< 180s) and not cooling down.
+pub fn get_preferred_fast_model() -> Option<String> {
+    let slot = PREFERRED_FAST_MODEL.get_or_init(|| StdMutex::new(None));
+    if let Ok(guard) = slot.lock() {
+        if let Some((model, _, at)) = &*guard {
+            if at.elapsed() < PREFERRED_FAST_MODEL_TTL && !is_model_cooling_down(model) {
+                return Some(model.clone());
+            }
+        }
+    }
+    None
+}
+
+pub fn clear_preferred_fast_model_if(model: &str) {
+    let slot = PREFERRED_FAST_MODEL.get_or_init(|| StdMutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        if guard.as_ref().map_or(false, |(m, _, _)| m == model) {
+            *guard = None;
+        }
+    }
+}
+
+pub fn clear_preferred_fast_model() {
+    let slot = PREFERRED_FAST_MODEL.get_or_init(|| StdMutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = None;
     }
 }
 
@@ -103,6 +159,35 @@ pub fn resolve_available_models(candidates: &[String]) -> Vec<String> {
     available
 }
 
+/// Builds an ordered Gemini candidate list with `gemini-3.8-flash` primary,
+/// optional `config_model` preference (ignoring deprecated 2.x), and cached fast winner promotion.
+pub fn get_prioritized_gemini_models(config_model: &str) -> Vec<String> {
+    let mut gemini_models: Vec<String> = Vec::new();
+    for candidate in GEMINI_FLASH_MODELS {
+        if !gemini_models.iter().any(|m| m == candidate) {
+            gemini_models.push((*candidate).to_string());
+        }
+    }
+
+    let trimmed = config_model.trim();
+    let is_deprecated = trimmed.starts_with("gemini-2.5") || trimmed.starts_with("gemini-2.0");
+    if !trimmed.is_empty() && trimmed.starts_with("gemini") && !is_deprecated {
+        if let Some(pos) = gemini_models.iter().position(|m| m == trimmed) {
+            gemini_models.remove(pos);
+        }
+        gemini_models.insert(0, trimmed.to_string());
+    }
+
+    if let Some(fast) = get_preferred_fast_model() {
+        if let Some(pos) = gemini_models.iter().position(|m| m == &fast) {
+            gemini_models.remove(pos);
+        }
+        gemini_models.insert(0, fast);
+    }
+
+    gemini_models
+}
+
 /// Builds request payload for Google Gemini models, selectively configuring thinkingConfig.
 pub fn build_gemini_request_body(
     system_prompt: &str,
@@ -110,12 +195,6 @@ pub fn build_gemini_request_body(
     model: &str,
     include_thinking: bool,
 ) -> serde_json::Value {
-    let combined_prompt = if system_prompt.is_empty() {
-        user_prompt.to_string()
-    } else {
-        format!("{}\n\n{}", system_prompt, user_prompt)
-    };
-
     let mut gen_config = serde_json::json!({
         "temperature": 0.3,
         "maxOutputTokens": 850
@@ -126,17 +205,27 @@ pub fn build_gemini_request_body(
         gen_config["thinkingConfig"] = serde_json::json!({ "thinkingBudget": 0 });
     }
 
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "contents": [
             {
                 "role": "user",
                 "parts": [
-                    { "text": combined_prompt }
+                    { "text": user_prompt }
                 ]
             }
         ],
         "generationConfig": gen_config
-    })
+    });
+
+    if !system_prompt.trim().is_empty() {
+        body["systemInstruction"] = serde_json::json!({
+            "parts": [
+                { "text": system_prompt }
+            ]
+        });
+    }
+
+    body
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -147,21 +236,41 @@ pub enum LlmProviderType {
     Gemini,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LlmCascadeMode {
+    #[default]
+    HedgedRace,
+    GeminiOnly,
+    GroqOnly,
+}
+
+impl LlmCascadeMode {
+    pub fn parse(raw: Option<&str>) -> Self {
+        match raw.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+            Some("gemini_flash") | Some("gemini_only") | Some("gemini") => Self::GeminiOnly,
+            Some("groq_llama") | Some("groq_only") | Some("groq") => Self::GroqOnly,
+            _ => Self::HedgedRace,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
     pub provider: LlmProviderType,
     pub api_key: String,
     pub model: String,
     pub endpoint_url: Option<String>,
+    pub cascade_mode: LlmCascadeMode,
 }
 
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
-            provider: LlmProviderType::Groq,
+            provider: LlmProviderType::Gemini,
             api_key: String::new(),
-            model: "llama-3.3-70b-versatile".to_string(),
+            model: GEMINI_FLASH_MODELS[0].to_string(),
             endpoint_url: None,
+            cascade_mode: LlmCascadeMode::HedgedRace,
         }
     }
 }
@@ -321,6 +430,7 @@ async fn send_gemini_request(
     );
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(reqwest::header::ACCEPT, HeaderValue::from_static("text/event-stream"));
     if let Ok(hv) = HeaderValue::from_str(api_key.trim()) {
         headers.insert("x-goog-api-key", hv);
     }
@@ -345,7 +455,10 @@ async fn send_gemini_request(
         return Ok(resp);
     }
 
-    if status.as_u16() == 400 {
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Err(format!("Model {} auth HTTP {}: {}", model, status, err_text));
+    } else if status.as_u16() == 400 {
         let err_text = resp.text().await.unwrap_or_default();
         let is_dead_key = err_text.contains("API_KEY_INVALID") || err_text.contains("API key not valid");
         if include_thinking && !is_dead_key {
@@ -361,26 +474,37 @@ async fn send_gemini_request(
                 _ = cancellation_token.cancelled() => return Err("Cancelled".to_string()),
                 res = tokio::time::timeout(Duration::from_millis(5000), retry_req) => res
             };
-            if let Ok(Ok(retry_resp)) = retry_res {
-                let retry_status = retry_resp.status();
-                if retry_status.is_success() {
-                    clear_model_cooldown(model);
-                    return Ok(retry_resp);
-                } else if retry_status.as_u16() == 429 || retry_status.as_u16() == 503 {
-                    mark_model_cooldown(model, Duration::from_secs(8));
-                    return Err(format!("Model {} HTTP {}", model, retry_status));
-                } else if retry_status.as_u16() == 404 {
-                    mark_model_cooldown(model, Duration::from_secs(120));
-                    return Err(format!("Model {} HTTP 404 Not Found", model));
+            match retry_res {
+                Ok(Ok(retry_resp)) => {
+                    let retry_status = retry_resp.status();
+                    if retry_status.is_success() {
+                        clear_model_cooldown(model);
+                        return Ok(retry_resp);
+                    } else if retry_status.as_u16() == 429 || retry_status.as_u16() == 503 {
+                        mark_model_cooldown(model, Duration::from_secs(12));
+                        return Err(format!("Model {} HTTP {}", model, retry_status));
+                    } else if retry_status.as_u16() == 404 {
+                        mark_model_cooldown(model, Duration::from_secs(300));
+                        return Err(format!("Model {} HTTP 404 Not Found", model));
+                    } else {
+                        let retry_err = retry_resp.text().await.unwrap_or_default();
+                        mark_model_cooldown(model, Duration::from_secs(30));
+                        return Err(format!("Model {} retry HTTP {}: {}", model, retry_status, retry_err));
+                    }
+                }
+                Ok(Err(e)) => return Err(e.without_url().to_string()),
+                Err(_) => {
+                    mark_model_cooldown(model, Duration::from_secs(20));
+                    return Err(format!("Model {} retry timed out after 5000ms", model));
                 }
             }
         }
         return Err(format!("Model {} HTTP 400: {}", model, err_text));
     } else if status.as_u16() == 429 || status.as_u16() == 503 {
-        mark_model_cooldown(model, Duration::from_secs(8));
+        mark_model_cooldown(model, Duration::from_secs(12));
         return Err(format!("Model {} HTTP {}", model, status));
     } else if status.as_u16() == 404 {
-        mark_model_cooldown(model, Duration::from_secs(120));
+        mark_model_cooldown(model, Duration::from_secs(300));
         return Err(format!("Model {} HTTP 404 Not Found", model));
     } else {
         let err_text = resp.text().await.unwrap_or_default();
@@ -566,19 +690,8 @@ impl SpeculativeLlmClient {
                 return Ok(LlmStreamOutcome::Cancelled);
             }
 
-            let mut gemini_models: Vec<String> = Vec::new();
-            for candidate in GEMINI_FLASH_MODELS {
-                if !gemini_models.iter().any(|m| m == candidate) {
-                    gemini_models.push((*candidate).to_string());
-                }
-            }
-            if !config.model.trim().is_empty()
-                && config.model.starts_with("gemini")
-                && config.model.trim() != "gemini-3.5-flash"
-                && !gemini_models.iter().any(|m| m == config.model.trim())
-            {
-                gemini_models.insert(0, config.model.trim().to_string());
-            }
+            let race_start = tokio::time::Instant::now();
+            let gemini_models = get_prioritized_gemini_models(&config.model);
 
             // Never-Dead Cooldown Bypass: if every model is on cooldown, automatically clear cooldown state
             let available_models = resolve_available_models(&gemini_models);
@@ -597,12 +710,16 @@ impl SpeculativeLlmClient {
             let mut gemini_index: usize = 0;
             let mut winner_chunk: Option<ContenderFirstChunk> = None;
 
-            let groq_key_opt = std::env::var("GROQ_API_KEY")
-                .ok()
-                .map(|k| k.trim().to_string())
-                .filter(|k| !k.is_empty());
+            let groq_key_opt = if config.cascade_mode == LlmCascadeMode::GeminiOnly {
+                None
+            } else {
+                std::env::var("GROQ_API_KEY")
+                    .ok()
+                    .map(|k| k.trim().to_string())
+                    .filter(|k| !k.is_empty())
+            };
 
-            // 1. If Groq is available, start it in parallel at t=0ms
+            // 1. If Groq is available and cascade allows it, start in parallel (or sole leader for GroqOnly)
             if let Some(ref g_key) = groq_key_opt {
                 let client = self.client.clone();
                 let tx_c = tx.clone();
@@ -691,41 +808,62 @@ impl SpeculativeLlmClient {
                 });
             };
 
-            // 2. Launch primary Gemini model + sub-second Flash-Lite/Flash-3 contenders at t=0ms
+            // 2. Launch ONLY primary Gemini model at t=0ms (avoid 4x simultaneous RPM bursts),
+            //    unless cascade is GroqOnly and Groq is actively running as sole primary.
             let mut launched_models: HashSet<String> = HashSet::new();
-            if gemini_index < available_models.len() {
+            let defer_gemini_for_groq =
+                config.cascade_mode == LlmCascadeMode::GroqOnly && groq_key_opt.is_some();
+            if !defer_gemini_for_groq && gemini_index < available_models.len() {
                 let m = available_models[gemini_index].clone();
                 gemini_index += 1;
                 launched_models.insert(m.clone());
                 active_contenders += 1;
-                tracing::info!(target: "ghostboard::llm", model = %m, "Starting primary Gemini model in hedged race");
+                tracing::info!(target: "ghostboard::llm", model = %m, "Starting primary Gemini model at t=0ms");
                 spawn_gemini_contender(m, tx.clone(), race_cancel.clone());
-
-                for fast_candidate in ["gemini-3.5-flash-lite", "gemini-3-flash-preview", "gemini-flash-lite-latest"] {
-                    if available_models.iter().any(|am| am == fast_candidate)
-                        && !launched_models.contains(fast_candidate)
-                    {
-                        let fast_m = fast_candidate.to_string();
-                        launched_models.insert(fast_m.clone());
-                        active_contenders += 1;
-                        tracing::info!(target: "ghostboard::llm", model = %fast_m, "Starting parallel sub-second Gemini contender at t=0ms");
-                        spawn_gemini_contender(fast_m, tx.clone(), race_cancel.clone());
-                    }
-                }
             }
 
-            // 3. Staggered Hedged Race loop: 550ms timer launches secondary model in parallel if primary
-            // has not yielded its first valid text chunk within 550ms, or immediately on early failure.
+            // Pick the next staggered Gemini hedge: prefer a proven sub-second candidate first when stalling
+            let pick_next_gemini_model = |available: &[String],
+                                          launched: &HashSet<String>,
+                                          cursor: &mut usize,
+                                          prefer_fast_tier: bool|
+             -> Option<String> {
+                if prefer_fast_tier {
+                    for fast_candidate in [
+                        "gemini-3.5-flash-lite",
+                        "gemini-3-flash-preview",
+                        "gemini-flash-lite-latest",
+                    ] {
+                        if available.iter().any(|m| m == fast_candidate)
+                            && !launched.contains(fast_candidate)
+                        {
+                            return Some(fast_candidate.to_string());
+                        }
+                    }
+                }
+                while *cursor < available.len() && launched.contains(&available[*cursor]) {
+                    *cursor += 1;
+                }
+                if *cursor < available.len() {
+                    let next_m = available[*cursor].clone();
+                    *cursor += 1;
+                    Some(next_m)
+                } else {
+                    None
+                }
+            };
+
+            // 3. Staggered Hedged Race loop: 550ms timer launches 1 fast fallback contender if primary
+            //    has not yielded its first valid text chunk within 550ms, or immediately on early failure.
+            let initial_hedge_ms = if defer_gemini_for_groq { 1800 } else { HEDGE_STAGGER_MS };
             let mut next_hedge_deadline =
-                tokio::time::Instant::now() + Duration::from_millis(HEDGE_STAGGER_MS);
+                tokio::time::Instant::now() + Duration::from_millis(initial_hedge_ms);
 
             while active_contenders > 0 || gemini_index < available_models.len() {
-                while gemini_index < available_models.len()
-                    && launched_models.contains(&available_models[gemini_index])
-                {
-                    gemini_index += 1;
-                }
-                let hedge_sleep = if gemini_index < available_models.len() {
+                let has_unlaunched = available_models
+                    .iter()
+                    .any(|m| !launched_models.contains(m));
+                let hedge_sleep = if has_unlaunched {
                     tokio::time::sleep_until(next_hedge_deadline)
                 } else {
                     tokio::time::sleep(Duration::from_secs(3600))
@@ -737,17 +875,10 @@ impl SpeculativeLlmClient {
                         return Ok(LlmStreamOutcome::Cancelled);
                     }
                     _ = hedge_sleep => {
-                        while gemini_index < available_models.len()
-                            && launched_models.contains(&available_models[gemini_index])
-                        {
-                            gemini_index += 1;
-                        }
-                        if gemini_index < available_models.len() {
-                            let next_m = available_models[gemini_index].clone();
-                            gemini_index += 1;
+                        if let Some(next_m) = pick_next_gemini_model(&available_models, &launched_models, &mut gemini_index, true) {
                             launched_models.insert(next_m.clone());
                             active_contenders += 1;
-                            tracing::info!(target: "ghostboard::llm", model = %next_m, "550ms hedge timer fired without first token, launching secondary contender in parallel");
+                            tracing::info!(target: "ghostboard::llm", model = %next_m, "550ms hedge timer fired without first token, launching staggered fallback contender");
                             spawn_gemini_contender(next_m, tx.clone(), race_cancel.clone());
                             next_hedge_deadline = tokio::time::Instant::now() + Duration::from_millis(HEDGE_STAGGER_MS);
                         }
@@ -755,7 +886,11 @@ impl SpeculativeLlmClient {
                     msg = rx.recv() => {
                         match msg {
                             Some(ContenderMsg::FirstChunk(winner)) => {
-                                tracing::info!(target: "ghostboard::llm", model = %winner.model, "Hedged race won on first valid text chunk; aborting slower streams");
+                                let elapsed_ms = race_start.elapsed().as_millis() as u64;
+                                tracing::info!(target: "ghostboard::llm", model = %winner.model, ttft_ms = elapsed_ms, "Hedged race won on first valid text chunk; aborting slower streams");
+                                if winner.provider == LlmProviderType::Gemini {
+                                    record_model_success(&winner.model, elapsed_ms);
+                                }
                                 race_cancel.cancel();
                                 active_provider = winner.provider;
                                 winner_chunk = Some(winner);
@@ -763,18 +898,12 @@ impl SpeculativeLlmClient {
                             }
                             Some(ContenderMsg::Failed { model, error: e }) => {
                                 tracing::warn!(target: "ghostboard::llm", model = %model, error = %e, "Hedged contender failed");
+                                clear_preferred_fast_model_if(&model);
                                 if active_contenders > 0 {
                                     active_contenders -= 1;
                                 }
-                                while gemini_index < available_models.len()
-                                    && launched_models.contains(&available_models[gemini_index])
-                                {
-                                    gemini_index += 1;
-                                }
                                 // On early error (e.g. 404/429/503), launch next backup contender immediately
-                                if gemini_index < available_models.len() {
-                                    let next_m = available_models[gemini_index].clone();
-                                    gemini_index += 1;
+                                if let Some(next_m) = pick_next_gemini_model(&available_models, &launched_models, &mut gemini_index, false) {
                                     launched_models.insert(next_m.clone());
                                     active_contenders += 1;
                                     tracing::info!(target: "ghostboard::llm", model = %next_m, "Early contender failure, launching next candidate immediately");
@@ -789,7 +918,7 @@ impl SpeculativeLlmClient {
             }
 
             // 4. Never-Dead Cooldown Breaker: if all models are on cooldown or failed,
-            // call clear_all_model_cooldowns() and execute 1 direct retry on fast fallback model with simplified payload (include_thinking: false)
+            // call clear_all_model_cooldowns() and execute 1 direct retry without thinkingConfig
             if let Some(winner) = winner_chunk {
                 initial_deltas = winner.first_deltas;
                 initial_line_buffer = winner.line_buffer;
@@ -800,8 +929,12 @@ impl SpeculativeLlmClient {
                 }
                 tracing::warn!(target: "ghostboard::llm", "All candidates exhausted, triggering Never-Dead Cooldown Breaker on fast fallback model");
                 clear_all_model_cooldowns();
-                let primary = "gemini-3.5-flash-lite".to_string();
-                match send_gemini_request(&self.client, &primary, &config.api_key, system_prompt, user_prompt, false, &cancellation_token).await {
+                let recovery_model = if launched_models.contains("gemini-3.8-flash") {
+                    "gemini-3.5-flash-lite".to_string()
+                } else {
+                    GEMINI_FLASH_MODELS[0].to_string()
+                };
+                match send_gemini_request(&self.client, &recovery_model, &config.api_key, system_prompt, user_prompt, false, &cancellation_token).await {
                     Ok(resp) => {
                         active_provider = LlmProviderType::Gemini;
                         resp
@@ -1089,10 +1222,13 @@ mod tests {
     fn test_never_dead_cooldown_bypass_and_thinking_rejection_cache() {
         clear_all_model_cooldowns();
         clear_models_rejecting_thinking();
+        clear_preferred_fast_model();
 
         let candidates: Vec<String> = GEMINI_FLASH_MODELS.iter().map(|s| s.to_string()).collect();
         assert_eq!(candidates[0], "gemini-3.8-flash");
-        assert_eq!(candidates[1], "gemini-2.5-flash");
+        assert_eq!(candidates[1], "gemini-3.6-flash");
+        assert!(!candidates.contains(&"gemini-2.5-flash".to_string()));
+        assert!(!candidates.contains(&"gemini-2.0-flash".to_string()));
         assert!(candidates.contains(&"gemini-flash-latest".to_string()));
         assert_eq!(HEDGE_STAGGER_MS, 550);
 
@@ -1111,7 +1247,22 @@ mod tests {
         let body_rejected = build_gemini_request_body("Sys", "Usr", "gemini-flash-latest", true);
         assert!(body_rejected["generationConfig"].get("thinkingConfig").is_none());
 
+        // Fast model promotion + cooldown clearing + cascade parsing
+        record_model_success("gemini-3.5-flash-lite", 620);
+        assert_eq!(get_preferred_fast_model().as_deref(), Some("gemini-3.5-flash-lite"));
+        let prioritized = get_prioritized_gemini_models("gemini-2.5-flash");
+        assert_eq!(prioritized[0], "gemini-3.5-flash-lite");
+        assert_eq!(prioritized[1], "gemini-3.8-flash");
+
+        mark_model_cooldown("gemini-3.5-flash-lite", Duration::from_secs(12));
+        assert_eq!(get_preferred_fast_model(), None);
+
+        assert_eq!(LlmCascadeMode::parse(Some("gemini_flash")), LlmCascadeMode::GeminiOnly);
+        assert_eq!(LlmCascadeMode::parse(Some("groq_llama")), LlmCascadeMode::GroqOnly);
+        assert_eq!(LlmCascadeMode::parse(Some("hedged_race")), LlmCascadeMode::HedgedRace);
+
         clear_models_rejecting_thinking();
         clear_all_model_cooldowns();
+        clear_preferred_fast_model();
     }
 }

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronUp, EyeOff, Languages, Pause, Zap, LogOut, User, Code2, Ghost } from 'lucide-react';
+import { ChevronDown, ChevronUp, Languages, Pause, Zap, LogOut, User, Code2, Ghost } from 'lucide-react';
 import type { InterviewQAItem } from '@/types/interview';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getLuxTranslations } from '@/lib/luxI18n';
@@ -44,7 +44,6 @@ interface EyelineNotchProps {
   onAiLanguageChange?: (mode: AiLanguageMode) => void;
   onToggleFreeze: () => void;
   onManualReconnect: () => void;
-  onPanic: () => void;
   onScreenshot?: () => void;
   targetStack?: string;
   onExitSession?: () => void;
@@ -68,7 +67,6 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
   onAiLanguageChange,
   onToggleFreeze,
   onManualReconnect,
-  onPanic,
   onScreenshot,
   targetStack = 'React / Next.js',
   onExitSession,
@@ -127,18 +125,13 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
         onToggleFreeze();
         return;
       }
-      if ((e.key === 'Escape' || e.key === 'F12') && !e.defaultPrevented) {
-        e.preventDefault();
-        onPanic();
-        return;
-      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
       if (/^[1-9]$/.test(e.key)) {
         setOpacityPct(Math.round(10 + ((Number(e.key) - 1) * 85) / 8));
       }
     },
-    [onPanic, onScreenshot, onToggleFreeze]
+    [onScreenshot, onToggleFreeze]
   );
 
   useEffect(() => {
@@ -270,17 +263,6 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
               <Pause className="h-3.5 w-3.5" />
             </motion.button>
 
-            <motion.button
-              type="button"
-              whileTap={{ scale: 0.92 }}
-              transition={LUX_SPRING}
-              onClick={onPanic}
-              className="cursor-pointer rounded-full p-1.5 text-zinc-400 transition-colors hover:bg-rose-400/15 hover:text-rose-300"
-              title={`${t.panic} (Esc / F12)`}
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-            </motion.button>
-
             {activeQA && (
               <motion.button
                 type="button"
@@ -363,10 +345,6 @@ export const EyelineNotch: React.FC<EyelineNotchProps> = ({
                   <span className="flex items-center gap-1.5">
                     <KbdObsidian>1–9</KbdObsidian>
                     {t.kbd.opacity} · {opacityPct}%
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <KbdObsidian>Esc</KbdObsidian>
-                    {t.kbd.panic}
                   </span>
                 </div>
               </div>

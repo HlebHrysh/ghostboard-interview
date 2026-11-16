@@ -33,7 +33,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Зупиніть час на інтерв'ю",
-        "1.4С GEMINI 2.5 FLASH",
+        "1.4С GEMINI 3.8 FLASH",
         "SCREEN OCR · Аналіз коду за F9",
         "116+ IT-ФОНЕТИЧНИХ ПРАВИЛ",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC]",
@@ -55,7 +55,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Як це виглядає під час дзвінка",
       "desc": "Натисніть SPACE або кнопку Freeze Mode — відповіді фіксуються, поки ви спокійно читаєте. ШІ продовжує слухати у фоні.",
       "f1": "Deepgram STT розпізнає за 0.4с",
-      "f2": "Gemini 2.5 Flash генерує за 1.35с",
+      "f2": "Gemini 3.8 Flash генерує за 1.35с",
       "f3": "Freeze Mode [Space] — пауза без паніки",
       "f4": "116+ IT-фонетичних правил нормалізації",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -64,7 +64,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Запитання тімліда · Python & DB · розпізнано за 0.4с",
       "question_text": "«Як у PostgreSQL працює MVCC при високому навантаженні на UPDATE, і чим небезпечний table bloat у з'єднанні з autovacuum?»",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35с",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35с",
       "level": "SENIOR L5",
       "lead": "При UPDATE у PostgreSQL рядок не перезаписується — створюється нова версія кортежу (dead tuple):",
       "points": [
@@ -225,7 +225,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -247,7 +247,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -256,7 +256,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -417,7 +417,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -439,7 +439,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -448,7 +448,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -609,7 +609,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -631,7 +631,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -640,7 +640,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -801,7 +801,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -823,7 +823,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -832,7 +832,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -993,7 +993,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -1015,7 +1015,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -1024,7 +1024,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -1185,7 +1185,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -1207,7 +1207,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -1216,7 +1216,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -1377,7 +1377,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -1399,7 +1399,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -1408,7 +1408,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -1569,7 +1569,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -1591,7 +1591,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -1600,7 +1600,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [
@@ -1761,7 +1761,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
     "tickers": {
       "t1": [
         "FREEZE MODE · Stop time during interviews",
-        "1.4S GEMINI 2.5 FLASH",
+        "1.4S GEMINI 3.8 FLASH",
         "SCREEN OCR · Instant code analysis with F9",
         "116+ IT PHONETIC NORMALIZATION RULES",
         "PRIVACY SHIELD · ШВИДКИЙ ФОКУС [ESC] TERMINAL",
@@ -1783,7 +1783,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "title": "Live Call Experience",
       "desc": "Press SPACE or toggle Freeze Mode — answers lock in place while you deliver clearly to camera. AI continues listening in the background.",
       "f1": "Deepgram STT transcribes in 0.4s",
-      "f2": "Gemini 2.5 Flash answers in 1.35s",
+      "f2": "Gemini 3.8 Flash answers in 1.35s",
       "f3": "Freeze Mode [Space] — pause without panic",
       "f4": "116+ phonetic normalization rules",
       "active_session": "ACTIVE SESSION · 08:24",
@@ -1792,7 +1792,7 @@ export const LANDING_COPY: Record<SupportedLocale, LandingCopyData> = {
       "reset": "↺ RESET",
       "question_tag": "🎙 Lead Architect Question · Python & DB · Transcribed in 0.4s",
       "question_text": "“How does PostgreSQL MVCC handle heavy UPDATE loads, and what makes table bloat dangerous when paired with autovacuum latency?”",
-      "ai_tag": "⚡ Gemini 2.5 Flash · 1.35s",
+      "ai_tag": "⚡ Gemini 3.8 Flash · 1.35s",
       "level": "SENIOR L5",
       "lead": "During PostgreSQL UPDATEs, rows are never overwritten in place — a new tuple version is written, leaving the old one dead:",
       "points": [

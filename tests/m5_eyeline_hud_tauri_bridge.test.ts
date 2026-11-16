@@ -8,7 +8,6 @@ import {
   toggleClickThrough,
   setWindowOpacity,
   alignToActiveDisplay,
-  panicHide,
   exportMarkdown,
   startCopilotStream,
   setupWindowCompatibilityShim,
@@ -59,9 +58,6 @@ describe('Milestone 5: Awwwards-Grade Glassmorphic Eyeline Teleprompter HUD & Ta
 
       const alignRes = await alignToActiveDisplay();
       expect(alignRes).toBe(true);
-
-      const panicRes = await panicHide();
-      expect(panicRes).toBe(true);
     });
 
     it('exports markdown session file with graceful browser fallback', async () => {

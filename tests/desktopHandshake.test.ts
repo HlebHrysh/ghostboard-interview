@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
+import fs from 'node:fs';
+import path from 'node:path';
 import { POST as desktopInitPost } from '../src/app/api/auth/desktop-init/route';
 import { GET as desktopPollGet } from '../src/app/api/auth/desktop-poll/route';
 import { POST as desktopBindPost } from '../src/app/api/auth/desktop-bind/route';
-import { createUser, createSession, getUserByEmail } from '../src/lib/serverDb';
+import { POST as loginPost } from '../src/app/api/auth/login/route';
+import { createUser, createSession, getUserByEmail, setUserPassword } from '../src/lib/serverDb';
 import { desktopHandshakeStore } from '../src/lib/desktopHandshakeStore';
 
 describe('Desktop Auth Handshake & Pairing Pipeline', () => {
@@ -149,5 +152,45 @@ describe('Desktop Auth Handshake & Pairing Pipeline', () => {
     expect(pollData.user).toBeDefined();
     expect(pollData.user.email).toBe(email);
     expect(pollData.user.name).toBe('Desktop Pilot');
+  });
+
+  it('allows logging into an existing password account with client=desktop and sets session cookie + token', async () => {
+    const email = `existing_desktop_${Date.now()}@ghostboard.ai`;
+    const user = await createUser(email, 'Existing User', 'pro');
+    await setUserPassword(user.id, 'SuperSecretPass123!');
+
+    const req = new NextRequest('http://localhost:3000/api/auth/login', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        email,
+        password: 'SuperSecretPass123!',
+        client: 'desktop',
+      }),
+    });
+
+    const res = await loginPost(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(typeof data.token).toBe('string');
+    expect(data.token.length).toBeGreaterThan(20);
+    expect(data.user.email).toBe(email);
+    expect(res.headers.get('set-cookie')).toContain('ghostboard_session=');
+  });
+
+  it('verifies login/signup pages bind deep-link with bindData.token rather than user.id', () => {
+    const loginPage = fs.readFileSync(
+      path.resolve(__dirname, '../src/app/auth/login/page.tsx'),
+      'utf8'
+    );
+    const signupPage = fs.readFileSync(
+      path.resolve(__dirname, '../src/app/auth/signup/page.tsx'),
+      'utf8'
+    );
+    expect(loginPage).not.toContain('bindData?.user?.id');
+    expect(loginPage).toContain('encodeURIComponent(bindData.token)');
+    expect(signupPage).not.toContain('bindData?.user?.id');
+    expect(signupPage).toContain('encodeURIComponent(bindData.token)');
   });
 });

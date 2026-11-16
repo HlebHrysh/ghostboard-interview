@@ -8,6 +8,11 @@ import {
   AiDomain,
 } from '../src/lib/aiPromptCore';
 import { FLASH_MODELS, getFastStreamingGenerationConfig } from '../src/lib/geminiApi';
+import {
+  normalizeCollapsedMarkdown,
+  parseBlocks,
+  extractCode,
+} from '../desktop/src/lib/answerParser';
 
 describe('Task 1: Zero-Config Brain (Autonomous Domain & Profession Classification)', () => {
   const testCases: Array<{ question: string; expectedDomain: AiDomain; roleHint?: string }> = [
@@ -79,6 +84,8 @@ describe('Task 2: Anti-Wikipedia & Live Spoken Delivery (1-Second Scan)', () => 
     expect(systemPrompt).toContain('ANTI-WIKIPEDIA & LIVE SPOKEN SPEECH RULES');
     expect(systemPrompt).toContain('STRICTLY FORBIDDEN: Encyclopedic introductions');
     expect(systemPrompt).toContain('ALWAYS speak from FIRST PERSON');
+    expect(systemPrompt).toContain('PLAIN WORDS + (TERM IN PARENTHESES)');
+    expect(systemPrompt).toContain('STRICT LINE BREAKS & CODE FORMATTING');
   });
 
   it('enforces 3-phase progressive structure with bold anchor words', () => {
@@ -89,7 +96,7 @@ describe('Task 2: Anti-Wikipedia & Live Spoken Delivery (1-Second Scan)', () => 
     expect(systemPrompt).toContain('<<<PHASE_1:HOOK>>>');
     expect(systemPrompt).toContain('<<<PHASE_2:PILLARS>>>');
     expect(systemPrompt).toContain('<<<PHASE_3:DEEP_DIVE>>>');
-    expect(systemPrompt).toContain('• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]');
+    expect(systemPrompt).toContain('- **KeyAnchor**:');
   });
 
   it('parses structured 3-phase output with bold anchor keywords without leakage', () => {
@@ -155,7 +162,8 @@ describe('Task 4: Sub-250ms TTFT (Time to First Token Speed)', () => {
 
   it('prioritizes fastest Flash models first in cascade rotation', () => {
     expect(FLASH_MODELS[0]).toBe('gemini-3.8-flash');
-    expect(FLASH_MODELS[1]).toBe('gemini-2.5-flash');
+    expect(FLASH_MODELS[1]).toBe('gemini-3.6-flash');
+    expect(FLASH_MODELS).not.toContain('gemini-2.5-flash');
     expect(FLASH_MODELS).toContain('gemini-flash-latest');
   });
 
@@ -194,5 +202,56 @@ describe('Task 5: Rapid On-the-Fly Modifiers', () => {
     const reAngle = buildModifierInstruction('re_angle');
     expect(reAngle).toContain('ALTERNATIVE ANGLE');
     expect(reAngle).toContain('Latency vs Throughput');
+  });
+});
+
+describe('Task 6: Collapsed Fence & Inline Bullet Stream Normalization', () => {
+  it('normalizes collapsed inline triple backticks into structured code blocks without raw fences', () => {
+    const collapsed =
+      "Це приклад роботи Event Loop. ```javascript // 1. Sync\nconsole.log('start');\n// 2. Microtask\nPromise.resolve().then(() => console.log('micro')); ``` Пояснення далі.";
+
+    const normalized = normalizeCollapsedMarkdown(collapsed);
+    expect(normalized).toContain("Event Loop.\n\n```javascript\n// 1. Sync");
+    expect(normalized).toContain("console.log('micro'));\n```\nПояснення далі.");
+
+    const blocks = parseBlocks(collapsed);
+    expect(blocks.some((b) => b.type === 'code')).toBe(true);
+    const codeBlock = blocks.find((b) => b.type === 'code');
+    expect(codeBlock).toBeDefined();
+    if (codeBlock && codeBlock.type === 'code') {
+      expect(codeBlock.lang).toBe('javascript');
+      expect(codeBlock.code).toContain("console.log('start');");
+      expect(codeBlock.code).not.toContain('```');
+      expect(codeBlock.open).toBe(false);
+    }
+
+    const extracted = extractCode(collapsed);
+    expect(extracted).toContain("console.log('start');");
+    expect(extracted).not.toContain('```');
+  });
+
+  it('splits inline • bullet separators into real newline bullets in both parseBlocks and PHASE_2:PILLARS', () => {
+    const inlineBullets =
+      '• **Звичайний код (Call Stack)**: Виконується зверху вниз. • **Мікрозадачі (Microtasks)**: Promise.then йдуть одразу після стеку. • **Макрозадачі (Macrotasks)**: setTimeout чекає наступного тіку.';
+    const blocks = parseBlocks(inlineBullets);
+    expect(blocks).toHaveLength(3);
+    expect(blocks.every((b) => b.type === 'li')).toBe(true);
+
+    const stream = `<<<META: Frontend | Senior | UK>>>
+<<<PHASE_1:HOOK>>>
+Спочатку JS виконує синхронний код.
+<<<PHASE_2:PILLARS>>>
+${inlineBullets}
+<<<PHASE_3:DEEP_DIVE>>>
+\`\`\`javascript
+console.log('ok');
+\`\`\`
+<<<END>>>`;
+
+    const parsed = parseStructuredGhostboardOutput(stream);
+    expect(parsed.pillars).toHaveLength(3);
+    expect(parsed.pillars[0]).toContain('Call Stack');
+    expect(parsed.pillars[1]).toContain('Microtasks');
+    expect(parsed.pillars[2]).toContain('Macrotasks');
   });
 });

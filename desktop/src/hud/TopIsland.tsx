@@ -17,7 +17,6 @@ import {
   Plus,
   RefreshCw,
   Settings,
-  Shield,
   Sparkles,
   X,
   Zap,
@@ -51,13 +50,13 @@ export interface TopIslandProps {
   onToggleClickThrough: () => void;
   onScreenshot: () => void;
   isScreenBusy: boolean;
-  onPanic: () => void;
   onReturnToOffice: () => void;
   onClose: () => void;
   isBridgeActive?: boolean;
   onTriggerBridge?: () => void;
   isAudioActive?: boolean;
   onToggleAudio?: () => void;
+  hideCenterStatus?: boolean;
 }
 
 const HINT_LANG_LABELS: Record<HintLanguage, string> = {
@@ -93,11 +92,11 @@ export const TopIsland = memo(function TopIsland({
   onToggleClickThrough,
   onScreenshot,
   isScreenBusy,
-  onPanic,
   onReturnToOffice,
   onClose,
   isAudioActive = true,
   onToggleAudio,
+  hideCenterStatus = false,
 }: TopIslandProps) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -162,7 +161,7 @@ export const TopIsland = memo(function TopIsland({
           type="button"
           onClick={onReturnToOffice}
           title="Повернутися до Ghostboard Office"
-          className="inline-flex h-6.5 items-center gap-1 rounded-md border border-white/[0.08] bg-[#141418] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
+          className="inline-flex h-[26px] items-center gap-1 rounded-md border border-white/[0.09] bg-[#141418] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
         >
           <ArrowLeft size={12} />
           <span className="hidden sm:inline">Офіс</span>
@@ -172,7 +171,7 @@ export const TopIsland = memo(function TopIsland({
           type="button"
           onClick={cycleListenMode}
           title={`Канал: ${listenMeta.badge}. Клік для перемикання`}
-          className="inline-flex h-6.5 items-center gap-1.5 rounded-md border border-white/[0.08] bg-[#111114] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 cursor-pointer"
+          className="inline-flex h-[26px] items-center gap-1.5 rounded-md border border-white/[0.09] bg-[#111114] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 cursor-pointer"
         >
           {settings.listenMode === 'interviewer' ? (
             <Crosshair size={11} className="text-emerald-400" />
@@ -196,7 +195,9 @@ export const TopIsland = memo(function TopIsland({
       <div
         data-tauri-drag-region="false"
         onMouseDown={stopDragMouse}
-        className="flex items-center justify-center min-w-0"
+        className={`flex items-center justify-center min-w-0 transition-opacity ${
+          hideCenterStatus ? 'opacity-0 pointer-events-none' : 'opacity-100'
+        }`}
       >
         {sttProblem ? (
           <button
@@ -248,7 +249,7 @@ export const TopIsland = memo(function TopIsland({
         )}
       </div>
 
-      {/* NODE 3 & 4 (Right & Far Right): Mode Switcher + Options Popover + Panic */}
+      {/* NODE 3 & 4 (Right & Far Right): Mode Switcher + Options Popover + Close */}
       <div
         data-tauri-drag-region="false"
         onMouseDown={stopDragMouse}
@@ -259,7 +260,7 @@ export const TopIsland = memo(function TopIsland({
           type="button"
           onClick={onToggleLayout}
           title={layoutMode === 'chat' ? 'Перемкнути на Eyeline Notch' : 'Розгорнути Split Chat'}
-          className="inline-flex h-6.5 items-center gap-1 rounded-md border border-white/[0.08] bg-[#141418] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
+          className="inline-flex h-[26px] items-center gap-1 rounded-md border border-white/[0.09] bg-[#141418] px-2 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
         >
           {layoutMode === 'chat' ? <Sparkles size={11} className="text-emerald-400" /> : <Columns2 size={11} />}
           <span className="hidden sm:inline">{layoutMode === 'chat' ? 'Eyeline' : 'Split'}</span>
@@ -270,10 +271,10 @@ export const TopIsland = memo(function TopIsland({
             type="button"
             onClick={onToggleFocusMode}
             title="Режим Фокусу — 100% на відповідь (Tab)"
-            className={`inline-flex h-6.5 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors cursor-pointer ${
+            className={`inline-flex h-[26px] items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors cursor-pointer ${
               focusMode
                 ? 'border-white/35 bg-white text-zinc-950'
-                : 'border-white/[0.08] bg-[#141418] text-zinc-200 hover:border-white/25 hover:text-white'
+                : 'border-white/[0.09] bg-[#141418] text-zinc-200 hover:border-white/25 hover:text-white'
             }`}
           >
             {focusMode ? <Maximize2 size={11} /> : <PanelLeftClose size={11} />}
@@ -288,10 +289,10 @@ export const TopIsland = memo(function TopIsland({
             onClick={() => setOptionsOpen((prev) => !prev)}
             title="Опції HUD (Мова, Прозорість, Шрифт, Скріншот, Клік-крізь)"
             aria-expanded={optionsOpen}
-            className={`inline-flex h-6.5 items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors cursor-pointer ${
+            className={`inline-flex h-[26px] items-center gap-1 rounded-md border px-2 text-[11px] font-medium transition-colors cursor-pointer ${
               optionsOpen || isClickThrough
                 ? 'border-white/30 bg-[#1c1c22] text-white'
-                : 'border-white/[0.08] bg-[#141418] text-zinc-200 hover:border-white/25 hover:text-white'
+                : 'border-white/[0.09] bg-[#141418] text-zinc-200 hover:border-white/25 hover:text-white'
             }`}
           >
             <Settings size={11} />
@@ -299,7 +300,7 @@ export const TopIsland = memo(function TopIsland({
           </button>
 
           {optionsOpen && (
-            <div className="absolute right-0 top-[34px] z-50 w-[256px] rounded-xl border border-white/12 bg-[#111114] p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.88)] space-y-3">
+            <div className="absolute right-0 top-[34px] z-50 w-[258px] rounded-xl border border-white/12 bg-[#111114] p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.88)] space-y-3">
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
                 <span className="text-[11.5px] font-semibold text-white">Швидкі опції HUD</span>
                 {onToggleAudio && (
@@ -335,16 +336,24 @@ export const TopIsland = memo(function TopIsland({
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-zinc-300">Прозорість</span>
-                  <span className="font-mono text-zinc-200">
+                  <span className="font-mono tabular-nums text-zinc-200">
                     {Math.round((settings.hudOpacity ?? 0.95) * 100)}%
                   </span>
                 </div>
                 <input
                   type="range"
+                  aria-label="Прозорість HUD"
                   min={OPACITY_RANGE.min}
                   max={OPACITY_RANGE.max}
                   step={0.05}
                   value={settings.hudOpacity ?? 0.95}
+                  style={
+                    {
+                      '--attr-min': String(OPACITY_RANGE.min),
+                      '--attr-max': String(OPACITY_RANGE.max),
+                      '--control-value': String(settings.hudOpacity ?? 0.95),
+                    } as React.CSSProperties
+                  }
                   onChange={(e) => updateSettings({ hudOpacity: parseFloat(e.target.value) })}
                   className="gb-range"
                 />
@@ -352,7 +361,7 @@ export const TopIsland = memo(function TopIsland({
 
               {/* Font Scale A- / A+ */}
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] text-zinc-300">
+                <span className="text-[11px] text-zinc-300 tabular-nums">
                   Шрифт ({settings.hudFontSize}px)
                 </span>
                 <div className="flex items-center gap-1">
@@ -410,23 +419,15 @@ export const TopIsland = memo(function TopIsland({
           )}
         </div>
 
-        {/* Far Right: Instant Panic (F12) + Close */}
-        <button
-          type="button"
-          onClick={onPanic}
-          title="Миттєво сховати вікно (F12 / Ctrl+Shift+H)"
-          className="inline-flex h-6.5 items-center gap-1 rounded-md border border-rose-500/35 bg-rose-500/15 px-2 text-[11px] font-medium text-rose-200 transition-colors hover:bg-rose-500/25 cursor-pointer"
-        >
-          <Shield size={11} />
-          <span className="hidden sm:inline">Паніка</span>
-        </button>
+        <span aria-hidden="true" className="mx-0.5 h-3.5 w-px bg-white/[0.08]" />
 
+        {/* Far Right: Close */}
         <button
           type="button"
           onClick={onClose}
           title="Закрити Stealth HUD"
           aria-label="Закрити HUD"
-          className="inline-flex h-6.5 w-6.5 items-center justify-center rounded-md border border-white/[0.08] bg-[#141418] text-zinc-400 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
+          className="inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-white/[0.09] bg-[#141418] text-zinc-400 transition-colors hover:border-white/25 hover:text-white cursor-pointer"
         >
           <X size={12} />
         </button>

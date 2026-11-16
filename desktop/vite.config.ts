@@ -11,10 +11,11 @@ import http from 'node:http';
  */
 function localBackendProxy(candidates: string[]): Plugin {
   let current: string | null = null;
+  let lastFailedAt = 0;
 
   const probe = (base: string) =>
     new Promise<boolean>((resolve) => {
-      const req = http.get(`${base}/api/health`, { timeout: 700 }, (res) => {
+      const req = http.get(`${base}/api/health`, { timeout: 500 }, (res) => {
         res.resume();
         resolve(true);
       });
@@ -27,12 +28,17 @@ function localBackendProxy(candidates: string[]): Plugin {
 
   const resolveTarget = async (): Promise<string | null> => {
     if (current) return current;
+    if (lastFailedAt && Date.now() - lastFailedAt < 5000) {
+      return null;
+    }
     for (const c of candidates) {
       if (await probe(c)) {
         current = c;
+        lastFailedAt = 0;
         return c;
       }
     }
+    lastFailedAt = Date.now();
     return null;
   };
 
@@ -84,8 +90,8 @@ export default defineConfig(() => {
   const backendCandidates = Array.from(new Set([
     ...explicit,
     ...(envPort ? [`http://localhost:${envPort}`] : []),
-    'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:3000',
   ]));
 
   return {

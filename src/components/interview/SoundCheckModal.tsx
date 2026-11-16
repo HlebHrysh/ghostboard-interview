@@ -22,6 +22,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { FluidAudioWaveform } from './FluidAudioWaveform';
 import { ScrambleText } from '../ui/ScrambleText';
+import { SpatialSquircleBadge } from '../ui/SpatialSquircleBadge';
 import { useLocale } from '@/contexts/LocaleContext';
 import { getModalsTranslations } from '@/lib/modalsI18n';
 import { LOCALE_META, SUPPORTED_LOCALES, type SupportedLocale } from '@/lib/i18n';
@@ -310,15 +311,22 @@ export const SoundCheckModal: React.FC<SoundCheckModalProps> = ({
             </div>
           </div>
 
-          {/* Modal Title and Description */}
-          <div className="mb-5">
-            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              <Volume2 className="w-6 h-6 text-white" />
-              {m.title}
-            </h2>
-            <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-              {m.desc}
-            </p>
+          {/* Modal Title and Description with Headphones Squircle */}
+          <div className="mb-5 flex items-center gap-4">
+            <SpatialSquircleBadge
+              src="/videos/headphones.mp4"
+              accent="cyan"
+              size="sm"
+              className="shrink-0"
+            />
+            <div>
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                {m.title}
+              </h2>
+              <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+                {m.desc}
+              </p>
+            </div>
           </div>
 
           {/* STEP 1: Select Audio Source */}

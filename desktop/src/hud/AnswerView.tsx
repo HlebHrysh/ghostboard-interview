@@ -70,19 +70,22 @@ export const Inline = memo(function Inline({
     <>
       {tokens.map((t, i) => {
         switch (t.type) {
-          case 'strong':
+          case 'strong': {
+            const nextVal = tokens[i + 1]?.type === 'text' ? tokens[i + 1].value : '';
+            const tightPunct = /^[\s]*[:.,;!?)]/.test(nextVal);
             return (
               <strong
                 key={i}
                 className={
                   anchorPill
-                    ? 'mr-1 rounded-md border border-white/15 bg-white/[0.08] px-1.5 py-0.5 font-semibold text-white'
+                    ? `${tightPunct ? '' : 'mr-1 '}rounded-md border border-white/15 bg-white/[0.08] px-1.5 py-0.5 font-semibold text-white`
                     : 'font-semibold text-white'
                 }
               >
                 {t.value}
               </strong>
             );
+          }
           case 'code':
             return (
               <code
@@ -157,9 +160,9 @@ const CodeBlock = memo(function CodeBlock({
   };
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#09090b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+    <div className="overflow-hidden rounded-lg border border-white/10 bg-[#09090b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
       {/* Raycast / Xcode title bar */}
-      <div className="flex min-h-8 items-center justify-between border-b border-white/[0.08] bg-[#141418] px-3 py-1.5">
+      <div className="flex min-h-8 items-center justify-between border-b border-white/10 bg-[#141418] px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="flex items-center gap-1" aria-hidden="true">
             <span className="h-2 w-2 rounded-full bg-white/15" />
@@ -181,7 +184,7 @@ const CodeBlock = memo(function CodeBlock({
         </button>
       </div>
 
-      <pre className="gb-selectable gb-scroll max-h-[320px] overflow-x-auto p-3.5 font-mono text-[13px] leading-[1.6]">
+      <pre className="gb-selectable gb-scroll max-h-[320px] overflow-x-auto p-3 font-mono text-[13px] leading-relaxed">
         <code>
           {lines.map((line, i) => {
             const lineTokens = highlightCode(line);
@@ -253,8 +256,8 @@ const Blocks = memo(function Blocks({
         }
         if (b.type === 'li') {
           return (
-            <div key={i} className="flex gap-2 font-mono text-[13px] leading-[1.6] text-zinc-200">
-              <span className="mt-[0.58em] h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-400" />
+            <div key={i} className="flex gap-2.5 font-sans text-[13.5px] leading-[1.6] text-zinc-100 antialiased">
+              <span className="mt-[0.58em] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/80" />
               <p className="min-w-0">
                 <Inline tokens={b.tokens} anchorPill bilingual={bilingual} />
                 <Caret on={isLast} />
@@ -270,7 +273,7 @@ const Blocks = memo(function Blocks({
           );
         }
         return (
-          <p key={i} className="font-mono text-[13px] leading-[1.6] text-zinc-200">
+          <p key={i} className="font-sans text-[13.5px] leading-[1.6] text-zinc-100 antialiased">
             <Inline tokens={b.tokens} bilingual={bilingual} />
             <Caret on={isLast} />
           </p>
@@ -284,7 +287,7 @@ const Blocks = memo(function Blocks({
 
 const PhaseLabel = ({ n, children }: { n: number; children: string }) => (
   <div className="mb-1.5 flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-zinc-400">
-    <span className="inline-flex h-4.5 w-4.5 items-center justify-center rounded border border-white/10 bg-[#141418] font-mono text-[10px] text-zinc-200">
+    <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-[5px] border border-white/12 bg-[#141418] font-mono text-[10px] text-zinc-200">
       {n}
     </span>
     <span>{children}</span>
@@ -370,7 +373,7 @@ export const AnswerView = memo(function AnswerView({
   const trapData = parsed.followUpTrap || answer.followUpTrap;
 
   return (
-    <div className="gb-selectable space-y-3.5 text-[length:var(--hud-font,16px)] leading-[1.55]">
+    <div className="gb-selectable space-y-3.5 pb-6 text-[length:var(--hud-font,16px)] leading-[1.55]">
       {waiting && (
         <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-4 space-y-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-2 text-xs text-emerald-300">
@@ -538,7 +541,7 @@ export const AnswerView = memo(function AnswerView({
                   <div className="min-w-0 flex items-center gap-2">
                     <Target size={14} className="shrink-0 text-amber-400" />
                     <span className="truncate text-[12.5px] font-medium text-white">
-                      <span className="text-amber-300 mr-1">🎯 Очікуй питання на засипку:</span>
+                      <span className="text-amber-300 mr-1">Очікуй питання на засипку:</span>
                       {trapData.question}
                     </span>
                   </div>
@@ -617,10 +620,16 @@ export const EyelineAnswer = memo(function EyelineAnswer({ answer }: { answer: A
 
   if (parsed.mode === 'plain') {
     return (
-      <p className="border-l-2 border-emerald-400 pl-3 text-[calc(var(--hud-font,16px)*1.06)] font-medium leading-[1.5] text-white antialiased">
-        {plainBlocks.slice(0, 3).map((b, i) => (b.type !== 'code' ? <Inline key={i} tokens={b.tokens} /> : null))}
-        <Caret on={streaming} />
-      </p>
+      <div className="border-l-2 border-emerald-400 pl-3 space-y-1 text-[calc(var(--hud-font,16px)*1.04)] font-medium leading-[1.5] text-white antialiased">
+        {plainBlocks.slice(0, 3).map((b, i) =>
+          b.type !== 'code' ? (
+            <p key={i} className={i > 0 ? 'text-[calc(var(--hud-font,16px)*0.92)] font-normal text-zinc-200' : ''}>
+              <Inline tokens={b.tokens} anchorPill={i > 0} />
+              {i === Math.min(2, plainBlocks.length - 1) && <Caret on={streaming} />}
+            </p>
+          ) : null
+        )}
+      </div>
     );
   }
 

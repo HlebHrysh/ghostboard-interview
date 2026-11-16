@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Crosshair,
   GitMerge,
+  Headphones,
   Mic,
   Play,
   RefreshCw,
@@ -18,8 +19,8 @@ import {
 } from '../lib/audioSession';
 import type { DesktopSettings, ListenMode } from '../lib/desktopSettings';
 import { listAudioDevices, type AudioDevice } from '../lib/tauriBridge';
-import { SectionTitle, SPRING, stopDrag } from '../ui/primitives';
-import { STUDIO_VIDEO_CLIPS, VideoPreviewCapsule } from '../ui/VideoPreviewCapsule';
+import { CatalogHeaderBadge } from '../ui/CatalogHeaderBadge';
+import { SPRING, stopDrag } from '../ui/primitives';
 import { VuBars, VuTrack } from '../ui/VuMeter';
 
 interface AudioStudioTabProps {
@@ -69,11 +70,11 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
   const audioStatus = useAudioStatus();
 
   // Manual / initial device scan ONLY — zero 2-second polling spam
-  const refreshDevices = useCallback(async () => {
+  const refreshDevices = useCallback(async (force = false) => {
     setIsRefreshing(true);
     setRefreshError(null);
     try {
-      const list = await listAudioDevices();
+      const list = await listAudioDevices(force);
       setDevices(list);
     } catch (err) {
       console.warn('[AudioStudio] listAudioDevices error:', err);
@@ -84,7 +85,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
   }, []);
 
   useEffect(() => {
-    void refreshDevices();
+    void refreshDevices(false);
   }, [refreshDevices]);
 
   const loopbackDevices = devices.filter(
@@ -127,20 +128,35 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
 
   return (
     <div className="space-y-5 pb-4">
-      <SectionTitle
-        title="Аудіо та ізоляція каналів"
-        right={
-          <button
-            type="button"
-            onClick={() => void refreshDevices()}
-            disabled={isRefreshing}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#111114] px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:border-white/20 hover:text-white disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Оновити пристрої
-          </button>
-        }
-      />
+      {/* Catalog Section Header with Headphones Squircle Badge */}
+      <div className="flex items-center justify-between gap-3 pb-0.5">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <CatalogHeaderBadge
+            src="./badges/headphones.webp"
+            label="Аудіо та канали"
+            tone="emerald"
+            fallbackIcon={<Headphones className="h-5 w-5 text-zinc-300" />}
+          />
+          <div className="min-w-0">
+            <h1 className="font-display text-lg font-bold tracking-tight text-white truncate">
+              Аудіо та ізоляція каналів
+            </h1>
+            <p className="text-xs text-zinc-400 truncate">
+              Перехоплення системного аудіо (PipeWire / WASAPI) та перевірка сигналу
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void refreshDevices(true)}
+          disabled={isRefreshing}
+          className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 rounded-xl border border-white/[0.09] bg-[#111114] px-3 py-1.5 text-xs font-medium text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:border-white/25 hover:text-white disabled:opacity-50 cursor-pointer"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+          Оновити пристрої
+        </button>
+      </div>
 
       {/* 3-Position Strict Channel Isolation Switcher */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -211,16 +227,16 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
         )}
       </div>
 
-      {/* Device Selectors + Soundcheck Grid */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="lg:col-span-3 rounded-2xl border border-white/[0.08] bg-[#111114] p-4 space-y-3.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
-          <div className="text-xs font-semibold text-white">Апаратні пристрої захоплення</div>
+      {/* Full-Width Device Selectors + Soundcheck */}
+      <div className="rounded-2xl border border-white/[0.08] bg-[#111114] p-4 sm:p-5 space-y-4 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)]">
+        <div className="text-xs font-semibold text-white">Апаратні пристрої захоплення</div>
 
-          {refreshError && <p className="text-[11px] text-amber-300">{refreshError}</p>}
+        {refreshError && <p className="text-[11px] text-amber-300">{refreshError}</p>}
 
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <label htmlFor={loopbackSelectId} className="block text-[11px] font-medium text-zinc-400">
-              Системне джерело (PipeWire Monitor / WASAPI Loopback)
+              Системне джерело (Loopback / Monitor)
             </label>
             <select
               id={loopbackSelectId}
@@ -229,7 +245,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
               disabled={settings.listenMode === 'mic'}
               className="gb-input h-9 text-xs disabled:opacity-45"
             >
-              <option value="">Автоматичний системний вихід (Default Monitor)</option>
+              <option value="">Системний вихід (Default Monitor)</option>
               {loopbackDevices.map((d) => (
                 <option key={d.name} value={d.name}>
                   {d.name}
@@ -240,7 +256,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
 
           <div className="space-y-1.5">
             <label htmlFor={micSelectId} className="block text-[11px] font-medium text-zinc-400">
-              Мікрофон (для Dual або Solo Mic режиму)
+              Мікрофон (Dual або Solo Mic)
             </label>
             <select
               id={micSelectId}
@@ -249,7 +265,7 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
               disabled={settings.listenMode === 'interviewer'}
               className="gb-input h-9 text-xs disabled:opacity-45"
             >
-              <option value="">Системний мікрофон за замовчуванням</option>
+              <option value="">Системний мікрофон (Default)</option>
               {micDevices.map((d) => (
                 <option key={d.name} value={d.name}>
                   {d.name}
@@ -257,65 +273,58 @@ export const AudioStudioTab: React.FC<AudioStudioTabProps> = ({
               ))}
             </select>
           </div>
-
-          {/* Live rAF VU Soundcheck */}
-          <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-zinc-200">Перевірка сигналу (60fps ref)</span>
-                <VuBars channel={activeVuChannel} bars={8} />
-              </div>
-
-              <button
-                type="button"
-                data-tauri-drag-region="false"
-                onMouseDown={stopDrag}
-                onClick={() => void toggleTestCapture()}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
-                  isTestCapturing
-                    ? 'border border-rose-500/35 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
-                    : 'bg-white text-zinc-950 hover:bg-zinc-100'
-                }`}
-              >
-                {isTestCapturing ? (
-                  <>
-                    <Square className="h-3 w-3 fill-current" />
-                    Зупинити тест
-                  </>
-                ) : (
-                  <>
-                    <Play className="h-3 w-3 fill-current" />
-                    Перевірити звук
-                  </>
-                )}
-              </button>
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
-                <span>ІНТЕРВ’ЮЕР (LOOPBACK)</span>
-                <span>{isCapturingNow && settings.listenMode !== 'mic' ? 'ACTIVE' : 'IDLE'}</span>
-              </div>
-              <VuTrack channel="interviewer" label="Рівень системного аудіо інтерв'юера" />
-            </div>
-
-            {settings.listenMode !== 'interviewer' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
-                  <span>МІКРОФОН (КАНДИДАТ)</span>
-                  <span>{isCapturingNow ? 'ACTIVE' : 'IDLE'}</span>
-                </div>
-                <VuTrack channel="candidate" label="Рівень сигналу мікрофона" />
-              </div>
-            )}
-          </div>
         </div>
 
-        <div className="lg:col-span-2 space-y-3">
-          <VideoPreviewCapsule clip={STUDIO_VIDEO_CLIPS.headphones} />
-          <div className="rounded-xl border border-white/[0.08] bg-[#111114] p-3 text-[11px] leading-relaxed text-zinc-400">
-            Підказка: у браузерному дзвінку або Zoom виводьте звук на навушники — Loopback зчитує потік прямо з аудіо-шини ОС без фонового шуму кімнати.
+        {/* Live rAF VU Soundcheck */}
+        <div className="pt-3 border-t border-white/[0.06] space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-zinc-200">Перевірка сигналу (60fps ref)</span>
+              <VuBars channel={activeVuChannel} bars={8} />
+            </div>
+
+            <button
+              type="button"
+              data-tauri-drag-region="false"
+              onMouseDown={stopDrag}
+              onClick={() => void toggleTestCapture()}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                isTestCapturing
+                  ? 'border border-rose-500/35 bg-rose-500/15 text-rose-200 hover:bg-rose-500/25'
+                  : 'bg-white text-zinc-950 hover:bg-zinc-100'
+              }`}
+            >
+              {isTestCapturing ? (
+                <>
+                  <Square className="h-3 w-3 fill-current" />
+                  Зупинити тест
+                </>
+              ) : (
+                <>
+                  <Play className="h-3 w-3 fill-current" />
+                  Перевірити звук
+                </>
+              )}
+            </button>
           </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
+              <span>ІНТЕРВ’ЮЕР (LOOPBACK)</span>
+              <span>{isCapturingNow && settings.listenMode !== 'mic' ? 'ACTIVE' : 'IDLE'}</span>
+            </div>
+            <VuTrack channel="interviewer" label="Рівень системного аудіо інтерв'юера" />
+          </div>
+
+          {settings.listenMode !== 'interviewer' && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10.5px] font-mono text-zinc-400">
+                <span>МІКРОФОН (КАНДИДАТ)</span>
+                <span>{isCapturingNow ? 'ACTIVE' : 'IDLE'}</span>
+              </div>
+              <VuTrack channel="candidate" label="Рівень сигналу мікрофона" />
+            </div>
+          )}
         </div>
       </div>
     </div>

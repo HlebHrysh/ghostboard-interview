@@ -11,7 +11,6 @@ import {
   setScreenShareStealth,
   toggleClickThrough,
   alignToActiveDisplay,
-  panicHide,
   exportMarkdown,
   getAuthState,
   setListenMode as nativeSetListenMode,
@@ -498,10 +497,6 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     return await alignToActiveDisplay();
   }, []);
 
-  const triggerPanicHide = useCallback(async () => {
-    return await panicHide();
-  }, []);
-
   const exportDebrief = useCallback(async (content: string, filename?: string) => {
     return await exportMarkdown(content, filename);
   }, []);
@@ -577,7 +572,6 @@ export function useHudStream(options: UseHudStreamOptions = {}) {
     toggleStealth,
     toggleCursorClickThrough,
     alignWebcam,
-    triggerPanicHide,
     exportDebrief,
     clearRadarReady,
     consumeRadar,

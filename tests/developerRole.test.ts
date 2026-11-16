@@ -370,7 +370,7 @@ describe('Developer RBAC, Admin Role Assignment & Dev Control API', () => {
           'content-type': 'application/json',
           'cf-connecting-ip': TEST_IP,
         },
-        body: JSON.stringify({ action: 'force_model', model: 'gemini-2.5-flash' }),
+        body: JSON.stringify({ action: 'force_model', model: 'gemini-3.6-flash' }),
       })
     );
     expect(forceModelRes.status).toBe(200);
@@ -385,7 +385,7 @@ describe('Developer RBAC, Admin Role Assignment & Dev Control API', () => {
     );
     expect(telemetryRes.status).toBe(200);
     const telemetryJson = await telemetryRes.json();
-    expect(telemetryJson.ai.forcedModel).toBe('gemini-2.5-flash');
+    expect(telemetryJson.ai.forcedModel).toBe('gemini-3.6-flash');
   });
 
   it('grants developer access to admin role and immediately blocks banned developer accounts', async () => {

@@ -1,17 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
 import { DesktopAuthGate } from './components/DesktopAuthGate';
 import { OfficeWindow } from './components/OfficeWindow';
 import { HudWindow } from './components/HudWindow';
 import { HudErrorBoundary } from './hud/HudErrorBoundary';
 import {
-  getAccessToken,
+  clearAuthToken,
+  checkAuth,
+  getAuthToken,
+  type UserProfileData,
+} from './lib/apiClient';
+import {
   isTauriEnvironment,
   logout,
+  saveTokens,
   setWindowSize,
   type CopilotMode,
 } from './lib/tauriBridge';
-import { checkAuth, type UserProfileData } from './lib/apiClient';
 
 export default function App() {
   const isUrlHud =
@@ -35,15 +39,21 @@ export default function App() {
     let isMounted = true;
     async function verifyExistingSession() {
       try {
-        const token = await getAccessToken();
+        const token = await getAuthToken();
         if (token) {
           const auth = await checkAuth(token);
           if (auth.authenticated && auth.user && isMounted) {
+            void saveTokens(token, {
+              userId: auth.user.id,
+              email: auth.user.email,
+              plan: auth.user.plan,
+            }).catch(() => {});
             setAuthUser(auth.user);
             setIsAuthenticated(true);
             setIsAuthChecking(false);
             return;
           }
+          clearAuthToken();
         }
       } catch (err) {
         console.debug('[App] Session check error:', err);
@@ -75,6 +85,7 @@ export default function App() {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    clearAuthToken();
     try {
       await logout();
     } catch {
@@ -117,16 +128,15 @@ export default function App() {
         data-tauri-drag-region
         className="gb-office fixed inset-0 z-50 flex items-center justify-center border border-white/[0.08] select-none"
       >
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.08] bg-[#111114] px-7 py-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.75)]">
-          <motion.img
-            src="./ghost-transparent.png"
+        <div className="flex flex-col items-center gap-3.5 rounded-2xl border border-white/[0.08] bg-[#111114] px-7 py-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_20px_50px_rgba(0,0,0,0.75)]">
+          <img
+            src="./icon.svg"
             alt="Ghostboard"
-            animate={{ y: [0, -8, 0] }}
-            transition={{ duration: 2.6, ease: 'easeInOut', repeat: Infinity }}
-            className="h-12 w-12 object-contain"
+            draggable={false}
+            className="h-10 w-10 object-contain"
           />
           <div className="flex items-center gap-2 text-xs font-mono tracking-wider text-zinc-300">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
             ПЕРЕВІРКА СЕСІЇ GHOSTBOARD...
           </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useId, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
+  BookOpen,
   Briefcase,
   Building2,
   Check,
@@ -13,7 +14,7 @@ import {
   UserCheck,
   X,
 } from 'lucide-react';
-import { getResolvedBaseUrl } from '../lib/apiClient';
+import { getAuthToken, getResolvedBaseUrl } from '../lib/apiClient';
 import {
   EXPERIENCE_LEVELS,
   parseResumePdf,
@@ -22,8 +23,9 @@ import {
   type CandidateLevel,
   type CandidateProfile,
 } from '../lib/profileStore';
-import { getAccessToken, setAiPreferences } from '../lib/tauriBridge';
-import { SectionTitle, SPRING } from '../ui/primitives';
+import { setAiPreferences } from '../lib/tauriBridge';
+import { CatalogHeaderBadge } from '../ui/CatalogHeaderBadge';
+import { SPRING } from '../ui/primitives';
 
 interface CandidateContextTabProps {
   profile: CandidateProfile;
@@ -100,7 +102,6 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
 
     setStatusBanner(null);
 
-    // Plain text / markdown resumes can be loaded locally even offline
     if (file.type === 'text/plain' || /\.(txt|md)$/i.test(file.name)) {
       try {
         const text = (await file.text()).slice(0, 6000);
@@ -117,7 +118,7 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
 
     setIsParsingCv(true);
     try {
-      const token = await getAccessToken();
+      const token = await getAuthToken();
       const parsed = await parseResumePdf(file, file.name, getResolvedBaseUrl(), token);
       if (parsed.success && parsed.profile) {
         const mergedStack = Array.from(
@@ -152,7 +153,7 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
     setIsSyncing(true);
     setStatusBanner(null);
     try {
-      const token = await getAccessToken();
+      const token = await getAuthToken();
       const res = await syncProfileToBackend(profile, getResolvedBaseUrl(), token);
       setStatusBanner({
         ok: res.success,
@@ -169,42 +170,57 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
 
   return (
     <div className="space-y-5 pb-4">
-      <SectionTitle
-        title="Профіль кандидата та CV"
-        right={
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.txt,.md,application/pdf,text/plain"
-              onChange={(e) => void handleCvUpload(e)}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isParsingCv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-[#111114] px-2.5 py-1 text-[11px] font-medium text-zinc-200 hover:border-white/25 hover:text-white disabled:opacity-50 cursor-pointer"
-            >
-              {isParsingCv ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <FileUp className="h-3 w-3 text-emerald-400" />
-              )}
-              Завантажити CV
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleCloudSync()}
-              disabled={isSyncing}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-950 hover:bg-zinc-100 disabled:opacity-50 cursor-pointer"
-            >
-              <RefreshCw className={`h-3 w-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              Синхронізувати
-            </button>
+      {/* Catalog Section Header with Book Squircle Badge (Reading CV / Profile) */}
+      <div className="flex items-center justify-between gap-3 pb-0.5">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <CatalogHeaderBadge
+            src="./badges/book.webp"
+            label="Профіль кандидата та CV"
+            tone="amber"
+            fallbackIcon={<BookOpen className="h-5 w-5 text-zinc-300" />}
+          />
+          <div className="min-w-0">
+            <h1 className="font-display text-lg font-bold tracking-tight text-white truncate">
+              Профіль кандидата та CV
+            </h1>
+            <p className="text-xs text-zinc-400 truncate">
+              Роль, стек технологій та контекст резюме для точних персоналізованих відповідей
+            </p>
           </div>
-        }
-      />
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.txt,.md,application/pdf,text/plain"
+            onChange={(e) => void handleCvUpload(e)}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isParsingCv}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/[0.1] bg-[#111114] px-3 py-1.5 text-xs font-medium text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:border-white/25 hover:text-white disabled:opacity-50 cursor-pointer"
+          >
+            {isParsingCv ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileUp className="h-3.5 w-3.5 text-emerald-400" />
+            )}
+            Завантажити CV
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleCloudSync()}
+            disabled={isSyncing}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-b from-white to-zinc-200 px-3 py-1.5 text-xs font-semibold text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] hover:to-white disabled:opacity-50 cursor-pointer"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            Синхронізувати
+          </button>
+        </div>
+      </div>
 
       {statusBanner && (
         <div
@@ -365,7 +381,15 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
           <label htmlFor={bioId} className="text-xs font-semibold text-white">
             Досвід та ключові проекти (CV Context)
           </label>
-          <span className="text-[10.5px] font-mono text-emerald-400">Автозбереження</span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] tabular-nums text-zinc-500">
+              {(profile.cvContext || profile.customBio || '').length} симв.
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-mono text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Автозбереження
+            </span>
+          </div>
         </div>
         <textarea
           id={bioId}
@@ -373,7 +397,7 @@ export const CandidateContextTab: React.FC<CandidateContextTabProps> = ({
           value={profile.cvContext || profile.customBio}
           onChange={(e) => commitPatch({ cvContext: e.target.value, customBio: e.target.value })}
           placeholder="Вставте опис досвіду, досягнення або текст резюме — копайлот адаптуватиме відповіді під ваші реальні кейси..."
-          className="gb-input h-auto py-2.5 font-mono text-xs leading-relaxed resize-y"
+          className="gb-input gb-scroll h-auto py-2.5 bg-[#0a0a0d] font-mono text-xs leading-relaxed resize-none"
         />
       </div>
     </div>

@@ -61,7 +61,6 @@ export interface GhostboardAPI {
   setContentProtection?: (enable: boolean) => Promise<boolean>;
   setOpacity?: (opacity: number) => Promise<number | void>;
   alignToActiveDisplay?: () => Promise<boolean>;
-  panicHide?: () => Promise<boolean>;
   triggerManualAnswer?: (prompt?: string) => Promise<void>;
   clearSession?: () => Promise<void>;
   exportMarkdown?: (content: string, filename?: string) => Promise<string | boolean | { success: boolean; path: string }>;
@@ -96,7 +95,6 @@ export interface GhostboardAPI {
   onModeToggled?: (callback: (mode: string) => void) => () => void;
   onStealthToggled?: (callback: (state: boolean) => void) => () => void;
   onClickThroughToggled?: (callback: (state: boolean) => void) => () => void;
-  onTogglePanic?: (callback: () => void) => () => void;
   onToggleFreeze?: (callback: () => void) => () => void;
 }
 

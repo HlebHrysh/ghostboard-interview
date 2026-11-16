@@ -100,12 +100,6 @@ fn align_to_active_display(
     }
 }
 
-/// Native command for panic shield instant hide (<16ms)
-#[tauri::command]
-fn panic_hide(window: WebviewWindow) -> Result<bool, String> {
-    crate::window::panic_hide(&window)
-}
-
 /// Native command to capture active display and return base64 PNG with dimensions
 #[tauri::command]
 async fn capture_screen() -> Result<crate::window::ScreenCaptureResult, String> {
@@ -254,6 +248,10 @@ fn spawn_vision_radar_watcher(
 #[tauri::command]
 async fn list_audio_devices() -> Result<Vec<crate::audio::capture::AudioDeviceInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| {
+        #[cfg(target_os = "linux")]
+        if let Some(pw_devices) = crate::audio::capture::list_linux_pipewire_devices() {
+            return pw_devices;
+        }
         let host = cpal::default_host();
         crate::audio::capture::list_audio_devices(&host)
     })
@@ -565,8 +563,9 @@ async fn stream_ai_answer(
                 .set_config(crate::llm::client::LlmConfig {
                     provider: crate::llm::client::LlmProviderType::Gemini,
                     api_key: trimmed,
-                    model: "gemini-3.5-flash-lite".to_string(),
+                    model: crate::llm::client::GEMINI_FLASH_MODELS[0].to_string(),
                     endpoint_url: None,
+                    cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                 })
                 .await;
         }
@@ -579,6 +578,7 @@ async fn stream_ai_answer(
                     api_key: trimmed,
                     model: "llama-3.3-70b-versatile".to_string(),
                     endpoint_url: None,
+                    cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                 })
                 .await;
         }
@@ -591,6 +591,7 @@ async fn stream_ai_answer(
                     api_key: trimmed,
                     model: "gpt-4o-mini".to_string(),
                     endpoint_url: None,
+                    cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                 })
                 .await;
         }
@@ -635,8 +636,8 @@ async fn ask_llm_stream(
     .await
 }
 
-/// Syncs Office AI preferences (output language, depth modifier, candidate context) into the
-/// native pipeline so auto-detected questions honor them as well. Empty strings reset to default.
+/// Syncs Office AI preferences (output language, depth modifier, cascade mode, candidate context, STT stack) into the
+/// native pipeline so auto-detected questions honor them cleanly. Empty strings reset to default.
 #[tauri::command]
 async fn set_ai_preferences(
     output_language: Option<String>,
@@ -644,6 +645,8 @@ async fn set_ai_preferences(
     modifier: Option<String>,
     concise: Option<bool>,
     candidate_profile: Option<String>,
+    cascade_mode: Option<String>,
+    stt_stack: Option<String>,
     llm_orchestrator: tauri::State<'_, Arc<LlmOrchestrator>>,
     stt_orchestrator: tauri::State<'_, Arc<SttOrchestrator>>,
 ) -> Result<(), String> {
@@ -652,11 +655,18 @@ async fn set_ai_preferences(
     llm_orchestrator.set_helper_language(norm(helper_language)).await;
     llm_orchestrator.set_modifier(norm(modifier)).await;
     llm_orchestrator.set_concise_mode(concise.unwrap_or(false)).await;
-    let prof = norm(candidate_profile).map(|s| s.chars().take(4000).collect());
-    stt_orchestrator.set_custom_stack(prof.clone()).await;
-    llm_orchestrator
-        .set_candidate_profile(prof)
-        .await;
+    if cascade_mode.is_some() {
+        llm_orchestrator
+            .set_cascade_mode(crate::llm::client::LlmCascadeMode::parse(cascade_mode.as_deref()))
+            .await;
+    }
+
+    let prof: Option<String> = norm(candidate_profile).map(|s| s.chars().take(4000).collect());
+    let stack_for_stt = norm(stt_stack)
+        .map(|s| s.chars().take(1000).collect())
+        .or_else(|| prof.clone());
+    stt_orchestrator.set_custom_stack(stack_for_stt).await;
+    llm_orchestrator.set_candidate_profile(prof).await;
     Ok(())
 }
 
@@ -680,8 +690,9 @@ async fn configure_copilot_keys(
             .set_config(crate::llm::client::LlmConfig {
                 provider: crate::llm::client::LlmProviderType::Gemini,
                 api_key: key,
-                model: "gemini-3.8-flash".to_string(),
+                model: crate::llm::client::GEMINI_FLASH_MODELS[0].to_string(),
                 endpoint_url: None,
+                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
             })
             .await;
     } else if let Some(key) = groq_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -691,6 +702,7 @@ async fn configure_copilot_keys(
                 api_key: key,
                 model: "llama-3.3-70b-versatile".to_string(),
                 endpoint_url: None,
+                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
             })
             .await;
     } else if let Some(key) = openai_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -700,6 +712,7 @@ async fn configure_copilot_keys(
                 api_key: key,
                 model: "gpt-4o-mini".to_string(),
                 endpoint_url: None,
+                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
             })
             .await;
     } else if let Some(key) = anthropic_key.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()) {
@@ -709,6 +722,7 @@ async fn configure_copilot_keys(
                 api_key: key,
                 model: "claude-3-5-haiku-20241022".to_string(),
                 endpoint_url: None,
+                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
             })
             .await;
     }
@@ -1571,36 +1585,57 @@ fn log_key_status(name: &str) {
 
 /// Fallback key retrieval from Ghostboard web backend
 async fn fetch_deepgram_key_from_backend() -> Option<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(1500))
-        .build()
-        .ok()?;
-    let configured_base = std::env::var("GHOSTBOARD_API_URL")
-        .or_else(|_| std::env::var("VITE_API_URL"))
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .or_else(|| {
-            option_env!("GHOSTBOARD_API_URL")
-                .or_else(|| option_env!("VITE_API_URL"))
-                .filter(|v| !v.trim().is_empty())
-                .map(|v| v.to_string())
-        });
-    let base_url = configured_base.unwrap_or_else(|| {
-        if cfg!(debug_assertions) {
-            "http://localhost:3000".to_string()
-        } else {
-            "https://ghostboard.ai".to_string()
+    let client = crate::llm::client::get_shared_llm_client();
+    let mut base_urls: Vec<String> = Vec::new();
+    let push_base = |list: &mut Vec<String>, raw: &str| {
+        let clean = raw.trim().trim_end_matches('/').to_string();
+        if !clean.is_empty() && !list.contains(&clean) {
+            list.push(clean);
         }
-    });
-    let endpoint = format!("{}/api/ai/deepgram", base_url.trim().trim_end_matches('/'));
-    let resp = client.get(endpoint).send().await.ok()?;
-    if resp.status().is_success() {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(k) = json.get("key").and_then(|v| v.as_str()) {
-                return Some(k.to_string());
-            }
-            if let Some(k) = json.get("apiKey").and_then(|v| v.as_str()) {
-                return Some(k.to_string());
+    };
+
+    if let Ok(custom) = std::env::var("GHOSTBOARD_API_URL").or_else(|_| std::env::var("VITE_API_URL")) {
+        push_base(&mut base_urls, &custom);
+    } else if let Some(baked) = option_env!("GHOSTBOARD_API_URL").or_else(|| option_env!("VITE_API_URL")) {
+        push_base(&mut base_urls, baked);
+    }
+    if cfg!(debug_assertions) {
+        push_base(&mut base_urls, "http://localhost:3001");
+        push_base(&mut base_urls, "http://localhost:3000");
+    }
+    push_base(&mut base_urls, "https://ghostboard.ai");
+
+    let auth_token = std::env::var("GHOSTBOARD_AUTH_TOKEN")
+        .ok()
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| {
+            crate::auth::keyring::KeyringStore::new()
+                .load()
+                .ok()
+                .flatten()
+                .map(|s| s.access_token)
+                .filter(|t| !t.trim().is_empty())
+        });
+
+    for base_url in base_urls {
+        let endpoint = format!("{}/api/ai/deepgram", base_url);
+        let mut req = client
+            .get(&endpoint)
+            .timeout(std::time::Duration::from_millis(1500))
+            .header("x-ghostboard-client", "desktop-app");
+        if let Some(ref token) = auth_token {
+            req = req.header("Authorization", format!("Bearer {}", token));
+        }
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    if let Some(k) = json.get("key").and_then(|v| v.as_str()) {
+                        return Some(k.to_string());
+                    }
+                    if let Some(k) = json.get("apiKey").and_then(|v| v.as_str()) {
+                        return Some(k.to_string());
+                    }
+                }
             }
         }
     }
@@ -1610,18 +1645,6 @@ async fn fetch_deepgram_key_from_backend() -> Option<String> {
 // ============================================================================
 // Application Entry Point
 // ============================================================================
-
-static PANIC_SHORTCUTS: std::sync::LazyLock<Vec<tauri_plugin_global_shortcut::Shortcut>> =
-    std::sync::LazyLock::new(|| {
-        use tauri_plugin_global_shortcut::{Code, Shortcut};
-        let mut scs = vec![Shortcut::new(None, Code::F12)];
-        for s in ["Ctrl+Shift+H", "Super+Shift+H", "CommandOrControl+Shift+H"] {
-            if let Ok(sc) = s.parse::<Shortcut>() {
-                scs.push(sc);
-            }
-        }
-        scs
-    });
 
 static CLICK_SHORTCUTS: std::sync::LazyLock<Vec<tauri_plugin_global_shortcut::Shortcut>> =
     std::sync::LazyLock::new(|| {
@@ -1802,18 +1825,10 @@ fn main() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
                     if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        let is_panic = PANIC_SHORTCUTS.contains(shortcut);
                         let is_click = CLICK_SHORTCUTS.contains(shortcut);
                         let is_screenshot = SCREEN_SHORTCUTS.contains(shortcut);
 
-                        if is_panic {
-                            let target_win = app.get_webview_window(crate::window::hud::HUD_LABEL)
-                                .or_else(|| app.get_webview_window("main"))
-                                .or_else(|| app.webview_windows().into_values().next());
-                            if let Some(w) = target_win {
-                                let _ = crate::window::toggle_panic(&w);
-                            }
-                        } else if let Some(w) = app.get_webview_window(crate::window::hud::HUD_LABEL) {
+                        if let Some(w) = app.get_webview_window(crate::window::hud::HUD_LABEL) {
                             if is_click {
                                 static CLICK_THROUGH_ACTIVE: std::sync::atomic::AtomicBool =
                                     std::sync::atomic::AtomicBool::new(false);
@@ -1866,9 +1881,9 @@ fn main() {
                     let _ = app.deep_link().register_all();
                 }
 
-                // Register pre-parsed global shortcuts: F12, Cmd/Ctrl+Shift+H, Cmd/Ctrl+Shift+X, Cmd/Ctrl/Alt+Shift+S
+                // Register pre-parsed global shortcuts: Cmd/Ctrl+Shift+X, Cmd/Ctrl/Alt+Shift+S
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
-                for sc in PANIC_SHORTCUTS.iter().chain(CLICK_SHORTCUTS.iter()).chain(SCREEN_SHORTCUTS.iter()) {
+                for sc in CLICK_SHORTCUTS.iter().chain(SCREEN_SHORTCUTS.iter()) {
                     let _ = app.global_shortcut().register(*sc);
                 }
 
@@ -1880,7 +1895,6 @@ fn main() {
 
                 let open_office_i = MenuItem::with_id(app, "open_office", "Відкрити Ghostboard Office", true, None::<&str>)?;
                 let launch_hud_i = MenuItem::with_id(app, "launch_hud", "Запустити Копайлот (HUD)", true, None::<&str>)?;
-                let panic_hide_i = MenuItem::with_id(app, "panic_hide", "Приховати / Показати все (Panic Hide)", true, None::<&str>)?;
                 let restart_audio_i = MenuItem::with_id(app, "restart_audio", "Перезапустити Аудіо / STT", true, None::<&str>)?;
                 let sep = PredefinedMenuItem::separator(app)?;
                 let quit_i = MenuItem::with_id(app, "quit", "Вийти", true, None::<&str>)?;
@@ -1890,7 +1904,6 @@ fn main() {
                     &[
                         &open_office_i,
                         &launch_hud_i,
-                        &panic_hide_i,
                         &restart_audio_i,
                         &sep,
                         &quit_i,
@@ -1921,14 +1934,6 @@ fn main() {
                             let _ = crate::window::run_window_op_on_main_thread(&app, move || {
                                 let _ = crate::window::hud::launch_copilot_window(&handle, "chat");
                             });
-                        }
-                        "panic_hide" => {
-                            let target_win = app.get_webview_window(crate::window::hud::HUD_LABEL)
-                                .or_else(|| app.get_webview_window("main"))
-                                .or_else(|| app.webview_windows().into_values().next());
-                            if let Some(w) = target_win {
-                                let _ = crate::window::toggle_panic(&w);
-                            }
                         }
                         "restart_audio" => {
                             if let Some(audio) = app.try_state::<crate::audio::GlobalAudioState>() {
@@ -2005,11 +2010,12 @@ fn main() {
                             llm.set_config(crate::llm::client::LlmConfig {
                                 provider: crate::llm::client::LlmProviderType::Gemini,
                                 api_key: key,
-                                model: "gemini-3.5-flash-lite".to_string(),
+                                model: crate::llm::client::GEMINI_FLASH_MODELS[0].to_string(),
                                 endpoint_url: None,
+                                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                             })
                             .await;
-                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 3.5 Flash-Lite LLM provider from GEMINI_API_KEY");
+                            tracing::info!(target: "ghostboard::llm", "Auto-configured Gemini 3.8 Flash LLM provider from GEMINI_API_KEY");
                         });
                     }
                 } else if let Ok(key) = std::env::var("GROQ_API_KEY") {
@@ -2021,6 +2027,7 @@ fn main() {
                                 api_key: key,
                                 model: "llama-3.3-70b-versatile".to_string(),
                                 endpoint_url: None,
+                                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                             })
                             .await;
                             tracing::info!(target: "ghostboard::llm", "Auto-configured Groq LLM provider from GROQ_API_KEY");
@@ -2035,6 +2042,7 @@ fn main() {
                                 api_key: key,
                                 model: "gpt-4o-mini".to_string(),
                                 endpoint_url: None,
+                                cascade_mode: crate::llm::client::LlmCascadeMode::HedgedRace,
                             })
                             .await;
                             tracing::info!(target: "ghostboard::llm", "Auto-configured OpenAI LLM provider from OPENAI_API_KEY");
@@ -2130,7 +2138,6 @@ fn main() {
             set_window_size,
             set_window_mode,
             align_to_active_display,
-            panic_hide,
             list_audio_devices,
             start_audio_capture,
             stop_audio_capture,
@@ -2298,19 +2305,12 @@ mod tests {
 
     #[test]
     fn test_global_shortcuts_parse_all_variations() {
-        use tauri_plugin_global_shortcut::{Code, Shortcut};
-        let f12 = Shortcut::new(None, Code::F12);
-        assert_eq!(f12.key, Code::F12);
+        use tauri_plugin_global_shortcut::Shortcut;
 
-        assert!(PANIC_SHORTCUTS.len() >= 4);
         assert!(CLICK_SHORTCUTS.len() >= 3);
         assert!(SCREEN_SHORTCUTS.len() >= 4);
-        assert!(PANIC_SHORTCUTS.contains(&f12));
 
         let valid_shortcuts = [
-            "Ctrl+Shift+H",
-            "Super+Shift+H",
-            "CommandOrControl+Shift+H",
             "Ctrl+Shift+X",
             "Super+Shift+X",
             "CommandOrControl+Shift+X",

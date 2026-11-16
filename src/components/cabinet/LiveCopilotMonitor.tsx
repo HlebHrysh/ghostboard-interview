@@ -340,7 +340,7 @@ export function LiveCopilotMonitor({ locale, userEmail }: LiveCopilotMonitorProp
               AI Synthesis
             </span>
             <span className="text-xs font-medium text-amber-300 font-mono">
-              Nova-3 + 2.5 Flash
+              Nova-3 + 3.8 Flash
             </span>
           </div>
         </div>

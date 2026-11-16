@@ -5,13 +5,15 @@ describe("geminiApi helper", () => {
   it("defines cascade models with fallback sequence", () => {
     expect(FLASH_MODELS.length).toBeGreaterThanOrEqual(3);
     expect(FLASH_MODELS[0]).toBe("gemini-3.8-flash");
-    expect(FLASH_MODELS[1]).toBe("gemini-2.5-flash");
+    expect(FLASH_MODELS[1]).toBe("gemini-3.6-flash");
+    expect(FLASH_MODELS).not.toContain("gemini-2.5-flash");
+    expect(FLASH_MODELS).not.toContain("gemini-2.0-flash");
     expect(FLASH_MODELS).toContain("gemini-flash-latest");
     expect(HEDGE_STAGGER_MS).toBe(550);
 
     expect(PRO_MODELS.length).toBeGreaterThanOrEqual(2);
     expect(PRO_MODELS[0]).toBe("gemini-3.8-flash");
-    expect(PRO_MODELS[1]).toBe("gemini-2.5-flash");
+    expect(PRO_MODELS[1]).toBe("gemini-3.6-flash");
   });
 
   it("handles empty or missing key gracefully", () => {
@@ -48,15 +50,15 @@ describe("geminiApi helper", () => {
     const initial = getPrioritizedModels();
     expect(initial[0]).toBe("gemini-3.8-flash");
 
-    // If gemini-2.5-flash wins, it becomes preferredFastModel and tops the list
-    recordModelSuccess("gemini-2.5-flash", 220);
-    expect(getPreferredFastModel()).toBe("gemini-2.5-flash");
-    expect(getPrioritizedModels()[0]).toBe("gemini-2.5-flash");
+    // If gemini-3.6-flash wins, it becomes preferredFastModel and tops the list
+    recordModelSuccess("gemini-3.6-flash", 220);
+    expect(getPreferredFastModel()).toBe("gemini-3.6-flash");
+    expect(getPrioritizedModels()[0]).toBe("gemini-3.6-flash");
 
     // If gemini-3.8-flash fails (timeout / 503), it gets demoted to the end of the list
     recordModelFailure("gemini-3.8-flash");
     const afterFailure = getPrioritizedModels();
-    expect(afterFailure[0]).toBe("gemini-2.5-flash");
+    expect(afterFailure[0]).toBe("gemini-3.6-flash");
     expect(afterFailure[afterFailure.length - 1]).toBe("gemini-3.8-flash");
 
     // Generation config sets maxOutputTokens to 850 and temperature to 0.3
@@ -115,7 +117,7 @@ describe("geminiApi helper", () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(result.modelUsed).toBe("gemini-2.5-flash");
+      expect(result.modelUsed).toBe("gemini-3.6-flash");
       expect(result.text).toBe("Successful response from fallback model");
       expect(isModelCircuitBroken("gemini-3.8-flash")).toBe(true);
 
@@ -158,7 +160,7 @@ describe("geminiApi helper", () => {
             candidates: [
               {
                 content: {
-                  parts: [{ text: "Valid answer from gemini-2.5-flash" }],
+                  parts: [{ text: "Valid answer from gemini-3.6-flash" }],
                 },
               },
             ],
@@ -175,8 +177,8 @@ describe("geminiApi helper", () => {
       });
 
       expect(result.ok).toBe(true);
-      expect(result.modelUsed).toBe("gemini-2.5-flash");
-      expect(result.text).toBe("Valid answer from gemini-2.5-flash");
+      expect(result.modelUsed).toBe("gemini-3.6-flash");
+      expect(result.text).toBe("Valid answer from gemini-3.6-flash");
 
       resetModelHealth();
       resetModelCircuitBreaker();

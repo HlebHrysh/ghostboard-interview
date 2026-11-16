@@ -133,13 +133,14 @@ describe('Desktop Production Readiness (R1 - R4 Lifecycle & Sanity QA)', () => {
       expect(content).toMatch(/TOP_PADDING_LOGICAL:\s*f64\s*=\s*(?:8\.0|12\.0)/);
     });
 
-    it('confirms global shortcuts register Panic (Ctrl+Shift+H) and Click-Through (Ctrl+Shift+X)', () => {
+    it('confirms global shortcuts register Click-Through (Ctrl+Shift+X) and Screen OCR (Ctrl+Shift+S) without Panic F12', () => {
       const mainFile = path.join(tauriDir, 'src/main.rs');
       const content = fs.readFileSync(mainFile, 'utf8');
-      expect(content).toContain('Ctrl+Shift+H');
-      expect(content).toContain('Super+Shift+H');
+      expect(content).not.toContain('Ctrl+Shift+H');
+      expect(content).not.toContain('PANIC_SHORTCUTS');
       expect(content).toContain('Ctrl+Shift+X');
       expect(content).toContain('Super+Shift+X');
+      expect(content).toContain('Ctrl+Shift+S');
     });
 
     it('confirms EyelineNotch and Stealth HUD render 720px width, latency, audio switcher, and DesktopAuthGate handshake', () => {

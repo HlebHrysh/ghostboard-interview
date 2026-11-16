@@ -57,18 +57,6 @@ describe('Stage 3: Frontend Stabilization, Error Boundary & STT Status Verificat
       expect(html).toContain('data-tauri-drag-region');
       expect(html).toContain('DRAG REGION');
       expect(html).toContain('Перезавантажити HUD');
-      expect(html).toContain('Сховати вікно');
-    });
-
-    it('invokes panicHide when handlePanicHide is called', async () => {
-      const panicHideSpy = vi.spyOn(tauriBridge, 'panicHide').mockResolvedValue(true);
-
-      const boundary = new HudErrorBoundary({
-        children: React.createElement(NormalChild),
-      });
-
-      boundary.handlePanicHide();
-      expect(panicHideSpy).toHaveBeenCalled();
     });
 
     it('resets error state and triggers window reload when handleReload is called', () => {

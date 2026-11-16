@@ -161,7 +161,7 @@ export function LangDropdown({ align = 'right' }: LangDropdownProps) {
                     </div>
                     <div className="flex items-center justify-between text-[10px] font-mono">
                       <span className="text-zinc-400">MODEL</span>
-                      <span className="text-zinc-200">Gemini 2.5 Flash</span>
+                      <span className="text-zinc-200">Gemini 3.8 Flash</span>
                     </div>
                   </div>
                 </div>

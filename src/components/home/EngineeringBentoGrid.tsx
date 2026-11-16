@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import type { HomeTranslations } from '@/lib/homeI18n';
 import { useLocale } from '@/contexts/LocaleContext';
-import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
+import { SpatialSquircleBadge } from '@/components/ui/SpatialSquircleBadge';
 
 interface Props {
   t: HomeTranslations;
@@ -94,24 +94,31 @@ export function EngineeringBentoGrid({ t }: Props) {
               </p>
             </div>
 
-            <SpatialVideoCapsule
-              videos={[
-                {
-                  id: 'bento-ghost',
-                  src: '/videos/ghost.mp4',
-                  label: isUa ? 'Stealth Overlay Preview' : 'Stealth Overlay Preview',
-                  caption: 'WDA_EXCLUDEFROMCAPTURE · NSWindowSharingNone',
-                },
-                {
-                  id: 'bento-ghost2',
-                  src: '/videos/ghost2.mp4',
-                  label: isUa ? 'Демо обходу запису' : 'Zero Screen Share Leak',
-                  caption: isUa ? 'Повна ізоляція композитора ОС' : 'OS Compositor Window Isolation',
-                },
-              ]}
-              layoutGroupId="bento-stealth-video"
-              aspectClassName="h-44 sm:h-48"
-            />
+            <div className="rounded-2xl bg-black/50 border border-white/10 p-4 sm:p-5 space-y-3 shadow-inner">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-zinc-300 font-semibold">OS Compositor Layer Isolation</span>
+                <span className="inline-flex items-center gap-1.5 text-emerald-300">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  0px Capture Leak
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs font-mono">
+                <div className="p-3 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-1">
+                  <div className="text-zinc-400">Zoom / Google Meet Feed</div>
+                  <div className="text-white font-semibold flex items-center justify-between">
+                    <span>IDE & Browser Only</span>
+                    <span className="text-emerald-400">CLEAN</span>
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-emerald-500/[0.08] border border-emerald-400/25 space-y-1">
+                  <div className="text-emerald-300/90">Candidate Display Buffer</div>
+                  <div className="text-white font-semibold flex items-center justify-between">
+                    <span>WDA_EXCLUDEFROMCAPTURE</span>
+                    <span className="text-emerald-300">ACTIVE</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               <div className="inline-flex items-center gap-2 text-xs font-mono text-emerald-300 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
@@ -318,20 +325,16 @@ export function EngineeringBentoGrid({ t }: Props) {
                 </div>
               </div>
 
-              {/* Embedded Headphones Mini-Video PiP */}
-              <div className="sm:col-span-5">
-                <SpatialVideoCapsule
-                  videos={[
-                    {
-                      id: 'audio-headphones',
-                      src: '/videos/headphones.mp4',
-                      label: 'Loopback Capture',
-                    },
-                  ]}
-                  layoutGroupId="bento-headphones-video"
-                  compact
-                  aspectClassName="h-32 sm:h-full min-h-[120px]"
+              {/* Headphones 3D Squircle Emblem */}
+              <div className="sm:col-span-5 rounded-2xl bg-black/45 border border-white/[0.09] p-4 flex flex-col items-center justify-center gap-3">
+                <SpatialSquircleBadge
+                  src="/videos/headphones.mp4"
+                  accent="cyan"
+                  size="lg"
                 />
+                <span className="text-xs font-mono text-sky-300/90 text-center">
+                  16kHz PCM System Loopback
+                </span>
               </div>
             </div>
           </motion.div>

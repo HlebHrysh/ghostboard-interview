@@ -260,11 +260,95 @@ export function tokenizeInline(src: string): InlineToken[] {
   return out;
 }
 
+/**
+ * Normalizes collapsed LLM markdown before block parsing:
+ * - Splits inline ` • ` bullet separators outside code fences into real `\n- ` lines;
+ * - Injects `\n\n` before opening triple backticks (` ``` `) when preceded by text on the same line;
+ * - Splits inline content immediately following ` ```lang ` onto a new line;
+ * - Injects `\n` before and after closing ` ``` ` when glued to inline code or prose.
+ */
+export function normalizeCollapsedMarkdown(src: string): string {
+  if (!src) return '';
+  const text = src.replace(/\r\n?/g, '\n');
+
+  const splitInlineBullets = (chunk: string): string =>
+    chunk
+      .replace(/([^\n])\s*•\s+/g, '$1\n- ')
+      .replace(/^[ \t]*•\s+/gm, '- ');
+
+  let out = '';
+  let i = 0;
+  let inFence = false;
+
+  while (i < text.length) {
+    const fenceIdx = text.indexOf('```', i);
+    if (fenceIdx === -1) {
+      const tail = text.slice(i);
+      out += inFence ? tail : splitInlineBullets(tail);
+      break;
+    }
+
+    const before = text.slice(i, fenceIdx);
+    if (!inFence) {
+      out += splitInlineBullets(before);
+      // Trim horizontal spaces right before opening fence when preceded by content on the same line
+      if (out.length > 0 && !out.endsWith('\n')) {
+        out = out.replace(/[ \t]+$/, '');
+        if (out.length > 0 && !out.endsWith('\n')) {
+          out += '\n\n';
+        }
+      }
+      out += '```';
+      let afterIdx = fenceIdx + 3;
+      const restAfterOpen = text.slice(afterIdx);
+      const langMatch = restAfterOpen.match(/^([A-Za-z0-9_+#.-]+)/);
+      if (langMatch) {
+        out += langMatch[1];
+        afterIdx += langMatch[1].length;
+      }
+      // If non-newline content follows on the same line (e.g. ```javascript // comment), break onto a newline
+      const afterLang = text.slice(afterIdx);
+      const sameLineRest = afterLang.match(/^[ \t]+([^\n])/);
+      if (sameLineRest) {
+        const wsLen = afterLang.indexOf(sameLineRest[1]);
+        out += '\n';
+        afterIdx += wsLen;
+      } else if (afterLang.length > 0 && afterLang[0] !== '\n') {
+        out += '\n';
+      }
+      inFence = true;
+      i = afterIdx;
+    } else {
+      out += before;
+      // Trim trailing horizontal spaces right before closing ``` when on the same line as code
+      if (out.length > 0 && !out.endsWith('\n')) {
+        out = out.replace(/[ \t]+$/, '');
+        if (out.length > 0 && !out.endsWith('\n')) {
+          out += '\n';
+        }
+      }
+      out += '```';
+      let afterIdx = fenceIdx + 3;
+      const afterClose = text.slice(afterIdx);
+      const sameLineRest = afterClose.match(/^[ \t]*([^\n])/);
+      if (sameLineRest) {
+        const wsLen = afterClose.indexOf(sameLineRest[1]);
+        out += '\n';
+        afterIdx += wsLen;
+      }
+      inFence = false;
+      i = afterIdx;
+    }
+  }
+
+  return out;
+}
+
 /** Splits a deep-dive / plain body into code fences, bullets, headings and paragraphs. */
 export function parseBlocks(src: string): Block[] {
   const blocks: Block[] = [];
   if (!src) return blocks;
-  const lines = src.replace(/\r\n?/g, '\n').split('\n');
+  const lines = normalizeCollapsedMarkdown(src).split('\n');
   let i = 0;
   let para: string[] = [];
   const flushPara = () => {

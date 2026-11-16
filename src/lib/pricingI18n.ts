@@ -161,7 +161,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Чи потрібно мені самостійно купувати або вставляти власні API-ключі?",
-          "a": "Ні! Усі ліцензії та квоти для Deepgram Nova-3 та Gemini 2.5 Flash вже включені у підписку та працюють на наших серверах з коробки."
+          "a": "Ні! Усі ліцензії та квоти для Deepgram Nova-3 та Gemini 3.8 Flash вже включені у підписку та працюють на наших серверах з коробки."
         },
         {
           "q": "Чи підтримуються співбесіди англійською мовою?",
@@ -295,7 +295,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -429,7 +429,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -563,7 +563,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -697,7 +697,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -831,7 +831,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -965,7 +965,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -1099,7 +1099,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -1233,7 +1233,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",
@@ -1367,7 +1367,7 @@ export const PRICING_I18N: Record<SupportedLocale, PricingPageI18n> = {
         },
         {
           "q": "Do I need to purchase or provide my own API keys?",
-          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 2.5 Flash are included out of the box."
+          "a": "No! All quotas and licenses for Deepgram Nova-3 and Gemini 3.8 Flash are included out of the box."
         },
         {
           "q": "Are technical interviews in English supported?",

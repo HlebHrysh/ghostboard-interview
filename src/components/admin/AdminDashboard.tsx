@@ -529,7 +529,7 @@ export function AdminDashboard() {
             {summary ? `${summary.systemErrorRate}%` : "..."}
           </div>
           <div className="text-[11px] font-mono text-zinc-500">
-            Gemini Flash 2.5 + Resend SMTP optimal
+            Gemini 3.8 Flash + Resend SMTP optimal
           </div>
         </div>
       </div>

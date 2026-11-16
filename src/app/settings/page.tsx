@@ -28,6 +28,7 @@ import { UnifiedNavbar } from "@/components/ui/UnifiedNavbar";
 import { UnifiedFooter } from "@/components/ui/UnifiedFooter";
 import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
 import { SubpageStripesContainer } from "@/components/ui/SubpageStripesContainer";
+import { SpatialSquircleBadge } from "@/components/ui/SpatialSquircleBadge";
 import { useLocale } from "@/contexts/LocaleContext";
 import { LOCALE_META, SUPPORTED_LOCALES, type SupportedLocale } from "@/lib/i18n";
 import { getSettingsTranslations, type Platform } from "@/lib/settingsI18n";
@@ -227,8 +228,8 @@ export default function SettingsPage() {
                     </div>
                     <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
                       {isUa
-                        ? "Миттєва генерація через Gemini 2.5 Flash. Оптимально для live-інтерв'ю без пауз."
-                        : "Sub-1.2s lightning response via Gemini Flash. Ideal for fast-paced live technical rounds."}
+                        ? "Миттєва генерація через Gemini 3.8 Flash. Оптимально для live-інтерв'ю без пауз."
+                        : "Sub-1.2s lightning response via Gemini 3.8 Flash. Ideal for fast-paced live technical rounds."}
                     </p>
                   </button>
 
@@ -298,8 +299,8 @@ export default function SettingsPage() {
                     <span className="text-[11px] text-zinc-400">{isUa ? "Заморозка екрану" : "Freeze HUD"}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <kbd className="kbd-obsidian">Esc</kbd>
-                    <span className="text-[11px] text-zinc-400">{isUa ? "Панік-щит" : "Panic Shield"}</span>
+                    <kbd className="kbd-obsidian">Tab</kbd>
+                    <span className="text-[11px] text-zinc-400">{isUa ? "Фокус-режим 100%" : "Focus Mode"}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <kbd className="kbd-obsidian">Alt + G</kbd>
@@ -312,6 +313,19 @@ export default function SettingsPage() {
 
           {/* ── Section 3: Audio Routing & Loopback ── */}
           <Section title={s.audioSectionTitle}>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 pb-2">
+              <SpatialSquircleBadge
+                src="/videos/headphones.mp4"
+                accent="cyan"
+                size="sm"
+                className="shrink-0"
+              />
+              <p className="text-xs text-zinc-300 leading-relaxed font-sans">
+                {locale === "ua"
+                  ? "Налаштуйте системне перехоплення звуку без віртуальних кабелів — ШІ слухає лише голос інтервʼюера."
+                  : "Zero-cable system audio routing isolates the interviewer's voice cleanly with 16kHz PCM streaming."}
+              </p>
+            </div>
             {/* OS Switcher */}
             <div className="flex gap-1.5 p-1 bg-black/40 rounded-xl border border-white/5">
               {(["linux", "windows", "macos"] as Platform[]).map((p) => (
@@ -546,7 +560,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-zinc-500">{s.systemAiCore}</span>
-                <span className="text-zinc-200">Gemini 2.5 Flash / Pro Hybrid Fallback</span>
+                <span className="text-zinc-200">Gemini 3.8 Flash / 3.x Hybrid Fallback</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-zinc-500">{s.systemStt}</span>

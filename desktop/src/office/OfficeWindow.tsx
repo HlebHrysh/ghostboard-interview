@@ -31,15 +31,19 @@ export interface OfficeWindowProps {
   onStartHud?: (mode?: CopilotMode) => void;
 }
 
-function buildCascadeInstructions(settings: DesktopSettings): string {
-  const cascadeHint =
-    settings.aiModelCascade === 'gemini_flash'
-      ? '[Model Preference: Gemini 2.5 Flash]'
-      : settings.aiModelCascade === 'groq_llama'
-        ? '[Model Preference: Groq Llama 3.3 Turbo]'
-        : '[Model Preference: Hedged Race Gemini 2.5 Flash + Groq Llama 3.3]';
-  const custom = settings.customInstructions.trim();
-  return custom ? `${cascadeHint}\n${custom}` : cascadeHint;
+function buildCustomInstructions(settings: DesktopSettings): string {
+  return settings.customInstructions.trim();
+}
+
+function buildCleanSttStack(profile: CandidateProfile): string | null {
+  const parts = [
+    profile.primaryStack,
+    ...(profile.techStack ?? []),
+    ...(profile.resumeKeywords ?? []),
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : null;
 }
 
 export const OfficeWindow: React.FC<OfficeWindowProps> = ({
@@ -56,29 +60,46 @@ export const OfficeWindow: React.FC<OfficeWindowProps> = ({
   const [launchError, setLaunchError] = useState<string | null>(null);
   const [isQaLoggingIn, setIsQaLoggingIn] = useState(false);
 
-  // Keep native Rust AI pipeline aligned with current Office preferences & candidate profile
+  // Debounced sync to native Rust AI pipeline (avoids IPC lock storms on keystrokes / slider drags)
   useEffect(() => {
-    const helperLanguage =
-      settings.hintLanguage === 'bilingual_uk'
-        ? 'uk'
-        : settings.hintLanguage === 'bilingual_ru'
-          ? 'ru'
-          : null;
-    const outputLanguage =
-      settings.hintLanguage === 'auto'
-        ? 'auto'
-        : settings.hintLanguage === 'bilingual_uk' || settings.hintLanguage === 'bilingual_ru'
-          ? 'en'
-          : settings.hintLanguage;
+    const timer = setTimeout(() => {
+      const helperLanguage =
+        settings.hintLanguage === 'bilingual_uk'
+          ? 'uk'
+          : settings.hintLanguage === 'bilingual_ru'
+            ? 'ru'
+            : null;
+      const outputLanguage =
+        settings.hintLanguage === 'auto'
+          ? 'auto'
+          : settings.hintLanguage === 'bilingual_uk' || settings.hintLanguage === 'bilingual_ru'
+            ? 'en'
+            : settings.hintLanguage;
 
-    void setAiPreferences({
-      outputLanguage,
-      helperLanguage,
-      modifier: settings.answerLength === 'short' ? 'shorter' : settings.answerLength === 'code' ? 'code' : null,
-      concise: settings.answerSpeed === 'fast' && settings.answerLength === 'short',
-      candidateProfile: `${buildCandidateSystemPrompt(profile)}\n\n${buildCascadeInstructions(settings)}`,
-    });
-  }, [profile, settings]);
+      const baseProfile = buildCandidateSystemPrompt(profile);
+      const custom = buildCustomInstructions(settings);
+      const candidateProfile = custom ? `${baseProfile}\n\n${custom}` : baseProfile;
+
+      void setAiPreferences({
+        outputLanguage,
+        helperLanguage,
+        modifier: settings.answerLength === 'short' ? 'shorter' : settings.answerLength === 'code' ? 'code' : null,
+        concise: settings.answerSpeed === 'fast' && settings.answerLength === 'short',
+        candidateProfile,
+        cascadeMode: settings.aiModelCascade,
+        sttStack: buildCleanSttStack(profile),
+      });
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [
+    profile,
+    settings.aiModelCascade,
+    settings.answerLength,
+    settings.answerSpeed,
+    settings.customInstructions,
+    settings.hintLanguage,
+  ]);
 
   // Quick QA login handler for localhost dev
   const handleQuickQaLogin = useCallback(async () => {

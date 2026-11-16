@@ -38,7 +38,6 @@ export interface StealthCommandDockProps {
   onToggleHistory?: () => void;
   onToggleQuickTests?: () => void;
   onToggleConcise?: () => void;
-  onTogglePanic?: () => void;
   onOpenSoundCheck?: () => void;
   sessionDuration?: number;
   onRefineQA?: (modifier: 'shorter' | 'simpler' | 'code' | 'under_the_hood' | 're_angle') => void;

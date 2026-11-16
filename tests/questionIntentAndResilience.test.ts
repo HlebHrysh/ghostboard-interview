@@ -163,9 +163,11 @@ describe('Question vs Monologue Classifier & AI Resilience Suite', () => {
   describe('Active Gemini Model Pool', () => {
     it('verifies FLASH_MODELS pool contains the production low-latency models in correct order', () => {
       expect(FLASH_MODELS).toContain('gemini-3.8-flash');
-      expect(FLASH_MODELS).toContain('gemini-2.5-flash');
-      expect(FLASH_MODELS).toContain('gemini-2.0-flash');
+      expect(FLASH_MODELS).toContain('gemini-3.6-flash');
+      expect(FLASH_MODELS).toContain('gemini-3.5-flash-lite');
       expect(FLASH_MODELS).toContain('gemini-flash-latest');
+      expect(FLASH_MODELS).not.toContain('gemini-2.5-flash');
+      expect(FLASH_MODELS).not.toContain('gemini-2.0-flash');
     });
   });
 

@@ -8,7 +8,6 @@ import {
   Monitor,
   Camera,
   CheckCircle2,
-  AlertTriangle,
   Terminal,
   Layers,
   Sparkles,
@@ -34,7 +33,6 @@ export function ZoomInvisibilityDeck({
   const [splitPos, setSplitPos] = useState<number>(50);
   const [isSnapshotting, setIsSnapshotting] = useState<boolean>(false);
   const [showSnapshotModal, setShowSnapshotModal] = useState<boolean>(false);
-  const [isPanicDisguised, setIsPanicDisguised] = useState<boolean>(false);
 
   const triggerSnapshot = () => {
     setIsSnapshotting(true);
@@ -168,7 +166,7 @@ export function ZoomInvisibilityDeck({
           </div>
 
           {/* 2. Floating Ghostboard Teleprompter HUD (ONLY visible on Candidate side) */}
-          {(viewMode === "candidate" || viewMode === "split") && !isPanicDisguised && (
+          {(viewMode === "candidate" || viewMode === "split") && (
             <div
               className="absolute top-12 left-1/2 -translate-x-1/2 w-[92%] max-w-lg p-4 rounded-xl bg-black/90 border border-emerald-500/50 backdrop-blur-2xl shadow-[0_0_50px_rgba(0,0,0,0.9)] pointer-events-none transition-all z-20"
               style={{
@@ -252,38 +250,6 @@ export function ZoomInvisibilityDeck({
                 </span>
               </div>
             </div>
-          </div>
-
-          {/* Card 2: Emergency Disguise Button */}
-          <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-3">
-            <div className="flex items-center justify-between text-xs font-mono text-zinc-400 pb-2 border-b border-white/[0.06]">
-              <span className="flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-zinc-300" />
-                <span>{isUa ? "ЕКСТРЕНЕ МАСКУВАННЯ" : "EMERGENCY DISGUISE"}</span>
-              </span>
-              <span className="text-zinc-500">[ESC]</span>
-            </div>
-
-            <p className="text-xs text-zinc-400 leading-relaxed font-sans">
-              {isUa
-                ? "Якщо співрозмовник попросить: «Згорніть вікна або покажіть свій термінал» — одне натискання ESC миттєво замінює суфлер на реальну компіляцію Rust."
-                : "If asked to minimize or show your shell — one tap on ESC instantly morphs into genuine build output."}
-            </p>
-
-            <button
-              onClick={() => {
-                setIsPanicDisguised(!isPanicDisguised);
-                playClickSound();
-              }}
-              className={`w-full py-2.5 rounded-xl text-xs font-mono font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 border ${
-                isPanicDisguised
-                  ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                  : "bg-red-500/10 border-red-500/40 text-red-400 hover:bg-red-500/20"
-              }`}
-            >
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>{isPanicDisguised ? (isUa ? "ВІДНОВИТИ СУФЛЕР" : "RESTORE HUD") : (isUa ? "УВІМКНУТИ ПАНІКУ [ESC]" : "TRIGGER PANIC [ESC]")}</span>
-            </button>
           </div>
 
           {/* Card 3: Snapshot Proof Confirmation */}

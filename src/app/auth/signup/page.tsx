@@ -72,14 +72,14 @@ export default function SignupPage() {
               })
                 .then((r) => r.json())
                 .then((bindData) => {
-                  if (bindData?.success) {
+                  if (bindData?.success && bindData?.token) {
                     toast.success(
                       locale === "ua"
                         ? "Десктоп успішно авторизовано! Можете повернутися до програми."
                         : "Desktop app authorized! You can return to the application."
                     );
                     setTimeout(() => {
-                      window.location.href = `ghostboard://auth?token=${bindData?.user?.id || ""}&handshake=${handshake}`;
+                      window.location.href = `ghostboard://auth?token=${encodeURIComponent(bindData.token)}&handshake=${encodeURIComponent(handshake)}`;
                     }, 500);
                   }
                 })

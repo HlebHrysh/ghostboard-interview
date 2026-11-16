@@ -6,7 +6,7 @@ export const SPRING_TRANSITION = {
 };
 
 export type SpoofPlan = 'reset_to_dev_unlimited' | 'free' | 'pro' | 'lifetime';
-export type ForcedModel = 'auto' | 'gemini-3.8-flash' | 'gemini-2.5-flash' | 'groq';
+export type ForcedModel = 'auto' | 'gemini-3.8-flash' | 'gemini-3.6-flash' | 'groq';
 
 export interface DevTelemetryPayload {
   timestamp: string;
@@ -150,7 +150,7 @@ export const SPOOF_PLAN_OPTIONS: Array<{ key: SpoofPlan; label: string }> = [
 export const FORCED_MODEL_OPTIONS: readonly ForcedModel[] = [
   'auto',
   'gemini-3.8-flash',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
   'groq',
 ];
 

@@ -18,6 +18,7 @@ pub struct SttOrchestrator {
     current_language: Arc<Mutex<String>>,
     current_api_key: Arc<Mutex<Option<String>>>,
     custom_stack: Arc<Mutex<Option<String>>>,
+    active_url: Arc<Mutex<Option<String>>>,
 }
 
 impl SttOrchestrator {
@@ -30,6 +31,7 @@ impl SttOrchestrator {
             current_language: Arc::new(Mutex::new("multi".to_string())),
             current_api_key: Arc::new(Mutex::new(None)),
             custom_stack: Arc::new(Mutex::new(None)),
+            active_url: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -144,12 +146,16 @@ impl SttOrchestrator {
             let mut lock = self.candidate_client.lock().await;
             *lock = Some(cand);
         }
+        {
+            let mut url_lock = self.active_url.lock().await;
+            *url_lock = Some(url_to_use.to_string());
+        }
 
         Ok(())
     }
 
     /// Dynamically switches the active STT listening language ("multi", "uk", "ru", "en").
-    /// Updates the setting and reconnects active WebSocket streams with the new language parameters.
+    /// Updates the setting and reconnects active WebSocket streams only if the negotiated URL changed.
     pub async fn set_language(&self, language: &str) -> Result<String, String> {
         let normalized = match language.trim().to_lowercase().as_str() {
             "uk" | "ua" => "uk",
@@ -158,10 +164,12 @@ impl SttOrchestrator {
             _ => "multi",
         };
 
-        {
+        let prev_lang = {
             let mut lang_lock = self.current_language.lock().await;
+            let prev = lang_lock.clone();
             *lang_lock = normalized.to_string();
-        }
+            prev
+        };
 
         let api_key_opt = {
             let key_lock = self.current_api_key.lock().await;
@@ -178,6 +186,25 @@ impl SttOrchestrator {
                 Some(normalized),
                 custom_stack.as_deref(),
             );
+            let has_clients = {
+                let int_lock = self.interlocutor_client.lock().await;
+                let cand_lock = self.candidate_client.lock().await;
+                int_lock.is_some() || cand_lock.is_some()
+            };
+            let url_unchanged = {
+                let url_lock = self.active_url.lock().await;
+                url_lock.as_deref() == Some(new_url.as_str())
+            };
+
+            if has_clients && url_unchanged && prev_lang == normalized {
+                tracing::debug!(
+                    target: "ghostboard::stt",
+                    language = %normalized,
+                    "STT language and keyterms unchanged; keeping existing Deepgram sockets warm"
+                );
+                return Ok(normalized.to_string());
+            }
+
             tracing::info!(
                 target: "ghostboard::stt",
                 language = %normalized,
@@ -233,6 +260,8 @@ impl SttOrchestrator {
         *int_lock = None;
         let mut cand_lock = self.candidate_client.lock().await;
         *cand_lock = None;
+        let mut url_lock = self.active_url.lock().await;
+        *url_lock = None;
     }
 }
 

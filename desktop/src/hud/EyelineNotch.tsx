@@ -79,16 +79,16 @@ export const EyelineNotch = memo(function EyelineNotch({
   return (
     <div
       style={{ '--hud-font': `${fontSizePx}px` } as React.CSSProperties}
-      className="flex-1 min-h-0 flex items-center justify-center px-2 py-1.5 bg-transparent"
+      className="flex-1 min-h-0 flex items-start justify-center px-2 pt-2 pb-1.5 bg-transparent"
     >
       <div
         data-tauri-drag-region="true"
-        className="w-full max-w-[720px] sm:max-w-[760px] rounded-2xl border border-white/10 bg-[#09090b]/95 px-3.5 py-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_18px_40px_rgba(0,0,0,0.8)] flex flex-col justify-between gap-2 select-none"
+        className="w-full max-w-[720px] sm:max-w-[760px] rounded-2xl border border-white/12 bg-[#09090b]/95 px-4 py-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_8px_20px_rgba(0,0,0,0.45)] flex flex-col justify-between gap-2 select-none"
       >
         {/* Top 1-line interviewer question & STT/latency strip */}
-        <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] pb-1.5">
+        <div className="relative flex items-center justify-between gap-2 border-b border-white/[0.06] pb-1.5">
           <div className="min-w-0 flex-1 flex items-center gap-2">
-            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]" />
             <span className="truncate text-[11.5px] font-medium text-zinc-400">
               {activeAnswer?.question
                 ? activeAnswer.question

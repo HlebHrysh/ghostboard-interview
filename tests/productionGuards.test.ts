@@ -75,6 +75,31 @@ describe('serverDb production fail-fast', () => {
     await expect(db.getUserByEmail('a@b.c')).rejects.toThrow(EnvConfigError);
     await expect(db.createUser('a@b.c')).rejects.toThrow(/DATABASE_URL/);
   });
+
+  it('throws EnvConfigError on write mutations in production when circuit breaker is active even if DATABASE_URL is set', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('DATABASE_URL', 'postgresql://example:5432/db');
+    const db = await import('../src/lib/serverDb');
+    db.tripDbCircuitBreaker(5000);
+    try {
+      await expect(db.createUser('prod-cb@example.com')).rejects.toThrow(EnvConfigError);
+      await expect(db.createSession('usr_1', 'web')).rejects.toThrow(EnvConfigError);
+      await expect(
+        db.saveInterviewSession('usr_1', { durationSec: 10, items: [] })
+      ).rejects.toThrow(EnvConfigError);
+      await expect(
+        db.logPayment({
+          userId: 'usr_1',
+          email: 'prod-cb@example.com',
+          plan: 'pro',
+          amountCents: 1500,
+          status: 'succeeded',
+        })
+      ).rejects.toThrow(EnvConfigError);
+    } finally {
+      db.resetDbCircuitBreaker();
+    }
+  });
 });
 
 describe('syncStore (Redis backend)', () => {

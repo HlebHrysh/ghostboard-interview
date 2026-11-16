@@ -49,8 +49,6 @@ export function LivePrompterPhysicsDeck({
   const [hudOpacity, setHudOpacity] = useState(85);
   // Click through state
   const [isClickThrough, setIsClickThrough] = useState(false);
-  // Panic disguise toggle
-  const [isPanic, setIsPanic] = useState(false);
   // Is snapped to top webcam anchor
   const [isSnapped, setIsSnapped] = useState(true);
 
@@ -168,9 +166,7 @@ export function LivePrompterPhysicsDeck({
                   : "border-white/20 shadow-2xl"
               }`}
               animate={{
-                backgroundColor: isPanic
-                  ? "rgba(0, 0, 0, 0.98)"
-                  : `rgba(9, 9, 11, ${hudOpacity / 100})`,
+                backgroundColor: `rgba(9, 9, 11, ${hudOpacity / 100})`,
                 backdropFilter: `blur(${Math.round((hudOpacity / 100) * 24)}px)`,
               }}
             >
@@ -184,7 +180,7 @@ export function LivePrompterPhysicsDeck({
                   </div>
                   <span className="ml-2 font-semibold text-zinc-200 flex items-center gap-1.5">
                     <Move className="w-3 h-3 text-zinc-400" />
-                    <span>{isPanic ? "Terminal — cargo build" : "Ghostboard Live HUD"}</span>
+                    <span>Ghostboard Live HUD</span>
                   </span>
                 </div>
 
@@ -202,63 +198,36 @@ export function LivePrompterPhysicsDeck({
               </div>
 
               {/* Window Content */}
-              {!isPanic ? (
-                <div className="p-4 space-y-2 text-xs font-mono">
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                    <span className="text-emerald-400 font-semibold">PostgreSQL MVCC & Autovacuum</span>
-                    <span className="text-zinc-500 text-[10px]">600ms STREAM</span>
-                  </div>
-
-                  <div className="space-y-1.5 text-zinc-200 text-[11px] leading-relaxed pt-1">
-                    <p className="flex items-start gap-1.5">
-                      <span className="text-emerald-400 shrink-0">•</span>
-                      <span><b>Autovacuum scale factor:</b> знизити з 0.20 до 0.05, вакуумний cost_limit = 2000.</span>
-                    </p>
-                    <p className="flex items-start gap-1.5">
-                      <span className="text-emerald-400 shrink-0">•</span>
-                      <span><b>HOT Updates:</b> усувають спліт B-Tree сторінок при зміні неіндексованих колонок.</span>
-                    </p>
-                    <p className="flex items-start gap-1.5">
-                      <span className="text-emerald-400 shrink-0">•</span>
-                      <span><b>Online Repack:</b> використовувати pg_repack без ексклюзивних ACCESS EXCLUSIVE локів.</span>
-                    </p>
-                  </div>
-
-                  {/* Window Bottom Micro-Controls */}
-                  <div className="flex items-center justify-between pt-3 mt-2 border-t border-white/[0.08] text-[10px] text-zinc-400">
-                    <span className="flex items-center gap-1.5">
-                      <Sliders className="w-3 h-3 text-zinc-400" />
-                      <span>{isUa ? "Прозорість:" : "Opacity:"} {hudOpacity}%</span>
-                    </span>
-                    <button
-                      onClick={() => {
-                        setIsPanic(true);
-                        playLockSound();
-                      }}
-                      className="text-rose-400 hover:text-rose-300 underline cursor-pointer"
-                    >
-                      {isUa ? "Тест паніки [ESC]" : "Panic Disguise [ESC]"}
-                    </button>
-                  </div>
+              <div className="p-4 space-y-2 text-xs font-mono">
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span className="text-emerald-400 font-semibold">PostgreSQL MVCC & Autovacuum</span>
+                  <span className="text-zinc-500 text-[10px]">600ms STREAM</span>
                 </div>
-              ) : (
-                /* Panic Disguise Terminal Output */
-                <div className="p-4 space-y-1 text-[11px] font-mono text-green-400 bg-black/90">
-                  <div className="text-zinc-500 pb-1">$ cargo test --workspace --release</div>
-                  <div>running 42 tests</div>
-                  <div>test storage::mvcc::tests::test_vacuum_scale_factor ... <span className="text-emerald-400 font-bold">ok</span></div>
-                  <div>test cluster::consensus::tests::test_redlock_quorum ... <span className="text-emerald-400 font-bold">ok</span></div>
-                  <div className="pt-2 text-zinc-400 flex items-center justify-between">
-                    <span>test result: ok. 42 passed; 0 failed</span>
-                    <button
-                      onClick={() => setIsPanic(false)}
-                      className="px-2 py-0.5 rounded bg-green-500/20 text-green-300 border border-green-500/40 cursor-pointer text-[10px]"
-                    >
-                      {isUa ? "Відновити суфлер" : "Restore HUD"}
-                    </button>
-                  </div>
+
+                <div className="space-y-1.5 text-zinc-200 text-[11px] leading-relaxed pt-1">
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 shrink-0">•</span>
+                    <span><b>Autovacuum scale factor:</b> знизити з 0.20 до 0.05, вакуумний cost_limit = 2000.</span>
+                  </p>
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 shrink-0">•</span>
+                    <span><b>HOT Updates:</b> усувають спліт B-Tree сторінок при зміні неіндексованих колонок.</span>
+                  </p>
+                  <p className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 shrink-0">•</span>
+                    <span><b>Online Repack:</b> використовувати pg_repack без ексклюзивних ACCESS EXCLUSIVE локів.</span>
+                  </p>
                 </div>
-              )}
+
+                {/* Window Bottom Micro-Controls */}
+                <div className="flex items-center justify-between pt-3 mt-2 border-t border-white/[0.08] text-[10px] text-zinc-400">
+                  <span className="flex items-center gap-1.5">
+                    <Sliders className="w-3 h-3 text-zinc-400" />
+                    <span>{isUa ? "Прозорість:" : "Opacity:"} {hudOpacity}%</span>
+                  </span>
+                  <span className="text-emerald-400/90 font-mono">Space · Freeze</span>
+                </div>
+              </div>
             </motion.div>
           </div>
 

@@ -82,12 +82,32 @@ export const VuBars = memo(function VuBars({
   );
 });
 
-/** Horizontal level track (Audio Studio live soundcheck). */
+/** Horizontal studio level track with broadcast dB scale (Audio Studio soundcheck). */
 export const VuTrack = memo(function VuTrack({ channel, label }: { channel: VuChannel; label: string }) {
   const ref = useVuLevel(channel);
   return (
-    <span ref={ref} role="img" aria-label={label} className="vu-track block w-full">
-      <span className="vu-fill" />
-    </span>
+    <div className="space-y-1">
+      <span ref={ref} role="img" aria-label={label} className="vu-track block w-full relative overflow-hidden">
+        <span className="vu-fill" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 opacity-35"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to right, transparent 0, transparent 7px, rgba(9,9,11,0.92) 7px, rgba(9,9,11,0.92) 9px)',
+          }}
+        />
+      </span>
+      <div
+        aria-hidden="true"
+        className="flex items-center justify-between px-0.5 font-mono text-[9px] tabular-nums text-zinc-600"
+      >
+        <span>-∞</span>
+        <span>-36</span>
+        <span>-18</span>
+        <span>-6</span>
+        <span className="text-amber-500/70">0 dB</span>
+      </div>
+    </div>
   );
 });

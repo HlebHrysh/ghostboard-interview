@@ -67,8 +67,22 @@ const userCacheByEmail = (g.__ghostboardUserCacheByEmail ??= new Map<string, Cac
 
 const DATA_DIR = path.join(process.cwd(), '.data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const SESSIONS_FILE = path.join(DATA_DIR, 'sessions.json');
 
 let saveTimeout: NodeJS.Timeout | null = null;
+let saveSessionsTimeout: NodeJS.Timeout | null = null;
+
+export interface CachedSessionRecord {
+  token: string;
+  userId: string;
+  deviceType?: string;
+  createdAt: Date | string;
+  expiresAt: Date | string;
+}
+
+const gSessions = globalThis as unknown as {
+  __ghostboardSessionsLoaded?: boolean;
+};
 
 /**
  * Ensures data directory exists for atomic JSON persistence
@@ -85,7 +99,7 @@ function ensureDataDir(): void {
  * Load users from disk once into memory on startup.
  */
 export async function loadUsersFromDisk(): Promise<void> {
-  if (g.__ghostboardUsersLoaded) return;
+  if (g.__ghostboardUsersLoaded || process.env.VITEST) return;
   g.__ghostboardUsersLoaded = true;
 
   try {
@@ -97,17 +111,79 @@ export async function loadUsersFromDisk(): Promise<void> {
 
     const users: CachedUser[] = JSON.parse(content);
     for (const u of users) {
+      if (!u?.id || !u?.email) continue;
       const userRecord: CachedUser = {
         ...u,
         createdAt: new Date(u.createdAt),
         lastActiveAt: u.lastActiveAt ? new Date(u.lastActiveAt) : null,
       };
-      userCacheById.set(userRecord.id, userRecord);
-      userCacheByEmail.set(userRecord.email.toLowerCase(), userRecord);
+      if (!userCacheById.has(userRecord.id)) {
+        userCacheById.set(userRecord.id, userRecord);
+      }
+      const norm = userRecord.email.toLowerCase();
+      if (!userCacheByEmail.has(norm)) {
+        userCacheByEmail.set(norm, userRecord);
+      }
     }
   } catch (err) {
     // Non-fatal fallback for tests and transient read glitches
     console.warn('[users.loadUsersFromDisk] Failed to load users from disk:', err);
+  }
+}
+
+export async function loadSessionsFromDisk(
+  targetMap: Map<string, { token: string; userId: string; deviceType?: string; createdAt: Date; expiresAt: Date }>
+): Promise<void> {
+  if (gSessions.__ghostboardSessionsLoaded || process.env.VITEST) return;
+  gSessions.__ghostboardSessionsLoaded = true;
+
+  try {
+    ensureDataDir();
+    if (!fs.existsSync(SESSIONS_FILE)) return;
+    const content = await fs.promises.readFile(SESSIONS_FILE, 'utf8');
+    if (!content.trim()) return;
+
+    const now = new Date();
+    const sessions: CachedSessionRecord[] = JSON.parse(content);
+    for (const s of sessions) {
+      if (!s?.token || !s?.userId) continue;
+      const expiresAt = new Date(s.expiresAt);
+      if (expiresAt <= now) continue;
+      if (!targetMap.has(s.token)) {
+        targetMap.set(s.token, {
+          token: s.token,
+          userId: s.userId,
+          deviceType: s.deviceType,
+          createdAt: new Date(s.createdAt),
+          expiresAt,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[users.loadSessionsFromDisk] Failed to load sessions from disk:', err);
+  }
+}
+
+export function scheduleSessionsDiskFlush(
+  sourceMap: Map<string, { token: string; userId: string; deviceType?: string; createdAt: Date; expiresAt: Date }>
+): void {
+  if (process.env.VITEST) return;
+  if (saveSessionsTimeout) clearTimeout(saveSessionsTimeout);
+  saveSessionsTimeout = setTimeout(() => {
+    saveSessionsTimeout = null;
+    try {
+      ensureDataDir();
+      const now = new Date();
+      const active = Array.from(sourceMap.values()).filter((s) => s.expiresAt > now);
+      const tempFile = `${SESSIONS_FILE}.${crypto.randomBytes(6).toString('hex')}.tmp`;
+      fs.writeFileSync(tempFile, JSON.stringify(active), 'utf8');
+      fs.renameSync(tempFile, SESSIONS_FILE);
+    } catch (err) {
+      console.warn('[users.scheduleSessionsDiskFlush] Failed:', err);
+    }
+  }, 150);
+  if (saveSessionsTimeout && typeof saveSessionsTimeout.unref === 'function') {
+    saveSessionsTimeout.unref();
   }
 }
 

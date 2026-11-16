@@ -45,6 +45,9 @@ fn is_stopword(word: &str) -> bool {
         | "high" | "throughput" | "distributed" | "using" | "used" | "uses" | "manage" | "managed"
         | "orchestration" | "orchestrator" | "analytics" | "pipeline" | "pipelines" | "workflow" | "workflows"
         | "management" | "state" | "cluster" | "clusters"
+        | "candidate" | "role" | "primary" | "level" | "bio" | "context" | "preference"
+        | "preferences" | "model" | "summary" | "goal" | "company" | "title" | "notes"
+        | "language" | "languages" | "gemini" | "hedged" | "race"
         | "і" | "та" | "чи" | "або" | "не" | "ні" | "в" | "у" | "на" | "до" | "по" | "за" | "з"
         | "зі" | "із" | "для" | "про" | "при" | "через" | "від" | "як" | "що" | "це" | "той" | "цей"
         | "вона" | "він" | "вони" | "ми" | "ви" | "я" | "ти" | "досвід" | "розробка" | "інженер"
@@ -145,7 +148,7 @@ pub fn build_dynamic_keyterms(custom_stack_or_cv: Option<&str>) -> Vec<String> {
     let mut custom_candidates = Vec::new();
 
     if let Some(raw) = custom_stack_or_cv {
-        for chunk in raw.split(|c| c == ',' || c == ';' || c == '\n' || c == '\r' || c == '|' || c == '•') {
+        for chunk in raw.split(|c| c == ',' || c == ';' || c == '\n' || c == '\r' || c == '|' || c == '•' || c == ':') {
             let trimmed = chunk.trim();
             if !trimmed.is_empty() {
                 extract_tech_terms_from_chunk(trimmed, &mut custom_candidates);
@@ -428,7 +431,7 @@ async fn connect_async_with_timeout(
     }
 }
 
-/// Runs one WebSocket session: forwards PCM, sends idle KeepAlive, reads transcripts.
+/// Runs one WebSocket session: forwards PCM, sends idle KeepAlive, monitors liveness via Ping/Pong, and reads transcripts.
 async fn run_session(
     ws: WsStream,
     audio_rx: &mut mpsc::Receiver<Vec<u8>>,
@@ -438,8 +441,11 @@ async fn run_session(
     let (mut ws_write, mut ws_read) = ws.split();
     let mut last_write = tokio::time::Instant::now();
     let mut last_incoming_frame = tokio::time::Instant::now();
-    let mut audio_bytes_sent_since_read: usize = 0;
-    const HUNG_SOCKET_TIMEOUT: Duration = Duration::from_secs(12);
+    let mut ping_sent_for_silence = false;
+    let mut watchdog_tick = tokio::time::interval(Duration::from_secs(2));
+    watchdog_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    const PING_AFTER_SILENCE: Duration = Duration::from_secs(10);
+    const HUNG_SOCKET_TIMEOUT: Duration = Duration::from_secs(18);
 
     let end = loop {
         let keepalive_deadline = last_write + KEEPALIVE_INTERVAL;
@@ -449,12 +455,10 @@ async fn run_session(
                     None => break SessionEnd::Stopped,
                     Some(pcm) if pcm.is_empty() => {}
                     Some(pcm) => {
-                        let len = pcm.len();
                         if let Err(e) = ws_write.send(Message::Binary(pcm)).await {
                             tracing::error!(target: "ghostboard::stt", speaker = %speaker, "Error sending PCM audio chunk: {}", e);
                             break SessionEnd::Dropped;
                         }
-                        audio_bytes_sent_since_read += len;
                         last_write = tokio::time::Instant::now();
                     }
                 }
@@ -466,20 +470,27 @@ async fn run_session(
                 }
                 last_write = tokio::time::Instant::now();
             }
-            _ = tokio::time::sleep(Duration::from_millis(1000)) => {
-                // If audio data has been actively sent but no frame received for >12s, socket is hung
-                if audio_bytes_sent_since_read > 0 && last_incoming_frame.elapsed() >= HUNG_SOCKET_TIMEOUT {
+            _ = watchdog_tick.tick() => {
+                let silence_elapsed = last_incoming_frame.elapsed();
+                if silence_elapsed >= HUNG_SOCKET_TIMEOUT {
                     tracing::warn!(
                         target: "ghostboard::stt",
                         speaker = %speaker,
-                        "Deepgram socket hung watchdog triggered: audio sent without response for >12s"
+                        elapsed_secs = silence_elapsed.as_secs(),
+                        "Deepgram socket hung watchdog triggered: no WS frame or Pong received"
                     );
                     break SessionEnd::Dropped;
+                } else if silence_elapsed >= PING_AFTER_SILENCE && !ping_sent_for_silence {
+                    if let Err(e) = ws_write.send(Message::Ping(Vec::new())).await {
+                        tracing::warn!(target: "ghostboard::stt", speaker = %speaker, "WebSocket liveness ping failed: {}", e);
+                        break SessionEnd::Dropped;
+                    }
+                    ping_sent_for_silence = true;
                 }
             }
             msg = ws_read.next() => {
                 last_incoming_frame = tokio::time::Instant::now();
-                audio_bytes_sent_since_read = 0;
+                ping_sent_for_silence = false;
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         let now_ms = std::time::SystemTime::now()
@@ -492,6 +503,10 @@ async fn run_session(
                             }
                         }
                     }
+                    Some(Ok(Message::Ping(payload))) => {
+                        let _ = ws_write.send(Message::Pong(payload)).await;
+                    }
+                    Some(Ok(Message::Pong(_))) => {}
                     Some(Ok(Message::Close(_))) | None => break SessionEnd::Dropped,
                     Some(Ok(_)) => {}
                     Some(Err(e)) => {
@@ -1001,5 +1016,18 @@ mod tests {
         assert!(terms.len() <= 24);
         let python_count = terms.iter().filter(|t| t.to_lowercase() == "python").count();
         assert_eq!(python_count, 1);
+    }
+
+    #[test]
+    fn test_build_dynamic_keyterms_ignores_profile_labels() {
+        let noisy_profile = "[Model Preference: Gemini 3.8 Flash]\nCandidate: Senior\nRole: Full-Stack\nPrimary Stack:\nTechnologies: TypeScript, ClickHouse, PostgreSQL";
+        let terms = build_dynamic_keyterms(Some(noisy_profile));
+        let lower: Vec<String> = terms.iter().map(|t| t.to_lowercase()).collect();
+        assert!(!lower.contains(&"candidate".to_string()));
+        assert!(!lower.contains(&"role".to_string()));
+        assert!(!lower.contains(&"primary".to_string()));
+        assert!(!lower.iter().any(|t| t.contains("technologies:")));
+        assert!(lower.contains(&"typescript".to_string()));
+        assert!(lower.contains(&"clickhouse".to_string()));
     }
 }

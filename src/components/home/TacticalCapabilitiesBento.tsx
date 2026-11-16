@@ -30,7 +30,7 @@ export function TacticalCapabilitiesBento() {
 
   const hotkeys = [
     { key: "Space", action: isUa ? "Freeze Mode" : "Freeze Mode", desc: isUa ? "Заморожує поточну картку, фоновий аудіопотік продовжує слухати" : "Freezes current card while background audio continues listening" },
-    { key: "Esc", action: isUa ? "Panic Shield" : "Panic Shield", desc: isUa ? "За 8мс перетворює суфлер на реальну консоль компіляції чи htop" : "Instantly morphs HUD into a real terminal or htop in 8ms" },
+    { key: "Tab", action: isUa ? "Focus Mode" : "Focus Mode", desc: isUa ? "Розгортає телесуфлер на 100% ширини без відволікаючих панелей" : "Expands teleprompter to 100% width without distracting sidebars" },
     { key: "Q", action: isUa ? "Concise Mode" : "Concise Mode", desc: isUa ? "Швидкий бліц-режим: 3 короткі тези замість розлогого тексту" : "Toggle 3-bullet punchy blitz summary for rapid answers" },
     { key: "C", action: isUa ? "Quick Copy" : "Quick Copy", desc: isUa ? "Копіює код або відповідь у системний буфер обміну без кліку" : "Copies active code or answer directly to clipboard without clicking" },
     { key: "F9", action: isUa ? "Screen OCR" : "Screen OCR", desc: isUa ? "Тихий аналіз задачі LeetCode або архітектурної діаграми" : "Silent screenshot OCR analysis of LeetCode or system design diagrams" },

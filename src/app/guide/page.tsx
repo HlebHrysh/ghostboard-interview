@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
+import { SpatialSquircleBadge } from '@/components/ui/SpatialSquircleBadge';
 import {
   ShieldCheck,
   Smartphone,
@@ -64,22 +64,14 @@ export default function GuidePage() {
         <main className="max-w-5xl mx-auto space-y-10">
           {/* Header Hero */}
           <div className="text-center max-w-3xl mx-auto">
-            {/* Apple Spatial Glass PiP Book Animation */}
-            <div className="max-w-xs mx-auto mb-5">
-              <SpatialVideoCapsule
-                compact
-                layoutGroupId="guide-book-pip"
-                aspectClassName="aspect-[16/10]"
-                videos={[
-                  {
-                    id: 'guide-book',
-                    src: '/videos/book.mp4',
-                    label: locale === 'ua' ? 'Гайд' : 'Playbook',
-                    caption: locale === 'ua' ? 'Передпольотна підготовка до інтервʼю' : '5-min stealth & audio setup',
-                  },
-                ]}
-              />
-            </div>
+            {/* Sleek 3D Book Squircle Emblem */}
+            <SpatialSquircleBadge
+              src="/videos/book.mp4"
+              accent="violet"
+              size="hero"
+              centered
+              className="mb-6"
+            />
 
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/10 border border-white/20 text-zinc-300 font-mono text-xs font-bold tracking-[0.18em] uppercase mb-3">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -206,17 +198,25 @@ export default function GuidePage() {
             {/* TAB 1: AUDIO & LOOPBACK */}
             {mainSection === 'audio' && (
               <div className="bento-card p-6 sm:p-8 space-y-6 rounded-3xl border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] bg-gradient-to-br from-[#0c0d12]/80 to-black/70">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-2 text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>Аудіопотік & Захоплення співрозмовника</span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+                  <SpatialSquircleBadge
+                    src="/videos/headphones.mp4"
+                    accent="cyan"
+                    size="md"
+                    className="shrink-0"
+                  />
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-2 text-xs font-mono text-amber-400 font-bold uppercase tracking-wider">
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>Аудіопотік & Захоплення співрозмовника</span>
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                      1-клік налаштування перехоплення голосу
+                    </h3>
+                    <p className="text-xs sm:text-sm text-zinc-400">
+                      Оберіть вашу робочу конфігурацію для миттєвої передачі мови в Deepgram Nova-3:
+                    </p>
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
-                    1-клік налаштування перехоплення голосу
-                  </h3>
-                  <p className="text-xs sm:text-sm text-zinc-400">
-                    Оберіть вашу робочу конфігурацію для миттєвої передачі мови в Deepgram Nova-3:
-                  </p>
                 </div>
 
                 {/* Audio OS Switcher Tabs with Spring Pill */}
@@ -356,15 +356,15 @@ export default function GuidePage() {
                   </div>
 
                   <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/10 space-y-2">
-                    <div className="w-8 h-8 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 font-mono font-bold text-xs">
+                    <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 font-mono font-bold text-xs">
                       02
                     </div>
                     <h4 className="text-sm font-bold text-white font-mono flex items-center justify-between">
-                      <span>Панік-щит</span>
-                      <kbd className="kbd-obsidian text-rose-300 text-xs">Esc</kbd>
+                      <span>Freeze Mode</span>
+                      <kbd className="kbd-obsidian text-sky-300 text-xs">Space</kbd>
                     </h4>
                     <p className="text-xs text-zinc-300 leading-relaxed font-sans">
-                      Одне натискання клавіші <code className="font-mono text-white">Esc</code> миттєво згортає всі вікна суфлера та очищує екранний буфер без сліду.
+                      Натискання <code className="font-mono text-white">Space</code> фіксує поточну відповідь на екрані, поки фоновий аудіопотік продовжує збирати нові запитання в чергу.
                     </p>
                   </div>
 

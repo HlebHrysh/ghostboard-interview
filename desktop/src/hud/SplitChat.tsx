@@ -2,6 +2,7 @@ import React, { memo, useEffect, useId, useRef, useState } from 'react';
 import {
   ArrowDownCircle,
   Code,
+  Hourglass,
   Lightbulb,
   Maximize2,
   MessageCircle,
@@ -205,7 +206,7 @@ export const SplitChat = memo(function SplitChat({
                 <MessageSquare size={11} className="text-emerald-400" />
                 Діалог ({sessionState.messages.length})
               </span>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             </div>
 
             <div
@@ -290,7 +291,8 @@ export const SplitChat = memo(function SplitChat({
                 }`}
               >
                 {isFullFocus ? <Maximize2 size={10} /> : <PanelLeftClose size={10} />}
-                <span>◧ Фокус (Tab)</span>
+                <span>Фокус</span>
+                <kbd className="ml-0.5 font-mono text-[9.5px] opacity-65">Tab</kbd>
               </button>
             </div>
           </div>
@@ -363,7 +365,7 @@ export const SplitChat = memo(function SplitChat({
               className="gb-nodrag absolute bottom-3 right-3 z-30 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-[#111114] px-3 py-1.5 text-[11px] font-semibold text-emerald-200 shadow-[inset_0_1px_0_0_rgba(167,243,208,0.2),0_10px_28px_rgba(0,0,0,0.8)] hover:border-emerald-400 cursor-pointer"
             >
               <ArrowDownCircle size={13} className="text-emerald-400" />
-              <span>🟢 Повернутися до поточної відповіді #{liveAnswer.seq}</span>
+              <span>Повернутися до поточної відповіді #{liveAnswer.seq}</span>
             </button>
           )}
         </section>
@@ -377,11 +379,12 @@ export const SplitChat = memo(function SplitChat({
           onClick={onDismissBridge}
           className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/35 bg-[#141418] px-3.5 py-2 text-xs text-emerald-100 shadow-[inset_0_1px_0_0_rgba(167,243,208,0.2)] cursor-pointer"
         >
-          <span>
-            <strong className="font-mono text-[10.5px] uppercase text-emerald-400 mr-1.5">
-              ⏳ Пауза-місток:
+          <span className="inline-flex items-center gap-1.5">
+            <Hourglass size={12} className="shrink-0 text-emerald-400" />
+            <strong className="font-mono text-[10.5px] uppercase text-emerald-400 mr-0.5">
+              Пауза-місток:
             </strong>
-            “{bridgePhrase}”
+            <span>“{bridgePhrase}”</span>
           </span>
           <span className="shrink-0 font-mono text-[10px] text-zinc-400">Клік щоб сховати</span>
         </div>
@@ -403,7 +406,7 @@ export const SplitChat = memo(function SplitChat({
                 disabled={!activeAnswer && !liveAnswer}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#141418] px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white disabled:opacity-40 cursor-pointer shrink-0"
               >
-                <kbd className="rounded border border-white/10 bg-[#09090b] px-1 py-0.2 font-mono text-[9.5px] text-zinc-400">
+                <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-white/10 bg-[#09090b] px-1 font-mono text-[9.5px] text-zinc-400">
                   {m.keyHint}
                 </kbd>
                 {m.icon}
@@ -417,16 +420,17 @@ export const SplitChat = memo(function SplitChat({
                 onClick={onTriggerBridge}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#141418] px-2.5 py-1 text-[11px] font-medium text-zinc-200 transition-colors hover:border-white/25 hover:text-white cursor-pointer shrink-0"
               >
-                <kbd className="rounded border border-white/10 bg-[#09090b] px-1 py-0.2 font-mono text-[9.5px] text-zinc-400">
+                <kbd className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-white/10 bg-[#09090b] px-1 font-mono text-[9.5px] text-zinc-400">
                   5
                 </kbd>
-                <span>⏳ Пауза-місток</span>
+                <Hourglass size={11} className="shrink-0 text-emerald-400" />
+                <span>Пауза-місток</span>
               </button>
             )}
           </div>
 
           {/* Freeze (Space) & Mic Pause (Ctrl+M) controls */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-white/[0.07]">
             {onToggleAudio && (
               <button
                 type="button"

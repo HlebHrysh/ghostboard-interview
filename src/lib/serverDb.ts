@@ -11,6 +11,9 @@ import {
   setCachedUser,
   removeCachedUser,
   clearUserCache,
+  loadUsersFromDisk,
+  loadSessionsFromDisk,
+  scheduleSessionsDiskFlush,
   type CachedUser,
 } from './server/users';
 
@@ -251,12 +254,16 @@ export function generateToken(): string {
 }
 
 export async function setUserPassword(userId: string, password: string): Promise<void> {
+  if (isMemoryDbAllowed()) await loadUsersFromDisk();
   const passwordHash = await hashPassword(password);
   if (process.env.DATABASE_URL && !isDbCircuitBroken()) {
     try {
       await prisma.user.update({ where: { id: userId }, data: { passwordHash } });
       const cached = getCachedUserById(userId);
-      if (cached) cached.passwordHash = passwordHash;
+      if (cached) {
+        cached.passwordHash = passwordHash;
+        setCachedUser(cached, true);
+      }
       return;
     } catch (dbErr) {
       failDbInProduction(dbErr);
@@ -266,13 +273,20 @@ export async function setUserPassword(userId: string, password: string): Promise
   }
   assertProdDbReady('setUserPassword');
   const memUser = memUsersById.get(userId);
-  if (memUser) memUser.passwordHash = passwordHash;
+  if (memUser) {
+    memUser.passwordHash = passwordHash;
+    setCachedUser(memUser as CachedUser, true);
+  }
   const cached = getCachedUserById(userId);
-  if (cached) cached.passwordHash = passwordHash;
+  if (cached) {
+    cached.passwordHash = passwordHash;
+    setCachedUser(cached, true);
+  }
 }
 
 export async function getUserByEmail(email: string): Promise<DbUser | null> {
   const normalized = email.trim().toLowerCase();
+  if (isMemoryDbAllowed()) await loadUsersFromDisk();
   const cached = getCachedUserByEmail(normalized);
   if (cached) return cached as DbUser;
 
@@ -294,6 +308,7 @@ export async function getUserByEmail(email: string): Promise<DbUser | null> {
 }
 
 export async function getUserById(id: string): Promise<DbUser | null> {
+  if (isMemoryDbAllowed()) await loadUsersFromDisk();
   const cached = getCachedUserById(id);
   if (cached) return cached as DbUser;
 
@@ -321,6 +336,7 @@ export async function createUser(
   _role?: string
 ): Promise<DbUser> {
   const normalized = email.trim().toLowerCase();
+  if (isMemoryDbAllowed()) await loadUsersFromDisk();
   // Security: public registration / OAuth callers can never self-assign elevated RBAC roles.
   // Elevated roles ('developer' | 'admin') must be assigned via updateUserRole() from admin endpoints.
   const initialRole: AppRole = 'user';
@@ -340,7 +356,7 @@ export async function createUser(
           role: initialRole,
         },
       });
-      setCachedUser(created as CachedUser);
+      setCachedUser(created as CachedUser, true);
       return created;
     } catch (dbErr) {
       failDbInProduction(dbErr);
@@ -350,9 +366,14 @@ export async function createUser(
 
   assertProdDbReady('createUser');
 
+  const existingCached = getCachedUserByEmail(normalized);
+  if (existingCached) {
+    return existingCached as DbUser;
+  }
+
   const existingMem = memUsersByEmail.get(normalized);
   if (existingMem) {
-    setCachedUser(existingMem as CachedUser);
+    setCachedUser(existingMem as CachedUser, true);
     return existingMem;
   }
 
@@ -366,7 +387,7 @@ export async function createUser(
   };
   memUsersByEmail.set(normalized, newUser);
   memUsersById.set(newUser.id, newUser);
-  setCachedUser(newUser as CachedUser);
+  setCachedUser(newUser as CachedUser, true);
   return newUser;
 }
 
@@ -387,7 +408,7 @@ interface CachedSessionUser {
   expiresAt: number;
 }
 const sessionUserCache = new Map<string, CachedSessionUser>();
-const SESSION_CACHE_TTL_MS = 5 * 60 * 1000; // 5-minute fast in-memory cache
+const SESSION_CACHE_TTL_MS = 60 * 1000; // 60s L1 in-memory TTL cache for sub-1ms session resolution
 const MAX_SESSION_CACHE_ENTRIES = 5000;
 let sessionCacheHits = 0;
 let sessionCacheMisses = 0;
@@ -695,6 +716,9 @@ export async function createSession(
     expiresAt,
   };
   memSessions.set(token, session);
+  if (isMemoryDbAllowed()) {
+    scheduleSessionsDiskFlush(memSessions);
+  }
   return session;
 }
 
@@ -848,9 +872,10 @@ export async function getSessionUser(token: string): Promise<DbUser | null> {
   }
 
   if (!user && isMemoryDbAllowed()) {
+    await Promise.all([loadUsersFromDisk(), loadSessionsFromDisk(memSessions)]);
     const memSession = memSessions.get(token);
     if (memSession && memSession.expiresAt > now) {
-      user = memUsersById.get(memSession.userId) || null;
+      user = memUsersById.get(memSession.userId) || (getCachedUserById(memSession.userId) as DbUser | null) || null;
     }
   }
 
@@ -887,6 +912,9 @@ export async function deleteSession(token: string): Promise<void> {
     assertProdDbReady('deleteSession');
   }
   memSessions.delete(token);
+  if (isMemoryDbAllowed()) {
+    scheduleSessionsDiskFlush(memSessions);
+  }
 }
 
 export async function saveInterviewSession(

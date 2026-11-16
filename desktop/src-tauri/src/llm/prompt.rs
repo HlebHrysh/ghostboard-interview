@@ -21,9 +21,15 @@ AUTONOMOUS DOMAIN & ROLE CLASSIFICATION:
 
 ANTI-WIKIPEDIA & LIVE SPOKEN SPEECH RULES:
 1. STRICTLY FORBIDDEN: Encyclopedic introductions and AI filler (NO "В современном программировании...", "Давайте рассмотрим...", "Важно отметить...", "В контексте...", "Basically...", "Under the hood...", "In essence...", "Sure!", "Here is an explanation", "As an AI...").
-2. ALWAYS speak from FIRST PERSON ("На практиці я вирішую це через...", "У нашому продакшені ми використовували...", "In my production experience, I solve this using...").
-3. Sentences must be short, punchy, confident, and effortless to speak aloud without stumbling.
-4. SHORT QUERIES: If brief (1-3 words like 'React + SQL', 'GIL Python', 'Why?', 'Що це?'), immediately resolve context from recent conversation turns and output the full 3 phases.
+2. ALWAYS speak from FIRST PERSON ("На практиці я вирішую це через...", "У нашому продакшені ми використовували...", "In my production experience, I solve this using...") like a real, experienced engineer talking naturally to a colleague on a live call — warm, clear, confident, and conversational, NEVER like a Wikipedia article or dry university textbook.
+3. PLAIN WORDS + (TERM IN PARENTHESES): Explain the concept in simple, everyday human words FIRST, and put the exact technical term in parentheses right after it:
+   - Bad: "Call Stack: LIFO структура, де виконується синхронний код до повного вичерпання стеку."
+   - Good: "Спочатку JS по черзі виконує весь звичайний код зверху вниз (Call Stack), і поки він не закінчить — далі не йде."
+4. STRICT LINE BREAKS & CODE FORMATTING:
+   - Each bullet in <<<PHASE_2:PILLARS>>> MUST be on its own separate newline (\n- ...), NEVER inline with • separators inside a single paragraph.
+   - In <<<PHASE_3:DEEP_DIVE>>>, whenever outputting code, ALWAYS put the opening ```lang on its own newline (\n```javascript\n), format the code cleanly with real newlines and 2-space indentation (never minified onto a single line), and close ``` on its own newline.
+5. Sentences must be short, punchy, confident, and effortless to speak aloud without stumbling.
+6. SHORT QUERIES: If brief (1-3 words like 'React + SQL', 'GIL Python', 'Why?', 'Що це?'), immediately resolve context from recent conversation turns and output the full 3 phases.
 
 SPEECH INTENT & WEBINAR CHATTER GUARDRAIL:
 If the input audio is an incomplete dangling thought (e.g. ending in a conjunction like 'and', 'but', 'or', 'але', 'тому що', 'та'), conversational banter, or background webinar chatter not addressed directly to the candidate, output EXACTLY AND ONLY: <<<IGNORE>>>
@@ -33,16 +39,16 @@ Every response MUST follow this exact progressive sequence:
 
 <<<META: {Domain} | {Level} | {Language}>>>
 <<<PHASE_1:HOOK>>>
-[Gear 1 — Instant Spoken Hook: 1–2 natural, confident, first-person sentences (20–35 words). Candidate reads aloud in 1st second without filler. Directly answers core mechanic.]
+[Gear 1 — Instant Spoken Hook: 1–2 natural, confident, first-person sentences (20–35 words). Candidate reads aloud in 1st second without filler. Directly answers core mechanic in plain everyday words + (Term).]
 
 <<<PHASE_2:PILLARS>>>
-[Gear 2 — Deep Technical Pillars: 3 bullets (18–28 words each). Each bullet starts with a **Bold Technical Anchor** on mechanics/trade-offs:]
-• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
-• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
-• **KeyAnchor**: [Mechanic in plain words. Maximum 10-14 words total!]
+[Gear 2 — Deep Technical Pillars: 3 bullets on SEPARATE NEWLINES (\n- ...), NEVER inline with • separators. Each bullet starts with a **Bold Technical Anchor**:]
+- **KeyAnchor**: [Everyday human explanation first + (Term in parentheses). Maximum 10-14 words total!]
+- **KeyAnchor**: [Everyday human explanation first + (Term in parentheses). Maximum 10-14 words total!]
+- **KeyAnchor**: [Everyday human explanation first + (Term in parentheses). Maximum 10-14 words total!]
 
 <<<PHASE_3:DEEP_DIVE>>>
-[Gear 3 — Production Code / Concrete Case: 8–16 lines of clean idiomatic code OR concrete architecture case with numbers & trade-offs (💡 Key nuance / interviewer trap).]
+[Gear 3 — Production Code / Concrete Case: 8–16 lines of clean idiomatic code OR concrete architecture case with numbers & trade-offs (💡 Key nuance / interviewer trap). Whenever outputting code, ALWAYS put opening ```lang on its own newline (\n```javascript\n), format cleanly with real newlines and 2-space indentation (never minified onto a single line), and close ``` on its own newline.]
 
 <<<PHASE_4:TRAP>>>
 Q: [1 short sentence: the sharpest follow-up trap question a Senior/Staff interviewer will ask next based on your answer above]
@@ -159,11 +165,13 @@ pub fn build_system_prompt_with_patch_slot(
             prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 3 ONLY):\n");
             prompt.push_str("- <<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> are ALREADY frozen on screen.\n");
             prompt.push_str("- Output ONLY <<<PHASE_3:DEEP_DIVE>>> with a clean, production-grade code snippet and complexity analysis, then <<<END>>>. Do NOT output META, PHASE_1, PHASE_2, or PHASE_4.\n");
+            prompt.push_str("- Whenever outputting code, ALWAYS put the opening ```lang on its own newline (\\n```javascript\\n), format cleanly with real newlines and 2-space indentation (never minified onto a single line), and close ``` on its own newline.\n");
         }
         "hook_and_pillars" => {
             prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 1 & PHASE 2 ONLY):\n");
             prompt.push_str("- <<<PHASE_3:DEEP_DIVE>>> is ALREADY frozen on screen and untouched.\n");
             prompt.push_str("- Output ONLY a tighter, simpler <<<PHASE_1:HOOK>>> and <<<PHASE_2:PILLARS>>> followed by <<<END>>>. Do NOT output PHASE_3 or PHASE_4.\n");
+            prompt.push_str("- Format each bullet in <<<PHASE_2:PILLARS>>> on its own separate newline (\\n- **KeyAnchor**: plain words first + (Term)), NEVER inline with • separators.\n");
         }
         "trap" => {
             prompt.push_str("\nMANDATORY SURGICAL SLOT PATCH (PHASE 4 ONLY):\n");
@@ -188,8 +196,15 @@ pub fn build_system_prompt_with_patch_slot(
     let out_lang = output_language.unwrap_or("auto");
     let helper = helper_language.unwrap_or("uk");
 
-    if out_lang == "bilingual" {
-        let helper_name = match helper {
+    if out_lang.starts_with("bilingual") {
+        let resolved_helper = if out_lang == "bilingual_ru" {
+            "ru"
+        } else if out_lang == "bilingual_uk" {
+            "uk"
+        } else {
+            helper
+        };
+        let helper_name = match resolved_helper {
             "ru" => "Russian (Русский)",
             "pl" => "Polish (Polski)",
             "de" => "German (Deutsch)",
@@ -473,9 +488,9 @@ pub fn build_emergency_coaching_card(language: Option<&str>) -> String {
 <<<PHASE_1:HOOK>>>
 Почніть відповідь упевнено за структурою STAR/CAR: дайте чітке визначення або тезу та опишіть практичний бізнес-контекст. (ШІ тимчасово не відповів, натисніть кнопку для миттєвого повтору).
 <<<PHASE_2:PILLARS>>>
-• **Архітектура та компоненти**: Окресліть призначення технології, ключові компоненти та потік даних.
-• **Механізми під капотом**: Поясніть роботу з пам'яттю, конкурентністю, кешуванням, транзакціями чи мережею.
-• **Trade-offs та Best Practices**: Наведіть плюси, мінуси, обмеження та альтернативні підходи.
+- **Архітектура та компоненти**: Окресліть призначення технології, ключові компоненти та потік даних.
+- **Механізми під капотом**: Поясніть роботу з пам'яттю, конкурентністю, кешуванням, транзакціями чи мережею.
+- **Trade-offs та Best Practices**: Наведіть плюси, мінуси, обмеження та альтернативні підходи.
 <<<PHASE_3:DEEP_DIVE>>>
 // [🔄 Повторити запит (1 клік)]
 <<<END>>>"#.to_string()
@@ -484,9 +499,9 @@ pub fn build_emergency_coaching_card(language: Option<&str>) -> String {
 <<<PHASE_1:HOOK>>>
 Начните ответ уверенно по структуре STAR/CAR: дайте чёткое определение или тезис и опишите практический бизнес-контекст. (ИИ временно задержал ответ, нажмите кнопку для быстрого повтора).
 <<<PHASE_2:PILLARS>>>
-• **Архитектура и компоненты**: Обозначьте назначение технологии, ключевые компоненты и поток данных.
-• **Механизмы под капотом**: Объясните работу с памятью, конкурентностью, кэшированием или транзакциями.
-• **Trade-offs и Best Practices**: Приведите плюсы, минусы, ограничения и альтернативные подходы.
+- **Архитектура и компоненты**: Обозначьте назначение технологии, ключевые компоненты и поток данных.
+- **Механизмы под капотом**: Объясните работу с памятью, конкурентностью, кэшированием или транзакциями.
+- **Trade-offs и Best Practices**: Приведите плюсы, минусы, ограничения и альтернативные подходы.
 <<<PHASE_3:DEEP_DIVE>>>
 // [🔄 Повторить запрос (1 клик)]
 <<<END>>>"#.to_string()
@@ -495,9 +510,9 @@ pub fn build_emergency_coaching_card(language: Option<&str>) -> String {
 <<<PHASE_1:HOOK>>>
 Answer confidently using the STAR/CAR framework: state your core thesis and practical business context upfront. (AI connection timed out, click below to retry instantly).
 <<<PHASE_2:PILLARS>>>
-• **Core Architecture & Flow**: Define key system entities, data flow, and core responsibilities.
-• **Under the Hood Mechanics**: Explain memory management, concurrency models, caching, or transaction guarantees.
-• **Trade-offs & Production Scale**: Discuss bottlenecks, failure recovery, and architectural alternatives.
+- **Core Architecture & Flow**: Define key system entities, data flow, and core responsibilities.
+- **Under the Hood Mechanics**: Explain memory management, concurrency models, caching, or transaction guarantees.
+- **Trade-offs & Production Scale**: Discuss bottlenecks, failure recovery, and architectural alternatives.
 <<<PHASE_3:DEEP_DIVE>>>
 // [🔄 Повторити запит (1 клік)]
 <<<END>>>"#.to_string()
@@ -542,6 +557,16 @@ mod tests {
             build_system_prompt_with_options(None, None, Some("bilingual"), Some("uk"));
         assert!(bilingual_prompt.contains("BILINGUAL PROMPTER MODE"));
         assert!(bilingual_prompt.contains("Ukrainian"));
+
+        let bilingual_uk =
+            build_system_prompt_with_options(None, None, Some("bilingual_uk"), None);
+        assert!(bilingual_uk.contains("BILINGUAL PROMPTER MODE"));
+        assert!(bilingual_uk.contains("Ukrainian"));
+
+        let bilingual_ru =
+            build_system_prompt_with_options(None, None, Some("bilingual_ru"), None);
+        assert!(bilingual_ru.contains("BILINGUAL PROMPTER MODE"));
+        assert!(bilingual_ru.contains("Russian"));
     }
 
     #[test]

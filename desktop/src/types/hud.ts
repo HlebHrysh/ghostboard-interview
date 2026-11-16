@@ -55,7 +55,7 @@ export interface LlmDonePayload {
 }
 
 export interface HotkeyTriggeredPayload {
-  action: 'answer' | 'screenshot' | 'chat' | 'clear' | 'panic' | 'freeze' | string;
+  action: 'answer' | 'screenshot' | 'chat' | 'clear' | 'freeze' | string;
 }
 
 export interface AudioLevelPayload {

@@ -29,7 +29,6 @@ import {
   GitMerge,
   Maximize2,
   PanelLeftClose,
-  ShieldAlert,
   SlidersHorizontal,
   Camera,
   User,
@@ -56,7 +55,6 @@ import CandidateProfileModal, {
   getStoredCandidateProfile,
   DEFAULT_CANDIDATE_PROFILE,
 } from '@/components/CandidateProfileModal';
-import { StealthDisguise } from '@/components/interview/StealthDisguise';
 import { StealthCommandDock } from '@/components/interview/StealthCommandDock';
 import { StealthHistoryDrawer } from '@/components/interview/StealthHistoryDrawer';
 import { getLuxTranslations } from '@/lib/luxI18n';
@@ -68,9 +66,13 @@ import { AudioSetupWizard } from '@/components/onboarding/AudioSetupWizard';
 import { SubpageStripesContainer } from '@/components/ui/SubpageStripesContainer';
 import {
   cleanStreamText,
+  extractCode,
+  parseBlocks,
   stripRawMarkdownAsterisks,
   splitBilingualSegments,
+  tokenizeInline,
 } from '../../../desktop/src/lib/answerParser';
+import { highlightCode, TOKEN_CLASS } from '../../../desktop/src/lib/highlight';
 
 // Technical terms highlighted inside the live dialogue feed
 const TECH_TERMS_REGEX =
@@ -102,7 +104,7 @@ function highlightTech(text: string): React.ReactNode[] {
 }
 
 function renderBilingualPhrase(text: string, isBilingualMode = false): React.ReactNode {
-  const cleaned = stripRawMarkdownAsterisks(cleanStreamText(text));
+  const cleaned = cleanStreamText(text);
   if (!cleaned) return null;
   const segments = splitBilingualSegments(cleaned, isBilingualMode);
   return segments.map((seg, idx) => {
@@ -113,11 +115,42 @@ function renderBilingualPhrase(text: string, isBilingualMode = false): React.Rea
           className="text-zinc-400 text-xs italic mx-1 inline-block select-all font-normal"
           title="Підказка рідною мовою (не читати вголос)"
         >
-          {seg.text}
+          {stripRawMarkdownAsterisks(seg.text)}
         </span>
       );
     }
-    return <span key={idx}>{highlightTech(seg.text)}</span>;
+    const tokens = tokenizeInline(seg.text);
+    return (
+      <span key={idx}>
+        {tokens.map((tok, tIdx) => {
+          if (tok.type === 'code') {
+            return (
+              <code
+                key={tIdx}
+                className="rounded border border-white/10 bg-[#09090b] px-1.5 py-0.5 font-mono text-[0.9em] text-zinc-100"
+              >
+                {tok.value}
+              </code>
+            );
+          }
+          if (tok.type === 'strong') {
+            return (
+              <strong key={tIdx} className="font-semibold text-white">
+                {tok.value}
+              </strong>
+            );
+          }
+          if (tok.type === 'em') {
+            return (
+              <em key={tIdx} className="italic text-zinc-300">
+                {tok.value}
+              </em>
+            );
+          }
+          return <React.Fragment key={tIdx}>{highlightTech(tok.value)}</React.Fragment>;
+        })}
+      </span>
+    );
   });
 }
 
@@ -177,13 +210,44 @@ function formatPillarAnchor(text: string, isBilingualMode = false): React.ReactN
   return <span className="text-zinc-200">{renderBilingualPhrase(buffered, isBilingualMode)}</span>;
 }
 
+function renderInlineTokens(tokens: ReturnType<typeof tokenizeInline>, isBilingualMode = false): React.ReactNode {
+  return tokens.map((tok, tIdx) => {
+    if (tok.type === 'code') {
+      return (
+        <code
+          key={tIdx}
+          className="rounded border border-white/10 bg-[#09090b] px-1.5 py-0.5 font-mono text-[0.9em] text-zinc-100"
+        >
+          {tok.value}
+        </code>
+      );
+    }
+    if (tok.type === 'strong') {
+      return (
+        <strong key={tIdx} className="font-semibold text-white">
+          {tok.value}
+        </strong>
+      );
+    }
+    if (tok.type === 'em') {
+      return (
+        <em key={tIdx} className="italic text-zinc-300">
+          {tok.value}
+        </em>
+      );
+    }
+    if (isBilingualMode) {
+      return <React.Fragment key={tIdx}>{renderBilingualPhrase(tok.value, true)}</React.Fragment>;
+    }
+    return <React.Fragment key={tIdx}>{highlightTech(tok.value)}</React.Fragment>;
+  });
+}
+
 type FeedItem =
   | { kind: 'interviewer'; id: string; text: string; ts: number; qaId: string }
   | { kind: 'candidate'; id: string; text: string; ts: number };
 
-export interface DualStreamCopilotProps {
-  onPanicExit?: () => void;
-}
+export type DualStreamCopilotProps = Record<string, never>;
 
 const BRIDGE_PHRASES: Record<string, string[]> = {
   uk: [
@@ -312,7 +376,7 @@ const DialogueMessageBubble = React.memo<DialogueMessageBubbleProps>(({
 });
 DialogueMessageBubble.displayName = 'DialogueMessageBubble';
 
-export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExit }) => {
+export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = () => {
   const router = useRouter();
   const { locale } = useLocale();
   const hudT = getHudTranslations(locale).transcript;
@@ -350,7 +414,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [isCompanionQROpen, setIsCompanionQROpen] = useState(false);
   const [isEyeLineActive, setIsEyeLineActive] = useState(false);
-  const [isPanicShieldActive, setIsPanicShieldActive] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isAudioWizardOpen, setIsAudioWizardOpen] = useState(false);
 
@@ -495,8 +558,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     isCapturing,
     isCapturingRef,
     liveVolume,
-    interviewerVolume,
-    candidateVolume,
     sttStatus,
     hasTabAudio,
     liveTranscript,
@@ -518,6 +579,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     sessionDuration,
     setSessionDuration,
     candidateProfileRef,
+    trackVolumeInState: isSoundCheckOpen || isAudioWizardOpen,
   });
 
   const handleStartCaptureRequest = (source?: 'mic' | 'tab') => {
@@ -740,22 +802,52 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
   const vuMeterRef = useRef<HTMLDivElement | null>(null);
   const hearingVuRef = useRef<HTMLDivElement | null>(null);
 
-  // Update VU meters via CSS variables on DOM refs without triggering React state re-renders
+  // Update VU meters directly via DOM refs + CSS custom properties (0 React tree re-renders)
   useEffect(() => {
-    const v = isCapturing ? Math.max(6, Math.min(100, Math.round(liveVolume || interviewerVolume || 12))) : 6;
-    if (vuMeterRef.current) {
-      vuMeterRef.current.style.setProperty('--vu-1', `${Math.max(15, Math.min(100, v * 0.8))}%`);
-      vuMeterRef.current.style.setProperty('--vu-2', `${Math.max(20, Math.min(100, v))}%`);
-      vuMeterRef.current.style.setProperty('--vu-3', `${Math.max(15, Math.min(100, v * 0.9))}%`);
-      vuMeterRef.current.style.setProperty('--vu-4', `${Math.max(12, Math.min(100, v * 0.65))}%`);
-    }
-    if (hearingVuRef.current) {
-      const intV = isCapturing ? Math.max(4, Math.min(100, Math.round(interviewerVolume))) : 0;
-      const candV = isCapturing ? Math.max(4, Math.min(100, Math.round(candidateVolume))) : 0;
-      hearingVuRef.current.style.setProperty('--vu-int', `${intV}%`);
-      hearingVuRef.current.style.setProperty('--vu-cand', `${candV}%`);
-    }
-  }, [isCapturing, liveVolume, interviewerVolume, candidateVolume]);
+    const applyLevels = (combined: number, interviewer: number, candidate: number) => {
+      const v = isCapturing ? Math.max(6, Math.min(100, Math.round(combined || interviewer || 12))) : 6;
+      if (vuMeterRef.current) {
+        vuMeterRef.current.style.setProperty('--vu-level', String(v / 100));
+        vuMeterRef.current.style.setProperty('--vu-1', `${Math.max(15, Math.min(100, v * 0.8))}%`);
+        vuMeterRef.current.style.setProperty('--vu-2', `${Math.max(20, Math.min(100, v))}%`);
+        vuMeterRef.current.style.setProperty('--vu-3', `${Math.max(15, Math.min(100, v * 0.9))}%`);
+        vuMeterRef.current.style.setProperty('--vu-4', `${Math.max(12, Math.min(100, v * 0.65))}%`);
+      }
+      if (hearingVuRef.current) {
+        const intV = isCapturing ? Math.max(4, Math.min(100, Math.round(interviewer))) : 0;
+        const candV = isCapturing ? Math.max(4, Math.min(100, Math.round(candidate))) : 0;
+        hearingVuRef.current.style.setProperty('--vu-int', `${intV}%`);
+        hearingVuRef.current.style.setProperty('--vu-cand', `${candV}%`);
+      }
+    };
+
+    applyLevels(0, 0, 0);
+    if (!isCapturing || typeof window === 'undefined') return;
+
+    let rafId: number | null = null;
+    let pending = { volume: 0, interviewer: 0, candidate: 0 };
+
+    const onAudioVolume = (e: Event) => {
+      const detail = (e as CustomEvent<{ volume?: number; interviewer?: number; candidate?: number }>).detail;
+      if (!detail) return;
+      pending = {
+        volume: detail.volume ?? 0,
+        interviewer: detail.interviewer ?? 0,
+        candidate: detail.candidate ?? 0,
+      };
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        applyLevels(pending.volume, pending.interviewer, pending.candidate);
+      });
+    };
+
+    window.addEventListener('ghostboard:audio_volume', onAudioVolume);
+    return () => {
+      window.removeEventListener('ghostboard:audio_volume', onAudioVolume);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [isCapturing]);
 
   useEffect(() => {
     if (!isOptionsOpen) return;
@@ -768,22 +860,13 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     return () => window.removeEventListener('mousedown', handleOutside);
   }, [isOptionsOpen]);
 
-  // Unified zero-mouse keyboard control (1-5, Space, Ctrl+K / '/', Ctrl+M, Tab, F12)
+  // Unified zero-mouse keyboard control (1-5, Space, Ctrl+K / '/', Ctrl+M, Tab)
   useEffect(() => {
-    const anyOverlayOpen =
-      isPaletteOpen || isHistoryOpen || isProfileOpen || isSoundCheckOpen || isCompanionQROpen || isAudioWizardOpen || showTrialLimitModal;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const isInput = Boolean(
         target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
       );
-
-      // F12: Panic shield
-      if (e.key === 'F12') {
-        e.preventDefault();
-        setIsPanicShieldActive((p) => !p);
-        return;
-      }
 
       // F9: Trigger screenshot analysis
       if (e.key === 'F9') {
@@ -810,16 +893,11 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         return;
       }
 
-      // Esc: unfreeze if frozen, or activate panic shield when idle
+      // Esc: unfreeze if frozen
       if (e.key === 'Escape' && !isInput) {
         if (isFrozenRef.current) {
           e.preventDefault();
           handleToggleFreeze();
-          return;
-        }
-        if (!isPanicShieldActive && !anyOverlayOpen) {
-          e.preventDefault();
-          setIsPanicShieldActive(true);
           return;
         }
       }
@@ -914,13 +992,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
     activeQA,
     handleRefineQA,
     isPaletteOpen,
-    isHistoryOpen,
-    isProfileOpen,
-    isSoundCheckOpen,
-    isCompanionQROpen,
-    isAudioWizardOpen,
-    showTrialLimitModal,
-    isPanicShieldActive,
     audioSource,
     isCapturingRef,
     isFrozenRef,
@@ -953,7 +1024,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       { id: 'mod-reangle', group: 'Відповідь', label: '🔄 Інший підхід', hint: '4', disabled: !hasQA || busy, keywords: 're_angle alternative', run: refine('re_angle') },
       { id: 'mod-bridge', group: 'Відповідь', label: '💬 Тягнути час', hint: '5', disabled: false, keywords: 'bridge phrase time', run: () => handleTriggerBridge() },
       { id: 'freeze', group: 'Керування', label: isFrozen ? 'Розморозити відповідь' : 'Заморозити відповідь', hint: 'Space', keywords: 'freeze pause', run: () => handleToggleFreeze() },
-      { id: 'panic', group: 'Керування', label: 'Паніка — сховати екран', hint: 'F12', keywords: 'panic shield hide', run: () => setIsPanicShieldActive(true) },
       { id: 'ask', group: 'Керування', label: 'Ввести питання вручну', hint: 'Ctrl+K', keywords: 'ask manual input', run: () => { manualInputRef.current?.focus(); manualInputRef.current?.select(); } },
       isCapturing
         ? { id: 'stop', group: 'Сесія', label: 'Зупинити запис', hint: 'Ctrl+M', keywords: 'stop capture', run: () => handleStop() }
@@ -1529,7 +1599,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         </div>
       )}
 
-      <div ref={prompterRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
+      <div ref={prompterRef} className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 pb-12">
         {/* Emergency Bridge Banner */}
         {isBridgeActive && bridgePhrase && (
           <div className="liquid-glass-card mb-4 p-4 rounded-2xl border-cyan-400/30 text-zinc-100 flex items-start gap-3">
@@ -1712,86 +1782,143 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 </div>
               )}
 
-              {/* Phase 3: DEEP DIVE (13.5px monospace with line numbers and 1-click Copy button) */}
-              {((activeQA.codeSnippet && activeQA.codeSnippet.trim()) || activePatchSlot === 'deep_dive') && (
-                <div className="liquid-glass-card rounded-2xl p-4 overflow-hidden space-y-2.5">
-                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsCodeExpanded((prev) => !prev)}
-                        className="flex items-center gap-2 text-xs font-mono font-semibold text-zinc-200 hover:text-white cursor-pointer"
-                      >
-                        <Code2 className="w-3.5 h-3.5 text-sky-300" />
-                        <span>PHASE 3 · Код / Реалізація</span>
-                        {activeQA.codeSnippet?.trim() && (
-                          <span className="text-xs text-zinc-400 font-normal tabular-nums">
-                            ({cleanStreamText(activeQA.codeSnippet).trim().split('\n').length} рядків)
-                          </span>
-                        )}
-                        {isCodeExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
-                      </button>
-                      {activePatchSlot === 'deep_dive' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-zinc-200">
-                          Patching slot...
-                        </span>
-                      )}
-                      {activePatchSlot === 'hook_and_pillars' && (
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-mono text-zinc-400">
-                          <Lock className="w-2.5 h-2.5" /> Frozen
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {activeQA.codeSnippet?.trim() && (
+              {/* Phase 3: DEEP DIVE (Prose + Dedicated Syntax-Highlighted Fenced Code Blocks) */}
+              {((activeQA.codeSnippet && activeQA.codeSnippet.trim()) || activePatchSlot === 'deep_dive') && (() => {
+                const cleanedDeepDive = activeQA.codeSnippet ? cleanStreamText(activeQA.codeSnippet).trim() : '';
+                const deepBlocks = cleanedDeepDive ? parseBlocks(cleanedDeepDive) : [];
+                const extractedCode = cleanedDeepDive ? extractCode(cleanedDeepDive) : '';
+                const copyPayload = extractedCode || cleanedDeepDive;
+
+                return (
+                  <div className="liquid-glass-card rounded-2xl p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => handleCopy(cleanStreamText(activeQA.codeSnippet!), 'code')}
-                          className="liquid-glass-pill text-xs font-mono text-zinc-200 hover:text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                          onClick={() => setIsCodeExpanded((prev) => !prev)}
+                          className="flex items-center gap-2 text-xs font-mono font-semibold text-zinc-200 hover:text-white cursor-pointer"
                         >
-                          {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedId === 'code' ? 'Copied' : hudAnswer.copy}</span>
+                          <Code2 className="w-3.5 h-3.5 text-sky-300" />
+                          <span>PHASE 3 · Код / Реалізація</span>
+                          {isCodeExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                  {(isCodeExpanded || activePatchSlot === 'deep_dive') && (
-                    <div className="rounded-2xl bg-[#04060c]/90 border border-white/[0.12] overflow-hidden shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
-                      {/* macOS / Linear Window Bar */}
-                      <div className="flex items-center justify-between px-3.5 py-2 bg-white/[0.03] border-b border-white/[0.08]">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-rose-400/75" />
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-400/75" />
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/75" />
-                          <span className="ml-2 text-xs font-mono text-zinc-400">solution.ts</span>
-                        </div>
-                        <span className="text-xs font-mono text-zinc-400">Click line to explain</span>
+                        {activePatchSlot === 'deep_dive' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-zinc-200">
+                            Patching slot...
+                          </span>
+                        )}
+                        {activePatchSlot === 'hook_and_pillars' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-xs font-mono text-zinc-400">
+                            <Lock className="w-2.5 h-2.5" /> Frozen
+                          </span>
+                        )}
                       </div>
-                      <div className="p-3 text-zinc-100 font-mono text-[13.5px] overflow-x-auto leading-[1.6] max-h-[380px] custom-scrollbar">
-                        {activeQA.codeSnippet && activeQA.codeSnippet.trim() ? (
-                          cleanStreamText(activeQA.codeSnippet).trim().split('\n').map((lineText, idx) => {
-                            const lineExplanation = activeQA.lineExplanations?.[idx];
-                            return (
-                              <div key={idx} className="group">
+                      <div className="flex items-center gap-2">
+                        {copyPayload && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(copyPayload, 'code')}
+                            className="liquid-glass-pill text-xs font-mono text-zinc-200 hover:text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 cursor-pointer"
+                          >
+                            {copiedId === 'code' ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedId === 'code' ? 'Скопійовано ✓' : 'Копіювати'}</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {(isCodeExpanded || activePatchSlot === 'deep_dive') && (
+                      <div className="space-y-3">
+                        {deepBlocks.length > 0 ? (
+                          deepBlocks.map((block, bIdx) => {
+                            if (block.type === 'code') {
+                              const codeLines = block.code.split('\n');
+                              return (
                                 <div
-                                  onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
-                                  className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
-                                  title="Клікніть для пояснення рядка (explain_line)"
+                                  key={bIdx}
+                                  className="overflow-hidden rounded-lg border border-white/10 bg-[#09090b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]"
                                 >
-                                  <span className="shrink-0 select-none text-xs font-mono tabular-nums text-zinc-500 group-hover:text-cyan-300 w-7 text-right">
-                                    {idx + 1}
-                                  </span>
-                                  <code className="flex-1 whitespace-pre text-[13.5px] font-mono">{lineText || ' '}</code>
-                                </div>
-                                {lineExplanation && (
-                                  <div className="liquid-glass-pill my-1.5 ml-10 mr-2 p-2.5 rounded-xl text-xs text-zinc-100 leading-relaxed">
-                                    <span className="inline-flex items-center gap-1 font-mono text-xs text-cyan-300 font-bold mr-1.5 uppercase">
-                                      <Zap className="w-3 h-3" /> Пояснення:
-                                    </span>
-                                    {lineExplanation}
+                                  <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.03] border-b border-white/10">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-rose-400/75" />
+                                      <span className="w-2 h-2 rounded-full bg-amber-400/75" />
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400/75" />
+                                      <span className="ml-2 text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                                        {block.lang || 'code'} · клік на рядок = пояснення
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopy(block.code, `code-${bIdx}`)}
+                                      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-white/[0.12] hover:text-white transition-colors cursor-pointer"
+                                    >
+                                      {copiedId === `code-${bIdx}` ? (
+                                        <Check className="w-3 h-3 text-emerald-300" />
+                                      ) : (
+                                        <Copy className="w-3 h-3" />
+                                      )}
+                                      <span>{copiedId === `code-${bIdx}` ? 'Скопійовано ✓' : 'Копіювати'}</span>
+                                    </button>
                                   </div>
-                                )}
-                              </div>
+                                  <pre className="bg-[#09090b] p-3 font-mono text-[13px] leading-relaxed overflow-x-auto max-h-[380px] custom-scrollbar text-zinc-100">
+                                    <code>
+                                      {codeLines.map((lineText, idx) => {
+                                        const lineExplanation = activeQA.lineExplanations?.[idx];
+                                        const tokens = highlightCode(lineText);
+                                        return (
+                                          <div key={idx} className="group">
+                                            <div
+                                              onClick={() => handleExplainLine(activeQA.id, idx, lineText)}
+                                              className="flex items-start gap-3 py-0.5 px-1.5 rounded hover:bg-white/[0.06] cursor-pointer transition-colors"
+                                              title="Клікніть для пояснення рядка (explain_line)"
+                                            >
+                                              <span className="shrink-0 select-none text-xs font-mono tabular-nums text-zinc-500 group-hover:text-cyan-300 w-6 text-right">
+                                                {idx + 1}
+                                              </span>
+                                              <span className="flex-1 whitespace-pre font-mono">
+                                                {tokens.length > 0
+                                                  ? tokens.map((t, j) => (
+                                                      <span key={j} className={TOKEN_CLASS[t.kind]}>
+                                                        {t.value}
+                                                      </span>
+                                                    ))
+                                                  : ' '}
+                                              </span>
+                                            </div>
+                                            {lineExplanation && (
+                                              <div className="liquid-glass-pill my-1.5 ml-9 mr-2 p-2.5 rounded-xl text-xs text-zinc-100 leading-relaxed font-sans">
+                                                <span className="inline-flex items-center gap-1 font-mono text-xs text-cyan-300 font-bold mr-1.5 uppercase">
+                                                  <Zap className="w-3 h-3" /> Пояснення:
+                                                </span>
+                                                {lineExplanation}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </code>
+                                  </pre>
+                                </div>
+                              );
+                            }
+                            if (block.type === 'li') {
+                              return (
+                                <div key={bIdx} className="flex items-start gap-2.5 text-[var(--hud-font,16px)] leading-[1.58] text-zinc-200 font-sans">
+                                  <span className="mt-[0.55em] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400/80" />
+                                  <p className="min-w-0 flex-1">{renderInlineTokens(block.tokens, isBilingualOutput)}</p>
+                                </div>
+                              );
+                            }
+                            if (block.type === 'h') {
+                              return (
+                                <h4 key={bIdx} className="pt-1 text-xs font-mono font-semibold uppercase tracking-wider text-zinc-100">
+                                  {renderInlineTokens(block.tokens, isBilingualOutput)}
+                                </h4>
+                              );
+                            }
+                            return (
+                              <p key={bIdx} className="text-[var(--hud-font,16px)] leading-[1.58] text-zinc-200 font-sans">
+                                {renderInlineTokens(block.tokens, isBilingualOutput)}
+                              </p>
                             );
                           })
                         ) : (
@@ -1805,10 +1932,10 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                           <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-300 animate-pulse align-middle" />
                         )}
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Emergency Fallback 1-Click Retry Action */}
               {(activeQA.codeSnippet?.includes('Повторити запит') ||
@@ -1935,14 +2062,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
       glowIntensity={0.08}
       className="stealth-bg font-sans relative selection:bg-cyan-400/25 selection:text-white overflow-x-hidden"
     >
-      <StealthDisguise
-        isActive={isPanicShieldActive}
-        onDeactivate={() => {
-          setIsPanicShieldActive(false);
-          onPanicExit?.();
-        }}
-      />
-
       {/* TOP DYNAMIC ISLAND CAPSULE — Apple Spatial Glass Bar */}
       <header className="fixed top-2 inset-x-0 z-40 px-2 sm:px-4 pointer-events-none select-none">
         <div className="pointer-events-auto max-w-[1520px] mx-auto px-3 sm:px-4 py-1.5 rounded-2xl bg-[#090b11]/82 backdrop-blur-2xl border border-white/12 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_16px_44px_rgba(0,0,0,0.75)] flex items-center justify-between gap-2">
@@ -2048,7 +2167,7 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
             </button>
           </div>
 
-          {/* RIGHT: Mode + Focus (Tab) + Panic (F12) + Tidy Options Popover */}
+          {/* RIGHT: Mode + Focus (Tab) + Tidy Options Popover */}
           <div className="flex items-center gap-1.5 shrink-0" ref={optionsMenuRef}>
             <button
               type="button"
@@ -2075,16 +2194,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
                 <Maximize2 className="w-3.5 h-3.5 text-zinc-300" />
               )}
               <span className="hidden sm:inline">Фокус (Tab)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsPanicShieldActive((p) => !p)}
-              title="Миттєво сховати HUD [F12]"
-              className="liquid-glass-pill min-h-7 py-1 px-2.5 rounded-xl hover:bg-rose-500/20 hover:border-rose-400/40 text-xs font-mono font-medium text-zinc-100 hover:text-white transition-all cursor-pointer inline-flex items-center gap-1.5"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
-              <span className="hidden sm:inline">Паніка (F12)</span>
             </button>
 
             {/* Options Dropdown Popover */}
@@ -2348,7 +2457,6 @@ export const DualStreamCopilot: React.FC<DualStreamCopilotProps> = ({ onPanicExi
         onAnswerNow={() => handleManualEnterTriggerRef.current()}
         onStartCapture={handleStartCaptureRequest}
         onStopCapture={handleStop}
-        onTogglePanic={() => setIsPanicShieldActive((p) => !p)}
       />
 
       {isHistoryOpen && (

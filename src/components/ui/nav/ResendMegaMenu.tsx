@@ -289,7 +289,7 @@ export function ResendMegaMenu() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                        <span>Gemini 2.5 Flash Reasoning</span>
+                        <span>Gemini 3.8 Flash Reasoning</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-zinc-400" />

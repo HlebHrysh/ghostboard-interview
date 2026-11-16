@@ -114,11 +114,11 @@ describe('Structured Logger (logger.ts)', () => {
       const parent = new Logger({ service: 'copilot-api' });
       const child = parent.child({ component: 'gemini' });
 
-      child.info('Model prompt dispatched', { model: 'gemini-2.5-flash' });
+      child.info('Model prompt dispatched', { model: 'gemini-3.8-flash' });
       const output = JSON.parse(consoleLogSpy.mock.calls[0][0]);
       expect(output.context.service).toBe('copilot-api');
       expect(output.context.component).toBe('gemini');
-      expect(output.context.model).toBe('gemini-2.5-flash');
+      expect(output.context.model).toBe('gemini-3.8-flash');
     });
 
     it('suppresses logs lower than configured LOG_LEVEL', () => {

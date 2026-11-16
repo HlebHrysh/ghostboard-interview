@@ -172,20 +172,117 @@ pub fn resolve_device(
     fallback(host)
 }
 
+/// Filters out raw ALSA virtual/emulated PCM plugins before opening device configs (prevents ALSA stderr floods).
+fn is_noisy_virtual_alsa_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.contains("oss")
+        || lower.contains("/dev/dsp")
+        || lower.contains("surround")
+        || lower.contains("dmix")
+        || lower.contains("dsnoop")
+        || lower.starts_with("iec958")
+        || lower.starts_with("spdif")
+        || lower.contains("upmix")
+        || lower.contains("vdownmix")
+        || lower.contains("speex")
+        || lower.contains("lavrate")
+        || lower.contains("samplerate")
+}
+
+/// Fast PipeWire / PulseAudio device listing on Linux (<10ms, zero ALSA PCM probing / /dev/dsp errors).
+#[cfg(target_os = "linux")]
+pub fn list_linux_pipewire_devices() -> Option<Vec<AudioDeviceInfo>> {
+    use std::time::{Duration, Instant};
+
+    let default_sink = run_pactl_arg_with_timeout("get-default-sink", 400);
+    let default_monitor = default_sink.as_deref().map(|s| format!("{}.monitor", s));
+    let default_source = run_pactl_arg_with_timeout("get-default-source", 400);
+
+    let mut child = std::process::Command::new("pactl")
+        .args(["list", "short", "sources"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let start = Instant::now();
+    let stdout_str = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    return None;
+                }
+                let mut stdout = child.stdout.take()?;
+                use std::io::Read;
+                let mut s = String::new();
+                let _ = stdout.read_to_string(&mut s);
+                break s;
+            }
+            Ok(None) => {
+                if start.elapsed() > Duration::from_millis(600) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => return None,
+        }
+    };
+
+    let mut result = Vec::new();
+    for line in stdout_str.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            continue;
+        }
+        let name = cols[1].trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let lower = name.to_lowercase();
+        let is_monitor = lower.ends_with(".monitor") || lower.contains("monitor");
+        let is_default = if is_monitor {
+            default_monitor.as_deref() == Some(name.as_str())
+        } else {
+            default_source.as_deref() == Some(name.as_str())
+        };
+        result.push(AudioDeviceInfo {
+            name,
+            is_default,
+            is_loopback_capable: is_monitor,
+            default_sample_rate: 48000,
+            default_channels: 2,
+        });
+    }
+
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
+}
+
 /// Lists all available input and loopback audio devices for UI selection.
 pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
+    #[cfg(target_os = "linux")]
+    if let Some(pw_devices) = list_linux_pipewire_devices() {
+        return pw_devices;
+    }
+
     let mut result = Vec::new();
     let default_in_name = host.default_input_device().and_then(|d| d.name().ok());
+    #[cfg(not(target_os = "linux"))]
     let default_out_name = host.default_output_device().and_then(|d| d.name().ok());
 
     // 1. Input devices (Microphones, Line-in, Pulse/PipeWire monitors)
     if let Ok(devices) = host.input_devices() {
         for dev in devices {
             if let Ok(name) = dev.name() {
-                let lower = name.to_lowercase();
-                if lower.contains("oss") || lower.contains("/dev/dsp") {
+                if is_noisy_virtual_alsa_name(&name) {
                     continue;
                 }
+                let lower = name.to_lowercase();
                 let is_default = default_in_name.as_deref() == Some(&name);
                 let is_monitor = lower.contains("monitor")
                     || lower.contains("blackhole")
@@ -210,11 +307,11 @@ pub fn list_audio_devices(host: &Host) -> Vec<AudioDeviceInfo> {
     }
 
     // 2. Output devices (Speakers, Headphones - critical for WASAPI Loopback on Windows)
+    #[cfg(not(target_os = "linux"))]
     if let Ok(devices) = host.output_devices() {
         for dev in devices {
             if let Ok(name) = dev.name() {
-                let lower = name.to_lowercase();
-                if lower.contains("oss") || lower.contains("/dev/dsp") {
+                if is_noisy_virtual_alsa_name(&name) {
                     continue;
                 }
                 if result.iter().any(|d| d.name == name) {

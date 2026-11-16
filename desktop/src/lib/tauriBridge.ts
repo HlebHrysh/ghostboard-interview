@@ -199,6 +199,8 @@ export async function setAiPreferences(prefs: {
   modifier?: string | null;
   concise?: boolean;
   candidateProfile?: string | null;
+  cascadeMode?: string | null;
+  sttStack?: string | null;
 }): Promise<boolean> {
   if (!isTauriEnvironment()) return false;
   try {
@@ -208,6 +210,8 @@ export async function setAiPreferences(prefs: {
       modifier: prefs.modifier ?? null,
       concise: prefs.concise ?? false,
       candidateProfile: prefs.candidateProfile ?? null,
+      cascadeMode: prefs.cascadeMode ?? null,
+      sttStack: prefs.sttStack ?? null,
     });
     return true;
   } catch (err) {
@@ -357,19 +361,6 @@ export async function alignToActiveDisplay(): Promise<boolean> {
 }
 
 /**
- * Native command for panic shield instant hide (<16ms).
- */
-export async function panicHide(): Promise<boolean> {
-  if (!isTauriEnvironment()) return true;
-  try {
-    return await invoke<boolean>('panic_hide');
-  } catch (err) {
-    console.warn('[tauriBridge] panicHide error:', err);
-    return false;
-  }
-}
-
-/**
  * Triggers manual AI prompt generation (for instant answers or modifier buttons).
  */
 export async function triggerManualAnswer(prompt?: string): Promise<void> {
@@ -442,10 +433,10 @@ function devLocalBase(): string | undefined {
     const cached = typeof localStorage !== 'undefined' ? localStorage.getItem('ghostboard_backend_url') : null;
     if (cached && !cached.includes('ghostboard.ai')) {
       // The Vite origin (5173) proxies /api only; browser pages live on the Next.js server.
-      return cached.includes(':5173') ? 'http://localhost:3000' : cached;
+      return cached.includes(':5173') ? 'http://localhost:3001' : cached;
     }
   } catch {}
-  return 'http://localhost:3000';
+  return 'http://localhost:3001';
 }
 
 export async function startPkceLogin(baseUrl?: string): Promise<{ auth_url: string; state: string } | null> {
@@ -830,10 +821,20 @@ export async function getEnvironmentInfo(): Promise<EnvironmentInfo> {
   }
 }
 
+let cachedAudioDevices: { items: AudioDevice[]; at: number } | null = null;
+let audioDevicesInFlight: Promise<AudioDevice[]> | null = null;
+
 /** Lists capture devices known to the native audio layer (PipeWire / PulseAudio monitors included). */
-export async function listAudioDevices(): Promise<AudioDevice[]> {
+export async function listAudioDevices(forceRefresh = false): Promise<AudioDevice[]> {
   if (!isTauriEnvironment()) return [];
-  const raw = await invoke<
+  if (!forceRefresh && cachedAudioDevices && Date.now() - cachedAudioDevices.at < 4000) {
+    return cachedAudioDevices.items;
+  }
+  if (!forceRefresh && audioDevicesInFlight) {
+    return audioDevicesInFlight;
+  }
+
+  audioDevicesInFlight = invoke<
     Array<{
       name: string;
       is_default: boolean;
@@ -841,14 +842,23 @@ export async function listAudioDevices(): Promise<AudioDevice[]> {
       default_sample_rate: number;
       default_channels: number;
     }>
-  >('list_audio_devices');
-  return raw.map((d) => ({
-    name: d.name,
-    isDefault: d.is_default,
-    isLoopbackCapable: d.is_loopback_capable,
-    sampleRate: d.default_sample_rate,
-    channels: d.default_channels,
-  }));
+  >('list_audio_devices')
+    .then((raw) => {
+      const mapped = raw.map((d) => ({
+        name: d.name,
+        isDefault: d.is_default,
+        isLoopbackCapable: d.is_loopback_capable,
+        sampleRate: d.default_sample_rate,
+        channels: d.default_channels,
+      }));
+      cachedAudioDevices = { items: mapped, at: Date.now() };
+      return mapped;
+    })
+    .finally(() => {
+      audioDevicesInFlight = null;
+    });
+
+  return audioDevicesInFlight;
 }
 
 export interface AudioStartResult {
@@ -943,7 +953,6 @@ export function setupWindowCompatibilityShim(): void {
     setIgnoreMouseEvents: (enable: boolean) => toggleClickThrough(enable),
     setOpacity: (opacity: number) => setWindowOpacity(opacity),
     alignToActiveDisplay: () => alignToActiveDisplay(),
-    panicHide: () => panicHide(),
     triggerManualAnswer: (prompt?: string) => triggerManualAnswer(prompt),
     clearSession: () => clearSession(),
     exportMarkdown: (content: string, filename?: string) => exportMarkdown(content, filename),

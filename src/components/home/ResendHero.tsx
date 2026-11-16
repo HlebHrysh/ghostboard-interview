@@ -111,7 +111,7 @@ export function ResendHero({ t }: Props) {
             className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-6 pt-8 border-t border-white/[0.08] w-full max-w-lg"
           >
             {[
-              ["1.18s", "Gemini 2.5 Flash"],
+              ["1.18s", "Gemini 3.8 Flash"],
               ["16kHz", "Deepgram Nova-3"],
               ["100%", "Capture Excluded"],
               ["0 Keys", "Pre-Configured"],

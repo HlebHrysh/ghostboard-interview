@@ -7,7 +7,7 @@ import { Check, ShieldCheck, ArrowRight, Sparkles, Zap } from 'lucide-react';
 import type { HomeTranslations } from '@/lib/homeI18n';
 import { trackFunnelEvent } from '@/lib/croTelemetry';
 import { useLocale } from '@/contexts/LocaleContext';
-import { SpatialVideoCapsule, type SpatialVideoItem } from '@/components/ui/SpatialVideoCapsule';
+import { SpatialSquircleBadge } from '@/components/ui/SpatialSquircleBadge';
 
 interface Props {
   t: HomeTranslations;
@@ -27,15 +27,6 @@ export function TransparentPricingSection({ t }: Props) {
       target: targetUrl,
     });
   };
-
-  const moneyVideos: SpatialVideoItem[] = [
-    {
-      id: 'money-roi',
-      src: '/videos/money.mp4',
-      label: isUa ? 'Offer ROI' : 'Offer ROI',
-      caption: isUa ? 'Окупність з першого тижня після оффера' : 'Pays for itself on day one of your new offer',
-    },
-  ];
 
   const plans = [
     {
@@ -62,8 +53,8 @@ export function TransparentPricingSection({ t }: Props) {
       popular: false,
       url: '/pricing',
       quotaPills: isUa
-        ? ['Усі можливості', 'Priority Gemini 2.5', 'До отримання оффера']
-        : ['All features', 'Priority Gemini 2.5', 'Zero recurring fees'],
+        ? ['Усі можливості', 'Priority Gemini 3.8', 'До отримання оффера']
+        : ['All features', 'Priority Gemini 3.8', 'Zero recurring fees'],
     },
   ];
 
@@ -73,66 +64,61 @@ export function TransparentPricingSection({ t }: Props) {
       className="relative py-16 sm:py-24 px-4 sm:px-6 border-t border-white/[0.06] scroll-mt-24"
     >
       <div className="max-w-6xl mx-auto">
-        {/* Header + Apple Spatial Glass ROI PiP Showcase */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center mb-14">
-          <div className="lg:col-span-7 text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/25 text-xs font-mono text-emerald-300 mb-4">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>{t.pricing.badge}</span>
-            </div>
-            <h2 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
-              {t.pricing.title}
-            </h2>
-            <p className="mt-4 text-sm sm:text-base text-zinc-300 leading-relaxed max-w-2xl mx-auto lg:mx-0">
-              {t.pricing.subtitle}
-            </p>
+        {/* Centered Header + Sleek 3D Money Squircle Emblem */}
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <SpatialSquircleBadge
+            src="/videos/money.mp4"
+            accent="emerald"
+            size="hero"
+            centered
+            className="mb-6"
+          />
 
-            {/* Spring Pill View Toggle */}
-            <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.1] backdrop-blur-xl">
-              <button
-                type="button"
-                onClick={() => setFocusView('plans')}
-                className={`relative px-4 py-1.5 rounded-full text-xs font-mono transition-colors cursor-pointer z-10 ${
-                  focusView === 'plans' ? 'text-zinc-950 font-bold' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {focusView === 'plans' && (
-                  <motion.span
-                    layoutId="pricing-view-pill"
-                    transition={SPRING_PHYSICS}
-                    className="absolute inset-0 rounded-full bg-white -z-10 shadow-sm"
-                  />
-                )}
-                {isUa ? 'Тарифи та ліміти' : 'Plans & Quotas'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setFocusView('roi')}
-                className={`relative px-4 py-1.5 rounded-full text-xs font-mono transition-colors cursor-pointer z-10 ${
-                  focusView === 'roi' ? 'text-zinc-950 font-bold' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {focusView === 'roi' && (
-                  <motion.span
-                    layoutId="pricing-view-pill"
-                    transition={SPRING_PHYSICS}
-                    className="absolute inset-0 rounded-full bg-white -z-10 shadow-sm"
-                  />
-                )}
-                {isUa ? 'Чому разовий пасс вигідніший' : 'Why One-Time Pass Wins'}
-              </button>
-            </div>
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/25 text-xs font-mono text-emerald-300 mb-4">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>{t.pricing.badge}</span>
           </div>
+          <h2 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
+            {t.pricing.title}
+          </h2>
+          <p className="mt-4 text-sm sm:text-base text-zinc-300 leading-relaxed">
+            {t.pricing.subtitle}
+          </p>
 
-          <div className="lg:col-span-5">
-            <div className="bento-card rounded-3xl p-4 bg-white/[0.03] border border-white/[0.1] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
-              <SpatialVideoCapsule
-                videos={moneyVideos}
-                layoutGroupId="pricing-money-capsule"
-                compact
-                aspectClassName="aspect-[16/9]"
-              />
-            </div>
+          {/* Spring Pill View Toggle */}
+          <div className="mt-6 inline-flex items-center gap-1 p-1 rounded-full bg-white/[0.04] border border-white/[0.1] backdrop-blur-xl">
+            <button
+              type="button"
+              onClick={() => setFocusView('plans')}
+              className={`relative px-4 py-1.5 rounded-full text-xs font-mono transition-colors cursor-pointer z-10 ${
+                focusView === 'plans' ? 'text-zinc-950 font-bold' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              {focusView === 'plans' && (
+                <motion.span
+                  layoutId="pricing-view-pill"
+                  transition={SPRING_PHYSICS}
+                  className="absolute inset-0 rounded-full bg-white -z-10 shadow-sm"
+                />
+              )}
+              {isUa ? 'Тарифи та ліміти' : 'Plans & Quotas'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFocusView('roi')}
+              className={`relative px-4 py-1.5 rounded-full text-xs font-mono transition-colors cursor-pointer z-10 ${
+                focusView === 'roi' ? 'text-zinc-950 font-bold' : 'text-zinc-400 hover:text-white'
+              }`}
+            >
+              {focusView === 'roi' && (
+                <motion.span
+                  layoutId="pricing-view-pill"
+                  transition={SPRING_PHYSICS}
+                  className="absolute inset-0 rounded-full bg-white -z-10 shadow-sm"
+                />
+              )}
+              {isUa ? 'Чому разовий пасс вигідніший' : 'Why One-Time Pass Wins'}
+            </button>
           </div>
         </div>
 

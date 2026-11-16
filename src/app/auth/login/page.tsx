@@ -73,15 +73,15 @@ export default function LoginPage() {
               })
                 .then((r) => r.json())
                 .then((bindData) => {
-                  if (bindData?.success) {
+                  if (bindData?.success && bindData?.token) {
                     toast.success(
                       locale === "ua"
                         ? "Десктоп успішно авторизовано! Можете повернутися до застосунку."
                         : "Desktop app authorized! You can return to the application."
                     );
-                    // Also trigger deep-link fast path
+                    // Also trigger deep-link fast path with the minted desktop session token
                     setTimeout(() => {
-                      window.location.href = `ghostboard://auth?token=${bindData?.user?.id || ""}&handshake=${handshake}`;
+                      window.location.href = `ghostboard://auth?token=${encodeURIComponent(bindData.token)}&handshake=${encodeURIComponent(handshake)}`;
                     }, 500);
                   }
                 })

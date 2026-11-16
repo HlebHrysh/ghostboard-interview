@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import {
   Sparkles,
   ArrowRight,
@@ -714,8 +713,8 @@ export function ArenaViewUpgraded() {
               </p>
             </div>
 
-            {/* Setup Mode Switcher + AI Interviewer PiP Preview */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            {/* Setup Mode Switcher */}
+            <div className="flex justify-center">
               <div className="p-1 rounded-2xl spatial-glass-window border border-white/15 flex items-center gap-1">
                 {[
                   { id: 'presets' as const, label: `⚡ ${a.modePresets || 'Готові технічні треки'}` },
@@ -742,22 +741,6 @@ export function ArenaViewUpgraded() {
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="w-full sm:w-56">
-                <SpatialVideoCapsule
-                  compact
-                  layoutGroupId="arena-ghost-preview"
-                  aspectClassName="aspect-[16/9]"
-                  videos={[
-                    {
-                      id: 'arena-interviewer',
-                      src: '/videos/ghost.mp4',
-                      label: 'AI Interviewer',
-                      caption: 'Technical Interview Simulator',
-                    },
-                  ]}
-                />
               </div>
             </div>
 

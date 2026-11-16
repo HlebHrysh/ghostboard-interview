@@ -38,16 +38,17 @@ describe('AI Latency Optimization & Stability Suite', () => {
     it('initializes prioritized models with gemini-3.8-flash at the top', () => {
       const models = getPrioritizedModels();
       expect(models[0]).toBe('gemini-3.8-flash');
-      expect(models[1]).toBe('gemini-2.5-flash');
+      expect(models[1]).toBe('gemini-3.6-flash');
+      expect(models).not.toContain('gemini-2.5-flash');
       expect(models).toContain('gemini-flash-latest');
     });
 
     it('moves fastest winning model to the front for subsequent requests', () => {
-      recordModelSuccess('gemini-2.5-flash', 240);
-      expect(getPreferredFastModel()).toBe('gemini-2.5-flash');
+      recordModelSuccess('gemini-3.6-flash', 240);
+      expect(getPreferredFastModel()).toBe('gemini-3.6-flash');
 
       const prioritized = getPrioritizedModels();
-      expect(prioritized[0]).toBe('gemini-2.5-flash');
+      expect(prioritized[0]).toBe('gemini-3.6-flash');
     });
 
     it('demotes failing models to the back of the priority list for 3 minutes', () => {

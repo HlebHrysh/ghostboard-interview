@@ -86,7 +86,7 @@ export const IS_DEV_MODE: boolean = Boolean(
   (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV
 );
 
-const DEV_FALLBACK_URL = 'http://localhost:3000';
+const DEV_FALLBACK_URL = 'http://localhost:3001';
 let backendOffline = false;
 
 /** True if the last detection found no reachable backend (dev mode only). */
@@ -114,7 +114,7 @@ function getEnvConfiguredUrl(): string | null {
 
 /**
  * Autodetects the available backend URL.
- * Dev mode order: VITE_API_URL (non-production) → same-origin Vite proxy (/api) → :3000 → :3001.
+ * Dev mode order: VITE_API_URL (non-production) → same-origin Vite proxy (/api) → :3001 → :3000.
  * In dev mode production (https://ghostboard.ai) is NEVER used; if nothing answers we flag the
  * backend as offline and return the local default WITHOUT caching it, so the next call re-probes.
  * Release builds resolve VITE_API_URL / GHOSTBOARD_API_URL or fall back strictly to production cloud.
@@ -152,13 +152,17 @@ export async function detectBackendUrl(forceRefresh = false): Promise<string> {
         return activeBaseUrl;
       }
 
-      for (const candidate of ['http://localhost:3000', 'http://localhost:3001']) {
-        if (await probeHealth(candidate, 500)) {
-          activeBaseUrl = candidate;
-          backendOffline = false;
-          persistBaseUrl(candidate);
-          return candidate;
-        }
+      // Probe local Next.js ports (3000 & 3001) concurrently with a strict 600ms timeout
+      const [ok3001, ok3000] = await Promise.all([
+        probeHealth('http://localhost:3001', 600),
+        probeHealth('http://localhost:3000', 600),
+      ]);
+      const localMatch = ok3001 ? 'http://localhost:3001' : ok3000 ? 'http://localhost:3000' : null;
+      if (localMatch) {
+        activeBaseUrl = localMatch;
+        backendOffline = false;
+        persistBaseUrl(localMatch);
+        return localMatch;
       }
 
       // Browser-only Vite dev fallback
@@ -309,7 +313,7 @@ export function clearAuthToken(): void {
 export async function apiFetch<T = unknown>(
   path: string,
   options: RequestInit = {}
-): Promise<{ ok: boolean; status: number; data: T | null; error?: string }> {
+): Promise<{ ok: boolean; status: number; data: T | null; error?: string; code?: string }> {
   const baseUrl = await detectBackendUrl();
   if (IS_DEV_MODE && backendOffline) {
     return { ok: false, status: 0, data: null, error: 'BACKEND_OFFLINE' };
@@ -347,8 +351,9 @@ export async function apiFetch<T = unknown>(
     }
 
     if (!response.ok) {
-      const errMsg = (data as { error?: string })?.error || `HTTP ${response.status}: Request failed`;
-      return { ok: false, status: response.status, data, error: errMsg };
+      const errObj = data as { error?: string; code?: string } | null;
+      const errMsg = errObj?.error || `HTTP ${response.status}: Request failed`;
+      return { ok: false, status: response.status, data, error: errMsg, code: errObj?.code };
     }
 
     return { ok: true, status: response.status, data };

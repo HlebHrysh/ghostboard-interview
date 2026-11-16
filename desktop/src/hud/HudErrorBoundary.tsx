@@ -1,5 +1,4 @@
 import React from 'react';
-import { panicHide } from '../lib/tauriBridge';
 
 interface Props {
   children: React.ReactNode;
@@ -16,7 +15,7 @@ interface State {
 
 /**
  * Resets isolated render faults inside Office or Stealth HUD without blanking the overlay.
- * Preserves WebKitGTK 60fps surface rules and exposes 1-click Panic + Soft Recover / Reload.
+ * Preserves WebKitGTK 60fps surface rules and exposes Soft Recover / Reload.
  */
 export class HudErrorBoundary extends React.Component<Props, State> {
   state: State = {
@@ -60,10 +59,6 @@ export class HudErrorBoundary extends React.Component<Props, State> {
     if (typeof window !== 'undefined' && typeof window.location?.reload === 'function') {
       window.location.reload();
     }
-  };
-
-  public handlePanicHide = () => {
-    void panicHide().catch(() => undefined);
   };
 
   render() {
@@ -110,13 +105,6 @@ export class HudErrorBoundary extends React.Component<Props, State> {
             onMouseDown={(e) => e.stopPropagation()}
             className="flex flex-wrap items-center justify-end gap-2 pt-1"
           >
-            <button
-              type="button"
-              onClick={this.handlePanicHide}
-              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-medium text-rose-300 transition-colors hover:bg-rose-500/20 cursor-pointer"
-            >
-              🛡️ Сховати вікно (Паніка F12)
-            </button>
             {!exhausted && (
               <button
                 type="button"

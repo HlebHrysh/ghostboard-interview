@@ -282,7 +282,7 @@ export function PreFlightDiagnosticWidget({ locale }: PreFlightDiagnosticWidgetP
               </div>
 
               <div className="flex items-center justify-between text-zinc-300">
-                <span className="text-zinc-400 font-mono text-[11px]">Gemini 2.5/3 AI:</span>
+                <span className="text-zinc-400 font-mono text-[11px]">Gemini 3.8 AI:</span>
                 <span className="font-mono text-xs">
                   {healthData?.aiConfigured ? (
                     <span className="text-emerald-400">Підключено</span>

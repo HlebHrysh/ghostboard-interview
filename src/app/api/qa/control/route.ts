@@ -141,7 +141,7 @@ export async function GET(req: NextRequest) {
   const geminiConfigured = Boolean(geminiKey && geminiKey.length > 10);
   const geminiStatus = {
     configured: geminiConfigured,
-    primaryModel: FLASH_MODELS[0] || 'gemini-2.5-flash',
+    primaryModel: FLASH_MODELS[0] || 'gemini-3.8-flash',
     status: geminiConfigured ? 'healthy' : 'missing_key',
   };
 

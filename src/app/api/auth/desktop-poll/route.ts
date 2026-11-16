@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Rate limit polling: max 120 polls per minute per IP (polling every 1.5s = ~40 req/min)
-    const rateLimit = await checkRateLimit(req, 120, 60000, `desktop_poll_${handshakeId}`);
+    // Rate limit polling: allow up to 240 polls per minute per IP
+    const rateLimit = await checkRateLimit(req, 240, 60000, `desktop_poll_${handshakeId}`);
     if (!rateLimit.allowed) {
       return NextResponse.json(
         { error: 'Rate limit exceeded', retryAfterSec: rateLimit.retryAfterSec },

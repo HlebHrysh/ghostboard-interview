@@ -19,6 +19,7 @@ import { GhostDetectiveLogo } from "@/components/ui/GhostDetectiveLogo";
 import { GravitationalCard } from "@/components/singularity/GravitationalCard";
 import { MonochromeStripesCanvas } from "@/components/ui/MonochromeStripesCanvas";
 import { LuminousBorderCard } from "@/components/ui/LuminousBorderCard";
+import { SpatialSquircleBadge } from "@/components/ui/SpatialSquircleBadge";
 import {
   detectInitialLang,
   detectGeoCountryLang,
@@ -299,18 +300,14 @@ export default function PricingPage() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6">
           {/* Title */}
           <div className="text-center max-w-2xl mx-auto mb-12">
-            {/* 3D Money Mascot Animation */}
-            <div className="relative mx-auto w-32 h-32 sm:w-40 sm:h-40 mb-6 overflow-hidden rounded-[1.9rem] sm:rounded-[2.2rem] border border-white/10 shadow-[0_0_30px_rgba(255,255,255,0.05)]">
-              <video
-                src="/videos/money.mp4"
-                autoPlay
-                loop
-                muted
-                playsInline
-                preload="auto"
-                className="w-full h-full object-cover"
-              />
-            </div>
+            {/* Sleek 3D Money Squircle Emblem */}
+            <SpatialSquircleBadge
+              src="/videos/money.mp4"
+              accent="emerald"
+              size="hero"
+              centered
+              className="mb-6"
+            />
 
             <span className="text-[11px] font-mono text-zinc-200 uppercase tracking-widest bg-white/[0.04] px-3.5 py-1 rounded-full border border-white/10 inline-flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -427,36 +424,12 @@ export default function PricingPage() {
               </div>
             </div>
 
-            {/* Active Gateway Security Pill + Money Video Capsule */}
-            <div className="mt-5 flex flex-col items-center justify-center gap-3">
-              <div className="flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>
-                  {PROVIDER_DISPLAY[activeGateway] || PROVIDER_DISPLAY.monobank}
-                </span>
-              </div>
-
-              <div className="inline-flex items-center gap-3 p-2 pr-4 rounded-2xl spatial-glass-window border border-white/[0.1] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]">
-                <div className="w-12 h-9 rounded-xl overflow-hidden border border-white/10 bg-black shrink-0">
-                  <video
-                    src="/videos/money.mp4"
-                    autoPlay
-                    loop
-                    muted
-                    playsInline
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="text-left">
-                  <div className="inline-flex items-center gap-1.5 text-xs font-mono text-emerald-300 font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>LIVE DEMO · {isUa ? 'ROI Тарифів' : 'Offer ROI'}</span>
-                  </div>
-                  <div className="text-xs text-zinc-300">
-                    {isUa ? 'Миттєва активація акаунту без прихованих списань' : 'Instant clearance activation with zero hidden fees'}
-                  </div>
-                </div>
-              </div>
+            {/* Active Gateway Security Pill */}
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs font-mono text-zinc-400">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <span>
+                {PROVIDER_DISPLAY[activeGateway] || PROVIDER_DISPLAY.monobank}
+              </span>
             </div>
           </div>
 

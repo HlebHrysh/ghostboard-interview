@@ -119,7 +119,7 @@ export const UnifiedFooter: React.FC = () => {
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)] animate-pulse" />
-              <span className="text-zinc-400">Deepgram Nova-3 &amp; Gemini 2.5 Flash</span>
+              <span className="text-zinc-400">Deepgram Nova-3 &amp; Gemini 3.8 Flash</span>
             </span>
           </div>
         </div>

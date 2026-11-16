@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import { Download, Sliders, Sparkles, CheckCircle2, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 import type { HomeTranslations } from '@/lib/homeI18n';
-import { SpatialVideoCapsule, type SpatialVideoItem } from '@/components/ui/SpatialVideoCapsule';
 import { useLocale } from '@/contexts/LocaleContext';
 
 interface Props {
@@ -40,21 +39,6 @@ export function SetupStepsSection({ t }: Props) {
     },
   ];
 
-  const setupVideos: SpatialVideoItem[] = [
-    {
-      id: 'book-guide',
-      src: '/videos/book.mp4',
-      label: isUa ? '30s Запуск' : '30s Setup',
-      caption: isUa ? 'Покроковий запуск за пів хвилини' : 'Zero-friction onboarding guide',
-    },
-    {
-      id: 'audio-check',
-      src: '/videos/headphones.mp4',
-      label: isUa ? '16kHz Аудіо' : '16kHz Audio',
-      caption: isUa ? 'Авто-захоплення голосу співрозмовника' : 'Zero virtual cables required',
-    },
-  ];
-
   return (
     <section
       id="setup"
@@ -75,115 +59,87 @@ export function SetupStepsSection({ t }: Props) {
           </p>
         </div>
 
-        {/* Interactive Step Selector Strip */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-3 gap-5">
-            {steps.map((step, idx) => {
-              const Icon = step.icon;
-              const isSelected = activeStep === idx;
+        {/* Interactive 3-Step Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+          {steps.map((step, idx) => {
+            const Icon = step.icon;
+            const isSelected = activeStep === idx;
 
-              return (
-                <motion.button
-                  key={step.number}
-                  type="button"
-                  onClick={() => setActiveStep(idx)}
-                  initial={{ opacity: 0, y: 18 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ ...SPRING_PHYSICS, delay: idx * 0.08 }}
-                  whileHover={{ y: -3 }}
-                  whileTap={{ scale: 0.985 }}
-                  className={`bento-card text-left rounded-3xl p-6 sm:p-7 flex flex-col justify-between relative cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'bg-white/[0.065] border-white/[0.24] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_20px_50px_rgba(0,0,0,0.55)]'
-                      : 'bg-white/[0.025] border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:border-white/[0.18]'
-                  }`}
-                >
-                  {isSelected && (
-                    <motion.div
-                      layoutId="setup-active-step"
-                      transition={SPRING_PHYSICS}
-                      className={`pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br ${step.ringGlow} ring-1 ring-white/25`}
-                    />
-                  )}
+            return (
+              <motion.button
+                key={step.number}
+                type="button"
+                onClick={() => setActiveStep(idx)}
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ ...SPRING_PHYSICS, delay: idx * 0.08 }}
+                whileHover={{ y: -3 }}
+                whileTap={{ scale: 0.985 }}
+                className={`bento-card text-left rounded-3xl p-6 sm:p-8 flex flex-col justify-between relative cursor-pointer transition-colors ${
+                  isSelected
+                    ? 'bg-white/[0.065] border-white/[0.24] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_20px_50px_rgba(0,0,0,0.55)]'
+                    : 'bg-white/[0.025] border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.1)] hover:border-white/[0.18]'
+                }`}
+              >
+                {isSelected && (
+                  <motion.div
+                    layoutId="setup-active-step"
+                    transition={SPRING_PHYSICS}
+                    className={`pointer-events-none absolute inset-0 rounded-3xl bg-gradient-to-br ${step.ringGlow} ring-1 ring-white/25`}
+                  />
+                )}
 
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-6">
-                      <div
-                        className={`w-11 h-11 rounded-2xl border flex items-center justify-center shadow-inner ${step.accentBg}`}
-                      >
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      <span className="font-display tabular-nums text-3xl font-extrabold text-white/15 tracking-tight">
-                        {step.number}
-                      </span>
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-6">
+                    <div
+                      className={`w-11 h-11 rounded-2xl border flex items-center justify-center shadow-inner ${step.accentBg}`}
+                    >
+                      <Icon className="w-5 h-5" />
                     </div>
-
-                    <div className="text-xs font-mono uppercase tracking-wider text-zinc-400 mb-2">
-                      {step.tag}
-                    </div>
-                    <h3 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight mb-3">
-                      {step.title}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed mb-6">
-                      {step.desc}
-                    </p>
-                  </div>
-
-                  <div className="relative z-10 pt-4 border-t border-white/[0.08] flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-200">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">{step.pill}</span>
+                    <span className="font-display tabular-nums text-3xl font-extrabold text-white/15 tracking-tight">
+                      {step.number}
                     </span>
                   </div>
-                </motion.button>
-              );
-            })}
-          </div>
 
-          {/* Spatial Video Showcase Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ ...SPRING_PHYSICS, delay: 0.2 }}
-            className="lg:col-span-4 bento-card rounded-3xl p-5 sm:p-6 flex flex-col justify-between bg-white/[0.03] border border-white/[0.11] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14)]"
+                  <div className="text-xs font-mono uppercase tracking-wider text-zinc-400 mb-2">
+                    {step.tag}
+                  </div>
+                  <h3 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight mb-3">
+                    {step.title}
+                  </h3>
+                  <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed mb-6">
+                    {step.desc}
+                  </p>
+                </div>
+
+                <div className="relative z-10 pt-4 border-t border-white/[0.08] flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-mono text-zinc-200">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="truncate">{step.pill}</span>
+                  </span>
+                </div>
+              </motion.button>
+            );
+          })}
+        </div>
+
+        {/* Clean Action Bar */}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <Link
+            href="/guide"
+            className="text-xs sm:text-sm font-mono text-zinc-300 hover:text-white transition-colors inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08]"
           >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono text-zinc-300 uppercase tracking-wider font-semibold">
-                  {isUa ? 'Відео-інструкція запуску' : 'Live Setup Walkthrough'}
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-xs font-mono text-emerald-300">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  30s
-                </span>
-              </div>
-
-              <SpatialVideoCapsule
-                videos={setupVideos}
-                layoutGroupId="setup-steps-video"
-                aspectClassName="aspect-[16/10]"
-              />
-            </div>
-
-            <div className="mt-5 pt-4 border-t border-white/[0.08] flex items-center justify-between gap-3">
-              <Link
-                href="/guide"
-                className="text-xs font-mono text-zinc-300 hover:text-white transition-colors inline-flex items-center gap-1"
-              >
-                <span>{isUa ? 'Відкрити повний гайд' : 'Open full pre-flight guide'}</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
-              <Link
-                href="/interview"
-                data-magnetic
-                className="px-4 py-2 rounded-xl bg-white text-zinc-950 hover:bg-zinc-100 text-xs font-bold transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)]"
-              >
-                {isUa ? 'Запустити' : 'Launch'}
-              </Link>
-            </div>
-          </motion.div>
+            <span>{isUa ? 'Відкрити повний гайд налаштування' : 'Open full pre-flight guide'}</span>
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link
+            href="/interview"
+            data-magnetic
+            className="px-5 py-2.5 rounded-xl bg-white text-zinc-950 hover:bg-zinc-100 text-xs sm:text-sm font-bold transition-all shadow-[0_0_24px_rgba(255,255,255,0.18)]"
+          >
+            {isUa ? 'Запустити Копайлот' : 'Launch Copilot'}
+          </Link>
         </div>
       </div>
     </section>

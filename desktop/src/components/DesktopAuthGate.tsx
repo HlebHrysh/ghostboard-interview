@@ -24,7 +24,6 @@ import {
   type UserProfileData,
 } from '../lib/apiClient';
 import { isTauriEnvironment, openBrowser, saveTokens } from '../lib/tauriBridge';
-import { LevitatingGhostMascot } from '../ui/LevitatingGhostMascot';
 import { SPRING } from '../ui/primitives';
 
 export interface DesktopAuthGateProps {
@@ -33,8 +32,36 @@ export interface DesktopAuthGateProps {
   backendUrl?: string;
 }
 
-const TURBO_POLL_MS = 400;
+// 400ms fast handshake polling (150 req/min, safely under 240/min limit) + instant check on window focus
+const HANDSHAKE_POLL_MS = 400;
 const HANDSHAKE_TIMEOUT_MS = 3 * 60 * 1000;
+
+function formatLoginError(code?: string, fallbackError?: string): string {
+  switch (code) {
+    case 'USER_NOT_FOUND':
+      return 'Користувача з таким email не знайдено. Перевірте email або зареєструйтесь на сайті.';
+    case 'WRONG_PASSWORD':
+      return 'Невірний пароль. Спробуйте ще раз або увійдіть через браузер.';
+    case 'PASSWORD_NOT_SET':
+      return 'Цей акаунт створено через Google або GitHub. Натисніть відповідну кнопку вище.';
+    case 'RATE_LIMITED':
+      return 'Забагато спроб входу. Зачекайте трохи або скористайтеся входом через браузер.';
+    default:
+      if (fallbackError === 'BACKEND_OFFLINE') {
+        return 'Локальний сервер не відповідає. Запустіть сайт або увійдіть в Автономний / Демо-режим.';
+      }
+      return fallbackError || 'Не вдалося увійти. Перевірте email та пароль.';
+  }
+}
+
+function extractUrlFromDeepLinkPayload(payload: unknown): string | null {
+  if (typeof payload === 'string') return payload;
+  if (Array.isArray(payload)) {
+    const first = payload.find((item) => typeof item === 'string');
+    return typeof first === 'string' ? first : null;
+  }
+  return null;
+}
 
 export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
   onSuccess,
@@ -47,7 +74,6 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
   const [detectedHost, setDetectedHost] = useState<string | null>(null);
 
-  // Handshake / Browser OAuth state
   const [handshakeId, setHandshakeId] = useState<string | null>(null);
   const [browserUrl, setBrowserUrl] = useState<string | null>(null);
   const [pollingState, setPollingState] = useState<'idle' | 'waiting' | 'verified' | 'error'>('idle');
@@ -55,7 +81,6 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
   const [pollError, setPollError] = useState<string | null>(null);
   const [isRechecking, setIsRechecking] = useState(false);
 
-  // Direct Email + Password login inside desktop window
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmittingEmail, setIsSubmittingEmail] = useState(false);
@@ -93,15 +118,6 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
   const completeLoginSuccess = useCallback(
     async (token: string, user?: UserProfileData) => {
       stopPolling();
-      try {
-        await saveTokens(token, {
-          userId: user?.id,
-          email: user?.email,
-          plan: user?.plan,
-        });
-      } catch {
-        // Keyring fallback to localStorage still succeeds
-      }
       setAuthToken(token);
 
       let resolvedUser = user;
@@ -110,6 +126,16 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
         if (auth.authenticated && auth.user) {
           resolvedUser = auth.user;
         }
+      }
+
+      try {
+        await saveTokens(token, {
+          userId: resolvedUser?.id,
+          email: resolvedUser?.email,
+          plan: resolvedUser?.plan,
+        });
+      } catch {
+        // Keyring fallback to localStorage still succeeds
       }
 
       const finalUser: UserProfileData = resolvedUser || {
@@ -132,13 +158,13 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
         const pollRes = await pollHandshake(id);
         if (pollRes.ready && pollRes.token) {
           await completeLoginSuccess(pollRes.token, pollRes.user);
-        } else if (pollRes.code === 'expired' || pollRes.error === 'expired') {
+        } else if (pollRes.code === 'HANDSHAKE_NOT_FOUND' || pollRes.error === 'expired') {
           stopPolling();
           setPollingState('error');
-          setPollError('Час очікування минув. Запустіть вхід повторно.');
+          setPollError('Час очікування минув. Натисніть «Увійти через браузер» ще раз.');
         }
       } catch {
-        // Transient network error while polling every 400ms; next tick retries silently
+        // Transient network hiccup; next tick or focus re-check retries
       } finally {
         pollInFlightRef.current = false;
       }
@@ -146,7 +172,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
     [completeLoginSuccess, stopPolling]
   );
 
-  // Instant handshake check when user returns focus to the desktop window from browser
+  // Instant handshake check when user switches back from browser to Desktop
   useEffect(() => {
     const triggerFocusRecheck = () => {
       const id = activeHandshakeRef.current;
@@ -182,18 +208,27 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
           await recheckBackend();
           if (isBackendOffline()) {
             setPollingState('error');
-            setPollError('Локальний чи хмарний сервер не відповідає. Спробуйте Автономний / Демо-режим.');
+            setPollError('Локальний сервер не відповідає. Перейдіть в Автономний / Демо-режим.');
             return;
           }
         }
 
         const res = await initHandshake();
-        const base = detectedHost || backendUrl || getResolvedBaseUrl();
+        // Resolve web browser origin from server's loginUrl (avoids opening Vite :5173 proxy in Chrome/Firefox)
+        let webOrigin = detectedHost || backendUrl || getResolvedBaseUrl();
+        try {
+          if (res.loginUrl) {
+            webOrigin = new URL(res.loginUrl).origin;
+          }
+        } catch {
+          // Keep resolved base URL
+        }
+
         const targetUrl =
           target === 'google'
-            ? `${base}/api/auth/oauth/google?client=desktop&handshake=${encodeURIComponent(res.handshakeId)}&from=/interview`
+            ? `${webOrigin}/api/auth/oauth/google?client=desktop&handshake=${encodeURIComponent(res.handshakeId)}&from=/interview`
             : target === 'github'
-              ? `${base}/api/auth/oauth/github?client=desktop&handshake=${encodeURIComponent(res.handshakeId)}&from=/interview`
+              ? `${webOrigin}/api/auth/oauth/github?client=desktop&handshake=${encodeURIComponent(res.handshakeId)}&from=/interview`
               : res.loginUrl;
 
         setHandshakeId(res.handshakeId);
@@ -204,7 +239,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
 
         pollIntervalRef.current = setInterval(() => {
           void pollOnce(res.handshakeId);
-        }, TURBO_POLL_MS);
+        }, HANDSHAKE_POLL_MS);
 
         pollTimeoutRef.current = setTimeout(() => {
           if (activeHandshakeRef.current === res.handshakeId) {
@@ -246,10 +281,11 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
           token?: string;
           user?: UserProfileData;
           error?: string;
+          code?: string;
         }>('/api/auth/login', {
           method: 'POST',
           body: JSON.stringify({
-            email: email.trim(),
+            email: email.trim().toLowerCase(),
             password,
             client: 'desktop',
           }),
@@ -258,7 +294,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
         if (res.ok && res.data?.token) {
           await completeLoginSuccess(res.data.token, res.data.user);
         } else {
-          setFormError(res.error || 'Невірний email або пароль.');
+          setFormError(formatLoginError(res.code || res.data?.code, res.error || res.data?.error));
         }
       } catch (err) {
         setFormError(
@@ -292,33 +328,36 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
     }
   }, [onSuccess, pollOnce, pollingState, stopPolling]);
 
-  // Listen for native deep-link callbacks (ghostboard://auth?token=...)
+  // Listen for native deep-link callbacks (Rust emits string[] on deep-link://new-url & string on ghostboard://deep-link)
   useEffect(() => {
     if (!isTauriEnvironment()) return;
-    let unlisten: (() => void) | undefined;
+    const unlisteners: Array<() => void> = [];
+
+    const handleDeepLinkPayload = async (payload: unknown) => {
+      const raw = extractUrlFromDeepLinkPayload(payload);
+      if (!raw || !raw.includes('token=')) return;
+      try {
+        const url = new URL(raw);
+        const token = url.searchParams.get('token');
+        if (!token) return;
+        const auth = await checkAuth(token);
+        if (auth.authenticated && auth.user) {
+          await completeLoginSuccess(token, auth.user);
+        }
+      } catch (err) {
+        console.debug('[DesktopAuthGate] Deep link parse err:', err);
+      }
+    };
+
     import('@tauri-apps/api/event')
-      .then(({ listen }) =>
-        listen<string>('deep-link://new-url', async (event) => {
-          try {
-            const raw = event.payload;
-            if (raw && raw.includes('token=')) {
-              const url = new URL(raw);
-              const token = url.searchParams.get('token');
-              if (token) {
-                await completeLoginSuccess(token);
-              }
-            }
-          } catch (err) {
-            console.debug('[DesktopAuthGate] Deep link parse err:', err);
-          }
-        }).then((un) => {
-          unlisten = un;
-        })
-      )
+      .then(async ({ listen }) => {
+        unlisteners.push(await listen<unknown>('deep-link://new-url', (ev) => void handleDeepLinkPayload(ev.payload)));
+        unlisteners.push(await listen<unknown>('ghostboard://deep-link', (ev) => void handleDeepLinkPayload(ev.payload)));
+      })
       .catch(() => {});
 
     return () => {
-      unlisten?.();
+      unlisteners.forEach((off) => off());
     };
   }, [completeLoginSuccess]);
 
@@ -336,12 +375,18 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
         initial={{ opacity: 0, y: 12, scale: 0.985 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={SPRING}
-        className="relative w-full max-w-[440px] rounded-2xl border border-white/[0.08] bg-[#111114] p-5 sm:p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_28px_80px_rgba(0,0,0,0.85)] space-y-4"
+        className="gb-hairline-top relative w-full max-w-[448px] rounded-[20px] border border-white/[0.09] bg-[#111114] p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.14),0_32px_90px_rgba(0,0,0,0.88)] space-y-5"
       >
+        {/* Subtle optical corner ticks for precision engineering craft */}
+        <span aria-hidden="true" className="pointer-events-none absolute left-2.5 top-2.5 h-2 w-2 border-l border-t border-white/15 rounded-tl-[2px]" />
+        <span aria-hidden="true" className="pointer-events-none absolute right-2.5 top-2.5 h-2 w-2 border-r border-t border-white/15 rounded-tr-[2px]" />
+        <span aria-hidden="true" className="pointer-events-none absolute left-2.5 bottom-2.5 h-2 w-2 border-l border-b border-white/15 rounded-bl-[2px]" />
+        <span aria-hidden="true" className="pointer-events-none absolute right-2.5 bottom-2.5 h-2 w-2 border-r border-b border-white/15 rounded-br-[2px]" />
+
         {/* Top telemetry status strip */}
         <div className="flex items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[10.5px] font-mono uppercase tracking-[0.08em] text-emerald-300">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-2.5 py-1 text-[10px] font-mono uppercase tracking-[0.1em] text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
             STEALTH ENGINE READY
           </div>
 
@@ -349,7 +394,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
             type="button"
             onClick={() => void recheckBackend()}
             title={`Хост: ${activeHost}. Натисніть для повторної перевірки`}
-            className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-[#09090b] px-2.5 py-1 text-[10.5px] font-mono text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-200 cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-[#09090b] px-2.5 py-1 text-[10px] font-mono text-zinc-400 transition-colors hover:border-white/20 hover:text-zinc-200 cursor-pointer"
           >
             {backendStatus === 'checking' ? (
               <Loader2 className="h-3 w-3 animate-spin text-zinc-400" />
@@ -370,49 +415,62 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
           </button>
         </div>
 
-        {/* Hero levitating ghost & Monochrome Title */}
-        <div className="flex flex-col items-center text-center pt-1">
-          <LevitatingGhostMascot
-            size="sm"
-            showModePills={false}
-            mode={isWaiting ? 'split' : 'stealth'}
-          />
-          <h1 className="mt-2 text-lg font-semibold tracking-tight text-white">
-            Stealth Access Pass
-          </h1>
-          <p className="mt-0.5 text-xs text-zinc-400 max-w-[32ch]">
-            Синхронізуйте акаунт Ghostboard або продовжуйте локально з OS Keyring.
-          </p>
+        {/* Clean Monochrome Brand Header */}
+        <div className="flex items-center gap-3.5 pt-0.5">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-white/[0.14] bg-[#09090b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.16),0_10px_24px_-8px_rgba(0,0,0,0.8)] overflow-hidden">
+            <img
+              src="./icon.svg"
+              alt="Ghostboard"
+              draggable={false}
+              className="h-6.5 w-6.5 object-contain"
+            />
+            <span aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/[0.08] via-transparent to-transparent" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-[19px] font-bold tracking-tight text-white">
+                Stealth Access Pass
+              </h1>
+              <span className="rounded-md border border-white/10 bg-[#09090b] px-1.5 py-0.5 font-mono text-[9.5px] text-zinc-400">
+                v2
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">
+              Увійдіть в акаунт Ghostboard для синхронізації або працюйте локально.
+            </p>
+          </div>
         </div>
 
-        {/* Primary CTA: Instant Browser Auth + Quick Google / GitHub */}
+        {/* Primary CTA: Browser Handshake + Google / GitHub */}
         <div className="space-y-2">
           <motion.button
             type="button"
-            whileHover={{ scale: 1.015 }}
-            whileTap={{ scale: 0.975 }}
+            whileHover={{ scale: 1.012 }}
+            whileTap={{ scale: 0.978 }}
             transition={SPRING}
             onClick={() => void startBrowserFlow('login')}
             disabled={isWaiting}
-            className="w-full flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_10px_28px_rgba(255,255,255,0.08)] transition-colors hover:bg-zinc-100 disabled:opacity-65 cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-200 px-4 py-2.5 text-xs font-semibold text-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_10px_28px_rgba(255,255,255,0.09)] transition-colors hover:to-white disabled:opacity-65 cursor-pointer"
           >
             {isWaiting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Zap className="h-3.5 w-3.5" />
             )}
-            {isWaiting ? `Очікуємо підтвердження (${activeProviderLabel})...` : '⚡ Увійти через браузер'}
+            <span>
+              {isWaiting ? `Очікуємо підтвердження (${activeProviderLabel})...` : 'Увійти через браузер'}
+            </span>
           </motion.button>
 
           <div className="grid grid-cols-2 gap-2">
             <motion.button
               type="button"
-              whileHover={{ scale: 1.015 }}
-              whileTap={{ scale: 0.975 }}
+              whileHover={{ scale: 1.012 }}
+              whileTap={{ scale: 0.978 }}
               transition={SPRING}
               onClick={() => void startBrowserFlow('google')}
               disabled={isWaiting}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#16161a] px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-white/20 hover:text-white disabled:opacity-55 cursor-pointer"
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#16161b] px-3 py-2 text-xs font-medium text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)] transition-colors hover:border-white/20 hover:text-white disabled:opacity-55 cursor-pointer"
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -425,12 +483,12 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
 
             <motion.button
               type="button"
-              whileHover={{ scale: 1.015 }}
-              whileTap={{ scale: 0.975 }}
+              whileHover={{ scale: 1.012 }}
+              whileTap={{ scale: 0.978 }}
               transition={SPRING}
               onClick={() => void startBrowserFlow('github')}
               disabled={isWaiting}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#16161a] px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-white/20 hover:text-white disabled:opacity-55 cursor-pointer"
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/[0.08] bg-[#16161b] px-3 py-2 text-xs font-medium text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07)] transition-colors hover:border-white/20 hover:text-white disabled:opacity-55 cursor-pointer"
             >
               <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                 <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z" />
@@ -440,7 +498,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
           </div>
         </div>
 
-        {/* Live Handshake waiting / success / error feedback */}
+        {/* Live Handshake Feedback */}
         <AnimatePresence mode="popLayout">
           {isWaiting && (
             <motion.div
@@ -453,7 +511,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5">
                   <Loader2 className="h-3 w-3 animate-spin text-emerald-400" />
-                  <span>Турбо-опитування ({TURBO_POLL_MS}ms) • код {handshakeId?.slice(0, 6)}</span>
+                  <span>Очікуємо підтвердження · код {handshakeId?.slice(0, 6)}</span>
                 </span>
                 <button
                   type="button"
@@ -503,14 +561,14 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
         </AnimatePresence>
 
         {/* Divider */}
-        <div className="flex items-center gap-2.5 text-[10.5px] font-mono uppercase tracking-[0.1em] text-zinc-500">
+        <div className="flex items-center gap-2.5 text-[10px] font-mono uppercase tracking-[0.14em] text-zinc-500">
           <div className="h-px flex-1 bg-white/[0.08]" />
           <span>або вхід за Email</span>
           <div className="h-px flex-1 bg-white/[0.08]" />
         </div>
 
-        {/* Direct Email + Password Login inside Desktop */}
-        <form onSubmit={(e) => void handleDirectEmailLogin(e)} className="space-y-2">
+        {/* Direct Email + Password Login */}
+        <form onSubmit={(e) => void handleDirectEmailLogin(e)} className="space-y-2.5">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <label htmlFor={emailId} className="sr-only">
@@ -520,7 +578,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
                 id={emailId}
                 type="email"
                 autoComplete="email"
-                placeholder="Email"
+                placeholder="name@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => {
@@ -528,7 +586,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
                     e.preventDefault();
                   }
                 }}
-                className="gb-input h-9 text-xs"
+                className="gb-input h-9 text-xs bg-[#09090b]"
               />
             </div>
             <div>
@@ -539,7 +597,7 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
                 id={passwordId}
                 type="password"
                 autoComplete="current-password"
-                placeholder="Пароль"
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => {
@@ -547,60 +605,60 @@ export const DesktopAuthGate: React.FC<DesktopAuthGateProps> = ({
                     e.preventDefault();
                   }
                 }}
-                className="gb-input h-9 text-xs"
+                className="gb-input h-9 text-xs bg-[#09090b]"
               />
             </div>
           </div>
 
           {formError && (
-            <p className="text-[11px] text-rose-300 flex items-center gap-1.5">
-              <AlertCircle className="h-3 w-3 shrink-0" />
-              {formError}
+            <p className="text-[11px] text-rose-300 flex items-start gap-1.5 leading-snug">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>{formError}</span>
             </p>
           )}
 
           <button
             type="submit"
             disabled={isSubmittingEmail}
-            className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-xs font-medium text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/[0.08] hover:text-white disabled:opacity-50 cursor-pointer"
+            className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-white/[0.09] bg-[#16161b] px-3 py-2 text-xs font-medium text-zinc-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06)] transition-colors hover:border-white/20 hover:bg-[#1c1c23] hover:text-white disabled:opacity-50 cursor-pointer"
           >
             {isSubmittingEmail ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <KeyRound className="h-3.5 w-3.5 text-zinc-400" />
             )}
-            {isSubmittingEmail ? 'Перевірка...' : 'Увійти за паролем'}
+            <span>{isSubmittingEmail ? 'Перевірка...' : 'Увійти за паролем'}</span>
           </button>
         </form>
 
-        {/* Autonomous / Offline Demo Strip */}
+        {/* Autonomous / Demo Mode Card */}
         <div
           className={`rounded-xl border p-3 transition-colors ${
             backendStatus === 'offline'
               ? 'border-amber-500/35 bg-amber-500/[0.06]'
-              : 'border-white/[0.07] bg-[#09090b]'
+              : 'border-white/[0.07] bg-[#0a0a0d]'
           }`}
         >
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="text-[11px] text-zinc-300 font-medium">
               {backendStatus === 'offline'
-                ? 'Локальний/хмарний сервер зараз не запущено'
-                : 'Автономна робота через локальний Rust Core'}
+                ? 'Локальний сервер зараз не запущено'
+                : 'Автономна робота через Rust Core'}
             </div>
-            <span className="rounded px-1.5 py-0.5 text-[9.5px] font-mono uppercase bg-white/[0.06] text-zinc-400">
+            <span className="rounded border border-white/[0.08] bg-[#141418] px-1.5 py-0.5 text-[9.5px] font-mono uppercase text-zinc-400">
               .env keys
             </span>
           </div>
           <motion.button
             type="button"
             whileHover={{ scale: 1.01 }}
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.985 }}
             transition={SPRING}
             onClick={onDemoMode}
-            className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#141418] px-3 py-2 text-xs font-medium text-zinc-100 transition-colors hover:border-white/25 hover:bg-[#1a1a20] cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/12 bg-[#141418] px-3 py-2 text-xs font-medium text-zinc-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] transition-colors hover:border-white/25 hover:bg-[#1a1a20] cursor-pointer"
           >
             <FlaskConical className="h-3.5 w-3.5 text-emerald-400" />
-            🧪 Продовжити в Автономному / Демо-режимі
+            <span>Продовжити в Автономному / Демо-режимі</span>
           </motion.button>
         </div>
       </motion.div>

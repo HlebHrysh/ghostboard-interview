@@ -7,7 +7,7 @@ pub async fn exchange_auth_code(
     token_endpoint: Option<&str>,
 ) -> Result<StoredSession, String> {
     let endpoint = token_endpoint.unwrap_or("https://ghostboard.ai/api/auth/oauth/token");
-    let client = reqwest::Client::new();
+    let client = crate::llm::client::get_shared_llm_client();
     let params = [
         ("grant_type", "authorization_code"),
         ("client_id", "ghostboard-desktop"),
@@ -88,7 +88,7 @@ pub async fn refresh_access_token(
     token_endpoint: Option<&str>,
 ) -> Result<StoredSession, String> {
     let endpoint = token_endpoint.unwrap_or("https://ghostboard.ai/api/auth/oauth/token");
-    let client = reqwest::Client::new();
+    let client = crate::llm::client::get_shared_llm_client();
     let params = [
         ("grant_type", "refresh_token"),
         ("client_id", "ghostboard-desktop"),

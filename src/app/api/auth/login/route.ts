@@ -73,11 +73,11 @@ export async function POST(req: NextRequest) {
     const session = await createSession(user.id, client === 'desktop' ? 'desktop' : 'web');
     const publicUser = { id: user.id, email: user.email, name: user.name, plan: user.plan, role: user.role };
 
-    if (client === 'desktop') {
-      return NextResponse.json({ success: true, user: publicUser, token: session.token });
-    }
-
-    const response = NextResponse.json({ success: true, user: publicUser });
+    const response = NextResponse.json(
+      client === 'desktop'
+        ? { success: true, user: publicUser, token: session.token }
+        : { success: true, user: publicUser }
+    );
     response.cookies.set('ghostboard_session', session.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

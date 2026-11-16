@@ -171,11 +171,17 @@ export function Segmented<T extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cx(
-              'relative z-10 flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors',
+              'relative z-10 flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70',
               active ? 'text-zinc-950' : 'text-zinc-400 hover:text-zinc-100'
             )}
           >
-            {active && <motion.span layoutId={`seg-${name}`} transition={SPRING} className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-b from-white to-zinc-200 shadow-[0_2px_10px_rgba(255,255,255,0.16)]" />}
+            {active && (
+              <motion.span
+                layoutId={`seg-${name}`}
+                transition={SPRING}
+                className="absolute inset-0 -z-10 rounded-lg bg-gradient-to-b from-white to-zinc-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_2px_10px_rgba(255,255,255,0.16)]"
+              />
+            )}
             <span className="truncate">{o.label}</span>
             {o.badge}
           </button>
@@ -196,15 +202,20 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       aria-label={label}
       onClick={() => onChange(!checked)}
       className={cx(
-        'relative h-6 w-11 shrink-0 rounded-full border transition-colors',
-        checked ? 'border-white bg-white' : 'border-white/15 bg-white/[0.06]'
+        'relative inline-flex h-[22px] w-[40px] shrink-0 items-center overflow-hidden rounded-full border p-[2px] transition-colors cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111114]',
+        checked
+          ? 'border-emerald-400/55 bg-emerald-500 shadow-[inset_0_1px_1px_rgba(255,255,255,0.22),0_0_14px_rgba(16,185,129,0.26)]'
+          : 'border-white/[0.12] bg-[#1b1b20] shadow-[inset_0_1px_2px_rgba(0,0,0,0.65)] hover:border-white/25'
       )}
     >
       <motion.span
-        animate={{ x: checked ? 20 : 2 }}
+        initial={false}
+        animate={{ x: checked ? 18 : 0 }}
         transition={SPRING}
-        className={cx('absolute top-0.5 h-4.5 w-4.5 rounded-full', checked ? 'bg-zinc-950' : 'bg-zinc-400')}
-        style={{ width: 18, height: 18 }}
+        className={cx(
+          'pointer-events-none block h-4 w-4 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.9)] transition-colors',
+          checked ? 'bg-white' : 'bg-zinc-300'
+        )}
       />
     </button>
   );
@@ -229,11 +240,14 @@ export function Slider({
   label: string;
   format: (v: number) => string;
 }) {
+  const formatted = format(value);
   return (
     <div>
-      <div className="mb-2.5 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{label}</span>
-        <span className="font-mono tabular-nums text-xs font-semibold text-white">{format(value)}</span>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-zinc-400">{label}</span>
+        <span className="rounded-md border border-white/[0.08] bg-[#09090b] px-1.5 py-0.5 font-mono tabular-nums text-[11px] font-semibold text-white">
+          {formatted}
+        </span>
       </div>
       <input
         type="range"
@@ -243,6 +257,14 @@ export function Slider({
         step={step}
         value={value}
         aria-label={label}
+        aria-valuetext={formatted}
+        style={
+          {
+            '--attr-min': String(min),
+            '--attr-max': String(max),
+            '--control-value': String(value),
+          } as React.CSSProperties
+        }
         onChange={(e) => onChange(Number(e.target.value))}
       />
     </div>

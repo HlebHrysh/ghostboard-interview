@@ -3,7 +3,7 @@
 ## Architecture
 Ghostboard Desktop is built as an ultra-low-latency, stealth AI interview copilot using Tauri v2 (Rust backend) and React 19 + Tailwind CSS + Framer Motion (Frontend HUD).
 - **Audio Pipeline**: Native OS loopback capture (`cpal` WASAPI / CoreAudio / PipeWire) + microphone input resampled via `rubato` to 16kHz mono linear PCM; streamed to Deepgram Nova-3 WebSocket with Silero VAD (`tract-onnx`) and End-of-Thought detection.
-- **AI Streaming Pipeline**: Next.js backend proxy (`/api/ai/dual-stream` and `/api/ai/interview-copilot`) communicating with Gemini 2.5 / 3.x Flash models in 3 progressive phases (Hook, Pillars, Deep Dive) with client-side fallback heuristics.
+- **AI Streaming Pipeline**: Next.js backend proxy (`/api/ai/dual-stream` and `/api/ai/interview-copilot`) communicating with Gemini 3.8 / 3.x Flash models in 3 progressive phases (Hook, Pillars, Deep Dive) with client-side fallback heuristics.
 - **Security & Stealth**: Native OS Keyring token persistence, OS-level screen share protection (`WDA_EXCLUDEFROMCAPTURE` / `NSWindowSharingNone`), click-through transparent compositing.
 - **Vision OCR**: Native screen capture via Tauri IPC sent to multimodal vision parsing (`/api/ai/screenshot`).
 - **Personalization & Companion**: Candidate profile & resume context injection; real-time session sync with mobile companion via QR code and SSE (`/companion/[sessionId]`).

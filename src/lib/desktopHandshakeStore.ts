@@ -83,6 +83,9 @@ export async function createDesktopHandshake(): Promise<DesktopHandshakeRecord> 
     expiresAt,
   };
 
+  // Store in L1 globalThis Map for <1ms local lookup alongside Redis
+  memHandshakes.set(id, record);
+
   if (isRedisConfigured()) {
     try {
       const redis = getRedis();
@@ -102,8 +105,6 @@ export async function createDesktopHandshake(): Promise<DesktopHandshakeRecord> 
     }
   }
 
-  // Memory fallback
-  memHandshakes.set(id, record);
   return record;
 }
 
@@ -121,11 +122,16 @@ export async function bindDesktopHandshake(
     try {
       const redis = getRedis();
       const raw = await redis.get<string | DesktopHandshakeRecord>(`${REDIS_HANDSHAKE_PREFIX}${handshakeId}`);
-      if (!raw) return null;
+      const memFallback = memHandshakes.get(handshakeId);
+      const existing: DesktopHandshakeRecord | null = raw
+        ? (typeof raw === 'string' ? JSON.parse(raw) : raw)
+        : (memFallback && now <= memFallback.expiresAt ? memFallback : null);
 
-      const existing: DesktopHandshakeRecord = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (!existing) return null;
+
       if (now > existing.expiresAt) {
         await redis.del(`${REDIS_HANDSHAKE_PREFIX}${handshakeId}`);
+        memHandshakes.delete(handshakeId);
         return null;
       }
 
@@ -142,6 +148,7 @@ export async function bindDesktopHandshake(
         JSON.stringify(updated),
         { ex: remainingTtlSec }
       );
+      memHandshakes.set(handshakeId, updated);
       return updated;
     } catch (err) {
       log.warn('[desktopHandshakeStore] Redis bind failed, falling back to memory store:', {
@@ -176,17 +183,32 @@ export async function pollDesktopHandshake(
   if (!handshakeId) return null;
   const now = Date.now();
 
+  // Fast L1 globalThis Map hit when handshake is already bound & valid (<1ms)
+  const memCached = memHandshakes.get(handshakeId);
+  if (memCached) {
+    if (now > memCached.expiresAt) {
+      memHandshakes.delete(handshakeId);
+    } else if (memCached.status === 'ready' && memCached.token) {
+      return memCached;
+    }
+  }
+
   if (isRedisConfigured()) {
     try {
       const redis = getRedis();
       const raw = await redis.get<string | DesktopHandshakeRecord>(`${REDIS_HANDSHAKE_PREFIX}${handshakeId}`);
-      if (!raw) return null;
+      if (!raw) {
+        if (memCached && now <= memCached.expiresAt) return memCached;
+        return null;
+      }
 
       const record: DesktopHandshakeRecord = typeof raw === 'string' ? JSON.parse(raw) : raw;
       if (now > record.expiresAt) {
         await redis.del(`${REDIS_HANDSHAKE_PREFIX}${handshakeId}`);
+        memHandshakes.delete(handshakeId);
         return null;
       }
+      memHandshakes.set(handshakeId, record);
       return record;
     } catch (err) {
       log.warn('[desktopHandshakeStore] Redis poll failed, checking memory store:', {
@@ -213,16 +235,17 @@ export async function pollDesktopHandshake(
  */
 export async function deleteDesktopHandshake(handshakeId: string): Promise<boolean> {
   if (!handshakeId) return false;
+  const memDeleted = memHandshakes.delete(handshakeId);
 
   if (isRedisConfigured()) {
     try {
       const redis = getRedis();
       const res = await redis.del(`${REDIS_HANDSHAKE_PREFIX}${handshakeId}`);
-      return res > 0;
+      return res > 0 || memDeleted;
     } catch {}
   }
 
-  return memHandshakes.delete(handshakeId);
+  return memDeleted;
 }
 
 export const desktopHandshakeStore = {

@@ -14,7 +14,7 @@ export type PlanOverride = (typeof VALID_PLAN_OVERRIDES)[number];
 export const VALID_FORCED_MODELS = [
   'auto',
   'gemini-3.8-flash',
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
   'groq',
 ] as const;
 export type ForcedModel = (typeof VALID_FORCED_MODELS)[number];

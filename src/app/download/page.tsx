@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import {
   Download,
   Shield,
@@ -682,8 +681,8 @@ export default function DownloadPage() {
         <section className="space-y-6">
           {/* Block 1: Ghostboard Desktop Hero Card */}
           <div className="bento-card rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-white/[0.05] via-zinc-950/80 to-black border border-white/[0.12] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] relative overflow-hidden">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-              <div className="lg:col-span-7 space-y-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-3 max-w-xl">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-semibold">
                   <ShieldCheck className="w-3.5 h-3.5" />
                   <span>БЛОК 1: ДЕСКТОПНИЙ КЛІЄНТ • v1.2.0</span>
@@ -691,30 +690,14 @@ export default function DownloadPage() {
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                   Ghostboard Desktop
                 </h2>
-                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed max-w-xl">
+                <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
                   Апаратне виключення із захоплення екрана (<code className="font-mono text-zinc-200">WDA_EXCLUDEFROMCAPTURE</code> / <code className="font-mono text-zinc-200">NSWindowSharingNone</code>), прямий системний loopback аудіо та плаваючий стелс-HUD.
                 </p>
-
-                <div className="pt-2">
-                  <SmartDownloadButton />
-                </div>
               </div>
 
-              {/* Apple Spatial Glass PiP Video Capsule */}
-              <div className="lg:col-span-5">
-                <SpatialVideoCapsule
-                  compact
-                  layoutGroupId="download-desktop-pip"
-                  aspectClassName="aspect-[16/10]"
-                  videos={[
-                    {
-                      id: 'download-ghost2',
-                      src: '/videos/ghost2.mp4',
-                      label: 'Stealth HUD',
-                      caption: 'Kernel Stealth Overlay · v1.2.0 — Invisible on Zoom / Meet / Teams',
-                    },
-                  ]}
-                />
+              {/* Smart Download Button with auto-detected OS */}
+              <div className="shrink-0 flex flex-col items-start md:items-end gap-2">
+                <SmartDownloadButton />
               </div>
             </div>
 

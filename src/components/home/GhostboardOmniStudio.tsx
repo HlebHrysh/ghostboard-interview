@@ -218,26 +218,6 @@ class SoundEffects {
       osc.stop(this.ctx.currentTime + 0.12);
     } catch {}
   }
-
-  playPanicAlert() {
-    if (!this.enabled) return;
-    try {
-      this.init();
-      if (!this.ctx) return;
-      if (this.ctx.state === "suspended") this.ctx.resume();
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(260, this.ctx.currentTime);
-      osc.frequency.linearRampToValueAtTime(920, this.ctx.currentTime + 0.09);
-      gain.gain.setValueAtTime(0.05, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.09);
-      osc.connect(gain);
-      gain.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(this.ctx.currentTime + 0.09);
-    } catch {}
-  }
 }
 
 const sfx = new SoundEffects();
@@ -431,10 +411,6 @@ export function GhostboardOmniStudio() {
             <span className="px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/25 text-[11px] font-mono text-purple-300 flex items-center gap-1.5">
               <span className="font-bold">🛡️ 0%</span>
               <span className="text-zinc-400">Zoom Capture Leak</span>
-            </span>
-            <span className="px-2.5 py-1 rounded-lg bg-white/[0.03] border border-white/10 text-[11px] font-mono text-zinc-300 flex items-center gap-1.5">
-              <span className="font-bold text-white">🚨 8ms</span>
-              <span className="text-zinc-400">ESC Panic Shield</span>
             </span>
           </div>
         </div>

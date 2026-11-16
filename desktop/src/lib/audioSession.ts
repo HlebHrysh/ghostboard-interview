@@ -31,9 +31,9 @@ export const LISTEN_MODE_META: Record<
   ListenMode,
   { source: 'loopback' | 'dual' | 'mic'; native: 'interviewer_only' | 'both' | 'mic_only'; short: string; badge: string }
 > = {
-  interviewer: { source: 'loopback', native: 'interviewer_only', short: "Інтерв'юер", badge: "🎯 Тільки Інтерв'юер" },
-  dual: { source: 'dual', native: 'both', short: '2 канали', badge: '🔀 2 Канали' },
-  mic: { source: 'mic', native: 'mic_only', short: 'Мікрофон', badge: '🎙️ Мікрофон' },
+  interviewer: { source: 'loopback', native: 'interviewer_only', short: "Інтерв'юер", badge: "Тільки Інтерв'юер" },
+  dual: { source: 'dual', native: 'both', short: '2 канали', badge: '2 Канали (Loopback + Mic)' },
+  mic: { source: 'mic', native: 'mic_only', short: 'Мікрофон', badge: 'Тільки Мікрофон' },
 };
 
 export const LISTEN_MODE_ORDER: ListenMode[] = ['interviewer', 'dual', 'mic'];

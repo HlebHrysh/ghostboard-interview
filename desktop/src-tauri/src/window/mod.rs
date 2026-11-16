@@ -3,7 +3,6 @@ pub mod cursor;
 pub mod hud;
 pub mod hyprland;
 pub mod opacity;
-pub mod panic;
 pub mod screencast;
 pub mod screenshot;
 pub mod stealth;
@@ -14,7 +13,6 @@ pub use alignment::{
 };
 pub use cursor::toggle_click_through;
 pub use opacity::set_window_opacity;
-pub use panic::{panic_hide, panic_restore, toggle_panic};
 pub use screencast::{detect_desktop_portal_screencast, ScreencastStatus};
 pub use screenshot::ScreenCaptureResult;
 pub use stealth::{

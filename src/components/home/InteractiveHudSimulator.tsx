@@ -18,14 +18,12 @@ import {
   Layers,
   Search,
   MessageSquare,
-  Terminal,
   Eye,
   Monitor,
   ShieldCheck,
   RefreshCw,
   Settings2,
   Camera,
-  ShieldAlert,
   Columns,
   Crosshair,
   GitMerge,
@@ -34,7 +32,6 @@ import {
   MessageCircle,
   Webcam,
 } from 'lucide-react';
-import { SpatialVideoCapsule } from '@/components/ui/SpatialVideoCapsule';
 import type { HomeTranslations } from '@/lib/homeI18n';
 import { trackFunnelEvent } from '@/lib/croTelemetry';
 import { useLocale } from '@/contexts/LocaleContext';
@@ -45,7 +42,9 @@ import {
   stripRawMarkdownAsterisks,
   splitBilingualSegments,
   extractCode,
+  parseBlocks,
 } from '../../../desktop/src/lib/answerParser';
+import { highlightCode, TOKEN_CLASS } from '../../../desktop/src/lib/highlight';
 
 interface Props {
   t: HomeTranslations;
@@ -113,19 +112,6 @@ const BRIDGE_PHRASES: Record<LanguageOption, string> = {
 };
 
 const VU_MULTIPLIERS = [0.45, 0.85, 1.0, 0.72, 0.5] as const;
-
-const PYTEST_LINES: string[] = [
-  '$ pytest -q tests/',
-  '============ test session starts ============',
-  'collected 48 items',
-  '',
-  'tests/test_ledger.py ........            [ 16%]',
-  'tests/test_locks.py ..........            [ 37%]',
-  'tests/test_api.py ................        [ 70%]',
-  'tests/test_pipeline.py ..............     [100%]',
-  '',
-  '============ 48 passed in 2.14s ============',
-];
 
 interface ISpeechRecognitionEvent {
   resultIndex: number;
@@ -317,13 +303,9 @@ const SimulatorCodeBlock = React.memo(function SimulatorCodeBlock({
   copiedCode: boolean;
   onCopy: (code: string) => void;
 }) {
-  const codeText = useMemo(() => {
-    const clean = sanitizeRenderText(rawDeepDive);
-    const extracted = extractCode(clean);
-    return extracted || clean;
-  }, [rawDeepDive]);
-
-  const lines = useMemo(() => codeText.split('\n'), [codeText]);
+  const cleanText = useMemo(() => cleanStreamText(holdUnclosedTagBuffer(rawDeepDive)).trim(), [rawDeepDive]);
+  const blocks = useMemo(() => parseBlocks(cleanText), [cleanText]);
+  const copyPayload = useMemo(() => extractCode(cleanText) || stripRawMarkdownAsterisks(cleanText), [cleanText]);
 
   return (
     <div className="liquid-glass-card rounded-2xl p-4 space-y-2.5">
@@ -331,37 +313,97 @@ const SimulatorCodeBlock = React.memo(function SimulatorCodeBlock({
         <span className="text-xs font-mono uppercase tracking-wider text-sky-300 font-semibold flex items-center gap-1.5">
           <Code2 className="w-3.5 h-3.5 text-sky-300" /> Фаза 3 · Код / Deep Dive
         </span>
-        <button
-          type="button"
-          onClick={() => onCopy(codeText)}
-          className="liquid-glass-pill text-xs font-mono text-zinc-200 hover:text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
-        >
-          {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-          <span>{copiedCode ? 'Скопійовано' : 'Копіювати'}</span>
-        </button>
+        {copyPayload && (
+          <button
+            type="button"
+            onClick={() => onCopy(copyPayload)}
+            className="liquid-glass-pill text-xs font-mono text-zinc-200 hover:text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+          >
+            {copiedCode ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedCode ? 'Скопійовано ✓' : 'Копіювати'}</span>
+          </button>
+        )}
       </div>
-      <div className="rounded-2xl overflow-hidden border border-white/[0.12] bg-[#04060c]/90 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
-        <div className="flex items-center gap-1.5 px-3.5 py-2 border-b border-white/[0.08] bg-white/[0.03]">
-          <span className="w-2.5 h-2.5 rounded-full bg-rose-400/75" />
-          <span className="w-2.5 h-2.5 rounded-full bg-amber-400/75" />
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/75" />
-          <span className="ml-2 text-xs font-mono text-zinc-400">implementation.ts</span>
-        </div>
-        <div className="p-3.5 overflow-x-auto font-mono text-[13.5px] leading-[21px] text-zinc-100">
-          {lines.map((line, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <span className="select-none text-zinc-500 w-6 text-right shrink-0 text-xs leading-[21px] tabular-nums">
-                {i + 1}
-              </span>
-              <span className="whitespace-pre-wrap break-words flex-1">
-                {line || '\u00A0'}
-                {isGenerating && i === lines.length - 1 && (
-                  <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-300 animate-pulse align-middle" />
-                )}
-              </span>
-            </div>
-          ))}
-        </div>
+
+      <div className="space-y-2.5">
+        {blocks.map((block, bIdx) => {
+          if (block.type === 'code') {
+            const lines = block.code.split('\n');
+            return (
+              <div
+                key={bIdx}
+                className="overflow-hidden rounded-lg border border-white/10 bg-[#09090b] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]"
+              >
+                <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10 bg-white/[0.03]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-400/75" />
+                    <span className="w-2 h-2 rounded-full bg-amber-400/75" />
+                    <span className="w-2 h-2 rounded-full bg-emerald-400/75" />
+                    <span className="ml-2 text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                      {block.lang || 'code'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onCopy(block.code)}
+                    className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[11px] font-medium text-zinc-200 hover:bg-white/[0.12] hover:text-white transition-colors cursor-pointer"
+                  >
+                    {copiedCode ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedCode ? 'Скопійовано ✓' : 'Копіювати'}</span>
+                  </button>
+                </div>
+                <pre className="bg-[#09090b] p-3 font-mono text-[13px] leading-relaxed overflow-x-auto text-zinc-100">
+                  <code>
+                    {lines.map((line, i) => {
+                      const tokens = highlightCode(line);
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <span className="select-none text-zinc-500 w-6 text-right shrink-0 text-xs tabular-nums">
+                            {i + 1}
+                          </span>
+                          <span className="whitespace-pre flex-1">
+                            {tokens.length > 0
+                              ? tokens.map((t, j) => (
+                                  <span key={j} className={TOKEN_CLASS[t.kind]}>
+                                    {t.value}
+                                  </span>
+                                ))
+                              : '\u00A0'}
+                            {isGenerating && bIdx === blocks.length - 1 && i === lines.length - 1 && (
+                              <span className="inline-block w-1.5 h-4 ml-1 rounded-sm bg-cyan-300 animate-pulse align-middle" />
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </code>
+                </pre>
+              </div>
+            );
+          }
+
+          const text = block.tokens.map((t) => t.value).join('');
+          if (block.type === 'li') {
+            return (
+              <div key={bIdx} className="flex items-start gap-2.5 text-sm leading-relaxed text-zinc-200 font-sans">
+                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400/80" />
+                <p className="min-w-0 flex-1">{renderInlineClean(text)}</p>
+              </div>
+            );
+          }
+          if (block.type === 'h') {
+            return (
+              <h4 key={bIdx} className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-100">
+                {renderInlineClean(text)}
+              </h4>
+            );
+          }
+          return (
+            <p key={bIdx} className="text-sm leading-relaxed text-zinc-200 font-sans">
+              {renderInlineClean(text)}
+            </p>
+          );
+        })}
       </div>
     </div>
   );
@@ -401,7 +443,7 @@ const SimulatorAnswerView = React.memo(function SimulatorAnswerView({
       : 'text-[15px] leading-[24px]';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-6">
       {displayedHook && (
         <div className="liquid-glass-card liquid-glass-card-active p-4 rounded-2xl">
           <div className="flex items-center justify-between mb-2">
@@ -462,7 +504,6 @@ export function InteractiveHudSimulator({ t }: Props) {
   // Mode and Views
   const [viewMode, setViewMode] = useState<ViewMode>('candidate');
   const [isFrozen, setIsFrozen] = useState(false);
-  const [panic, setPanic] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [isHudFocused, setIsHudFocused] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
@@ -707,7 +748,6 @@ export function InteractiveHudSimulator({ t }: Props) {
       setIsGenerating(true);
       setHudError(null);
       setTtftMs(null);
-      setPanic(false);
 
       if (linkedMessageId) {
         setDialogueMessages((prev) =>
@@ -1112,7 +1152,7 @@ export function InteractiveHudSimulator({ t }: Props) {
     }
   }, [activeModifier, isListening, selectedLanguage, triggerAiQuery]);
 
-  // Keyboard Shortcuts: 1-5, Space (Freeze), Ctrl+M (Mic), Ctrl+K or / (Focus Input), Tab (Focus), F12/Esc (Panic)
+  // Keyboard Shortcuts: 1-5, Space (Freeze), Ctrl+M (Mic), Ctrl+K or / (Focus Input), Tab (Focus)
   useEffect(() => {
     if (!hovered && !isHudFocused) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1133,12 +1173,6 @@ export function InteractiveHudSimulator({ t }: Props) {
         return;
       }
 
-      if (e.key === 'F12') {
-        e.preventDefault();
-        setPanic((p) => !p);
-        return;
-      }
-
       if (e.key === 'Escape') {
         if (isInputFocused) {
           target.blur();
@@ -1147,10 +1181,6 @@ export function InteractiveHudSimulator({ t }: Props) {
         if (isOptionsOpen) {
           setIsOptionsOpen(false);
           return;
-        }
-        if (panic) {
-          e.preventDefault();
-          setPanic(false);
         }
         return;
       }
@@ -1191,7 +1221,6 @@ export function InteractiveHudSimulator({ t }: Props) {
     hovered,
     isHudFocused,
     isOptionsOpen,
-    panic,
     toggleFreeze,
     toggleSpeech,
   ]);
@@ -1309,13 +1338,12 @@ export function InteractiveHudSimulator({ t }: Props) {
                 : 'hidden'
             }`}
           >
-            <div className="flex flex-col lg:flex-row gap-4">
-              <div className="flex-1 rounded-2xl border border-white/10 bg-[#080b12] p-4 overflow-x-auto">
-                <div className="flex items-center justify-between text-xs text-zinc-400 pb-3 mb-3 border-b border-white/[0.07]">
-                  <span>src/services/payment_service.ts</span>
-                  <span className="text-emerald-400">✓ Recruiter sees clean IDE</span>
-                </div>
-                <pre className="text-zinc-200 font-mono text-xs sm:text-[13px] leading-6 overflow-x-auto">
+            <div className="rounded-2xl border border-white/10 bg-[#080b12] p-4 overflow-x-auto">
+              <div className="flex items-center justify-between text-xs text-zinc-400 pb-3 mb-3 border-b border-white/[0.07]">
+                <span>src/services/payment_service.ts</span>
+                <span className="text-emerald-400">✓ Recruiter sees clean IDE</span>
+              </div>
+              <pre className="text-zinc-200 font-mono text-xs sm:text-[13px] leading-6 overflow-x-auto">
 {`export async function processIdempotentPayment(
   orderId: string,
   idempotencyKey: string,
@@ -1332,24 +1360,7 @@ export function InteractiveHudSimulator({ t }: Props) {
     return await tx.payments.create({ data: { orderId, idempotencyKey, amountCents, status: 'SETTLED' } });
   });
 }`}
-                </pre>
-              </div>
-
-              {/* Compact PiP video demonstrating WDA_EXCLUDEFROMCAPTURE hardware bypass */}
-              <div className="lg:w-72 shrink-0">
-                <SpatialVideoCapsule
-                  videos={[
-                    {
-                      id: 'capture-bypass',
-                      src: '/videos/ghost2.mp4',
-                      label: 'Hardware Capture Exclusion',
-                      caption: 'Невидиме вікно поверх IDE',
-                    },
-                  ]}
-                  layoutGroupId="sim-recruiter-video"
-                  compact
-                />
-              </div>
+              </pre>
             </div>
           </div>
 
@@ -1493,7 +1504,7 @@ export function InteractiveHudSimulator({ t }: Props) {
               )}
             </div>
 
-            {/* Core Item 3 + 4: Layout Switcher, Паніка (F12), and Опції popover */}
+            {/* Core Item 3 + 4: Layout Switcher and Опції popover */}
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
@@ -1534,16 +1545,6 @@ export function InteractiveHudSimulator({ t }: Props) {
                     <span>Рекрутер</span>
                   </>
                 )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPanic((p) => !p)}
-                title="Паніка / Стелс-екран (F12 або Esc)"
-                className="liquid-glass-pill inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono text-zinc-100 hover:text-white hover:bg-rose-500/20 hover:border-rose-400/40 transition cursor-pointer"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-rose-300" />
-                <span className="hidden sm:inline">Паніка (F12)</span>
               </button>
 
               {/* Secondary Controls inside Опції popover */}
@@ -1677,38 +1678,7 @@ export function InteractiveHudSimulator({ t }: Props) {
 
           {/* 2. MAIN AUTO-BREATHING TWO-COLUMN DISPLAY */}
           <div className={`relative ${viewMode === 'recruiter' ? 'min-h-[150px]' : 'min-h-[490px]'} bg-transparent`}>
-            {panic ? (
-              /* Simulated Terminal on Panic Hide (F12 / Esc) */
-              <div className="p-5 bg-[#04060b] font-mono text-xs text-zinc-300 min-h-[490px] flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-zinc-500 pb-2 mb-2 border-b border-white/[0.08]">
-                    <Terminal className="w-3.5 h-3.5" />
-                    <span>zsh — ~/work/backend/tests</span>
-                  </div>
-                  {PYTEST_LINES.map((line, idx) => (
-                    <div
-                      key={idx}
-                      className={
-                        line.includes('passed')
-                          ? 'text-white font-semibold'
-                          : line.startsWith('$')
-                          ? 'text-zinc-100 font-semibold'
-                          : 'text-zinc-400'
-                      }
-                    >
-                      {line || '\u00A0'}
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setPanic(false)}
-                  className="liquid-glass-pill self-start mt-4 px-3.5 py-1.5 rounded-lg text-zinc-100 hover:text-white text-xs font-mono cursor-pointer"
-                >
-                  Повернути суфлер (F12 / Esc)
-                </button>
-              </div>
-            ) : viewMode === 'recruiter' ? (
+            {viewMode === 'recruiter' ? (
               /* Recruiter Hardware Capture Exclusion Optical Dissolution */
               <motion.div
                 initial={{ opacity: 0.9, scale: 0.99 }}

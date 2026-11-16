@@ -159,7 +159,6 @@ impl AudioEngine {
             self.stop();
         }
 
-        let host = cpal::default_host();
         let mut loopback_started = false;
         let mut mic_started = false;
         let mut last_error = None;
@@ -223,7 +222,8 @@ impl AudioEngine {
                     }
                 }
                 Err(_linux_err) => {
-                    // Fallback to cpal
+                    // Fallback to cpal (lazy host creation avoids touching ALSA when PipeWire succeeds)
+                    let host = cpal::default_host();
                     match resolve_device(
                         &host,
                         self.config.loopback_device_name.as_deref(),
@@ -301,7 +301,8 @@ impl AudioEngine {
                     }
                 }
                 Err(_linux_err) => {
-                    // Fallback to cpal
+                    // Fallback to cpal (lazy host creation avoids touching ALSA when PipeWire succeeds)
+                    let host = cpal::default_host();
                     match resolve_device(
                         &host,
                         self.config.mic_device_name.as_deref(),

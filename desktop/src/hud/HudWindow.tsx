@@ -13,7 +13,6 @@ import {
   setWindowOpacity,
   setScreenShareStealth,
   toggleClickThrough,
-  panicHide,
   openOffice,
   closeCopilotWindow,
   listenTauriEvent,
@@ -53,9 +52,7 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
 
   // Hotkey dispatch from Rust
   const handleRustHotkey = useCallback((action: string) => {
-    if (action === 'panic') {
-      void panicHide();
-    } else if (action === 'screenshot') {
+    if (action === 'screenshot') {
       void smartScreenshotRef.current();
     } else if (action === 'chat') {
       setLayoutMode('chat');
@@ -372,11 +369,6 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
     session.setClickThrough(next);
   }, [session]);
 
-  // Panic hide
-  const handlePanic = useCallback(async () => {
-    await panicHide();
-  }, []);
-
   // Return to office
   const handleReturnToOffice = useCallback(async () => {
     if (onReturnToOffice) {
@@ -401,13 +393,6 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isInput = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-
-      // F12: Panic hide
-      if (e.key === 'F12' || ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h')) {
-        e.preventDefault();
-        void handlePanic();
-        return;
-      }
 
       // Ctrl/Cmd + Shift + X: Click-through
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'x') {
@@ -506,7 +491,7 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handlePanic, handleToggleClickThrough, session, toggleLayout, handleReturnToOffice, activeAnswer, handleToggleAudio, handleTriggerBridge, handleSmartScreenshot]);
+  }, [handleToggleClickThrough, session, toggleLayout, handleReturnToOffice, activeAnswer, handleToggleAudio, handleTriggerBridge, handleSmartScreenshot]);
 
   const showInlineTopBarRadar =
     isRadarFresh &&
@@ -541,13 +526,13 @@ export function HudWindow({ onReturnToOffice }: HudWindowProps = {}) {
           onToggleClickThrough={handleToggleClickThrough}
           onScreenshot={handleSmartScreenshot}
           isScreenBusy={session.screenBusy || radarBusy}
-          onPanic={handlePanic}
           onReturnToOffice={handleReturnToOffice}
           onClose={handleClose}
           isBridgeActive={isBridgeActive}
           onTriggerBridge={handleTriggerBridge}
           isAudioActive={isAudioActive}
           onToggleAudio={handleToggleAudio}
+          hideCenterStatus={showInlineTopBarRadar}
         />
 
         <AnimatePresence>

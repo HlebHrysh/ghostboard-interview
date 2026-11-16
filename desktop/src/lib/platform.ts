@@ -46,8 +46,6 @@ export function formatShortcut(spec: ShortcutSpec, os: OsFamily): string {
 /** Platform-aware global shortcut registry (mirrors the native Rust registrations). */
 export const SHORTCUTS = {
   launch: { mods: ['mod'], key: 'Enter' },
-  panic: { key: 'F12' },
-  panicAlt: { mods: ['mod', 'shift'], key: 'H' },
   clickThrough: { mods: ['mod', 'shift'], key: 'X' },
   screenshot: { mods: ['mod', 'shift'], key: 'S' },
   pause: { key: 'Space' },
